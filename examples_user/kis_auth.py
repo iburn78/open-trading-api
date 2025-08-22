@@ -685,7 +685,8 @@ class KISWebSocket:
                     d = aes_cbc_base64_dec(dm["key"], dm["iv"], d)
 
                 df = pd.read_csv(
-                    StringIO(d), header=None, sep="^", names=dm["columns"], dtype=object
+                    StringIO(d), header=None, sep="^", names=dm["columns"], dtype=object,
+                    on_bad_lines='error'   # raise if columns mismatch
                 )
 
                 show_result = True
