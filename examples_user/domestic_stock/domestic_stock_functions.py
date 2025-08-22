@@ -473,7 +473,7 @@ def chk_holiday(
         "CTX_AREA_NK": NK100
     }
 
-    res = ka._url_fetch(API_URL, tr_id, tr_cont, params)
+    res = ka._url_fetch(api_url, tr_id, tr_cont, params)
 
     if res.isOK():
         if hasattr(res.getBody(), 'output'):
@@ -503,7 +503,7 @@ def chk_holiday(
             logging.info("Data fetch complete.")
             return dataframe
     else:
-        res.printError(url=API_URL)
+        res.printError(url=api_url)
         return pd.DataFrame()
 
 

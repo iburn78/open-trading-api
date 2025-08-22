@@ -91,22 +91,22 @@ def _getBaseHeader(svr, product):
 def _setTRENV(cfg):
     nt1 = namedtuple(
         "KISEnv",
-        ["my_app", "my_sec", "my_acct", "my_prod", "my_htsid", "my_token", "my_url", "my_url_ws"],
+        ["my_app", "my_sec", "my_acct", "my_svr", "my_prod", "my_htsid", "my_token", "my_url", "my_url_ws"],
     )
     d = {
         "my_app": cfg["my_app"],  # 앱키
         "my_sec": cfg["my_sec"],  # 앱시크리트
         "my_acct": cfg["my_acct"],  # 종합계좌번호(8자리)
+        "my_svr": cfg["my_svr"],  # current SVR
         "my_prod": cfg["my_prod"],  # 계좌상품코드(2자리)
         "my_htsid": cfg["my_htsid"],  # HTS ID
         "my_token": cfg["my_token"],  # 토큰
-        "my_url": cfg[
-            "my_url"
-        ],  # 실전 도메인 (https://openapi.koreainvestment.com:9443)
+        "my_url": cfg["my_url"],  
         "my_url_ws": cfg["my_url_ws"],
-    }  # 모의 도메인 (https://openapivts.koreainvestment.com:29443)
+    }  
+    # 실전 도메인 (https://openapi.koreainvestment.com:9443)
+    # 모의 도메인 (https://openapivts.koreainvestment.com:29443)
 
-    # print(cfg['my_app'])
     global _TRENV
     _TRENV = nt1(**d)
 
@@ -115,40 +115,54 @@ def isPaperTrading():  # 모의투자 매매
     return _isPaper
 
 
-# 실전투자면 'prod', 모의투자면 'vps'를 셋팅 하시기 바랍니다.
-def changeTREnv(token_key, svr="prod", product=_cfg["my_prod"]):
+# 실전투자면 'prod' or 'auto', 모의투자면 'vps'를 셋팅 하시기 바랍니다.
+def changeTREnv(token_key, svr, product):
     cfg = dict()
 
     global _isPaper
-    if svr == "prod":  # 실전투자
-        ak1 = "my_app"  # 실전투자용 앱키
-        ak2 = "my_sec"  # 실전투자용 앱시크리트
+    if svr == 'prod':  # 실전투자 
+        ak1 = 'main_app'  # 실전투자용 앱키
+        ak2 = 'main_sec'  # 실전투자용 앱시크리트
         _isPaper = False
-        _smartSleep = 0.05
-    elif svr == "vps":  # 모의투자
-        ak1 = "paper_app"  # 모의투자용 앱키
-        ak2 = "paper_sec"  # 모의투자용 앱시크리트
+        _smartSleep = 0.1
+    elif svr == 'auto':  # 실전투자 (autotrading)
+        ak1 = 'autotrading_app'  # 실전투자용 앱키
+        ak2 = 'autotrading_sec'  # 실전투자용 앱시크리트
+        _isPaper = False
+        _smartSleep = 0.1
+    elif svr == 'vps':  # 모의투자
+        ak1 = 'paper_app'  # 모의투자용 앱키
+        ak2 = 'paper_sec'  # 모의투자용 앱시크리트
         _isPaper = True
-        _smartSleep = 0.5
+        _smartSleep = 0.1
 
     cfg["my_app"] = _cfg[ak1]
     cfg["my_sec"] = _cfg[ak2]
 
-    if svr == "prod" and product == "01":  # 실전투자 주식투자, 위탁계좌, 투자계좌
-        cfg["my_acct"] = _cfg["my_acct_stock"]
-    elif svr == "prod" and product == "03":  # 실전투자 선물옵션(파생)
-        cfg["my_acct"] = _cfg["my_acct_future"]
-    elif svr == "prod" and product == "08":  # 실전투자 해외선물옵션(파생)
-        cfg["my_acct"] = _cfg["my_acct_future"]
-    elif svr == "prod" and product == "22":  # 실전투자 개인연금저축계좌
-        cfg["my_acct"] = _cfg["my_acct_stock"]
-    elif svr == "prod" and product == "29":  # 실전투자 퇴직연금계좌
-        cfg["my_acct"] = _cfg["my_acct_stock"]
-    elif svr == "vps" and product == "01":  # 모의투자 주식투자, 위탁계좌, 투자계좌
-        cfg["my_acct"] = _cfg["my_paper_stock"]
-    elif svr == "vps" and product == "03":  # 모의투자 선물옵션(파생)
-        cfg["my_acct"] = _cfg["my_paper_future"]
+    if svr == 'prod' and product == '01':  # 실전투자 주식투자, 위탁계좌, 투자계좌
+        cfg['my_acct'] = _cfg['main_acct_stock']
+    elif svr == 'auto' and product == '01':  # 실전투자 주식투자, 위탁계좌, 투자계좌 (autotrading)
+        cfg['my_acct'] = _cfg['auto_acct_stock']
+    elif svr == 'vps' and product == '01':  # 모의투자 주식투자, 위탁계좌, 투자계좌
+        cfg['my_acct'] = _cfg['paper_acct_stock']
 
+    # original account assignment logic
+    # if svr == "prod" and product == "01":  # 실전투자 주식투자, 위탁계좌, 투자계좌
+    #     cfg["my_acct"] = _cfg["my_acct_stock"]
+    # elif svr == "prod" and product == "03":  # 실전투자 선물옵션(파생)
+    #     cfg["my_acct"] = _cfg["my_acct_future"]
+    # elif svr == "prod" and product == "08":  # 실전투자 해외선물옵션(파생)
+    #     cfg["my_acct"] = _cfg["my_acct_future"]
+    # elif svr == "prod" and product == "22":  # 실전투자 개인연금저축계좌
+    #     cfg["my_acct"] = _cfg["my_acct_stock"]
+    # elif svr == "prod" and product == "29":  # 실전투자 퇴직연금계좌
+    #     cfg["my_acct"] = _cfg["my_acct_stock"]
+    # elif svr == "vps" and product == "01":  # 모의투자 주식투자, 위탁계좌, 투자계좌
+    #     cfg["my_acct"] = _cfg["my_paper_stock"]
+    # elif svr == "vps" and product == "03":  # 모의투자 선물옵션(파생)
+    #     cfg["my_acct"] = _cfg["my_paper_future"]
+
+    cfg["my_svr"] = svr
     cfg["my_prod"] = product
     cfg["my_htsid"] = _cfg["my_htsid"]
     cfg["my_url"] = _cfg[svr]
@@ -158,7 +172,7 @@ def changeTREnv(token_key, svr="prod", product=_cfg["my_prod"]):
     except AttributeError:
         my_token = ""
     cfg["my_token"] = my_token if token_key else token_key
-    cfg["my_url_ws"] = _cfg["ops" if svr == "prod" else "vops"]
+    cfg["my_url_ws"] = _cfg["ops" if svr == "prod" else "auto_ops" if svr == "auto" else "vops"]
 
     # print(cfg)
     _setTRENV(cfg)
@@ -172,19 +186,22 @@ def _getResultObject(json_data):
 
 # Token 발급, 유효기간 1일, 6시간 이내 발급시 기존 token값 유지, 발급시 알림톡 무조건 발송
 # 모의투자인 경우  svr='vps', 투자계좌(01)이 아닌경우 product='XX' 변경하세요 (계좌번호 뒤 2자리)
-def auth(svr, product, url=None):
+def auth(svr, product=_cfg["my_prod"], url=None):
     token_file = os.path.join(token_path, 'KIS_'+datetime.today().strftime("%Y%m%d")+'_'+svr)  # 토큰 파일명
     p = {
         "grant_type": "client_credentials",
     }
     # 개인 환경파일 "kis_devlp.yaml" 파일을 참조하여 앱키, 앱시크리트 정보 가져오기
     # 개인 환경파일명과 위치는 고객님만 아는 위치로 설정 바랍니다.
-    if svr == "prod":  # 실전투자
-        ak1 = "my_app"  # 앱키 (실전투자용)
-        ak2 = "my_sec"  # 앱시크리트 (실전투자용)
-    elif svr == "vps":  # 모의투자
-        ak1 = "paper_app"  # 앱키 (모의투자용)
-        ak2 = "paper_sec"  # 앱시크리트 (모의투자용)
+    if svr == 'prod':  # 실전투자 - main
+        ak1 = 'main_app'  # 앱키 (실전투자용)
+        ak2 = 'main_sec'  # 앱시크리트 (실전투자용)
+    elif svr == 'auto':  # 실전투자 - autotrading
+        ak1 = 'autotrading_app'  # 앱키 (실전투자용)
+        ak2 = 'autotrading_sec' # 앱시크리트 (실전투자용)
+    elif svr == 'vps':  # 모의투자
+        ak1 = 'paper_app'  # 앱키 (모의투자용)
+        ak2 = 'paper_sec'  # 앱시크리트 (모의투자용)
 
     # 앱키, 앱시크리트 가져오기
     p["appkey"] = _cfg[ak1]
@@ -397,7 +414,7 @@ def _url_fetch(
 ):
     url = f"{getTREnv().my_url}{api_url}"
 
-    headers = _getBaseHeader(svr, product)  # 기본 header 값 정리
+    headers = _getBaseHeader(getTREnv().my_svr, getTREnv().my_prod)  # 기본 header 값 정리
 
     # 추가 Header 설정
     tr_id = ptr_id
@@ -452,14 +469,18 @@ def _getBaseHeader_ws(svr, product):
     return copy.deepcopy(_base_headers_ws)
 
 
-def auth_ws(svr, product):
+def auth_ws(svr, product=_cfg["my_prod"]):
     p = {"grant_type": "client_credentials"}
-    if svr == "prod":
-        ak1 = "my_app"
-        ak2 = "my_sec"
-    elif svr == "vps":
-        ak1 = "paper_app"
-        ak2 = "paper_sec"
+
+    if svr == 'prod':  # 실전투자 - main
+        ak1 = 'main_app'  # 앱키 (실전투자용)
+        ak2 = 'main_sec'  # 앱시크리트 (실전투자용)
+    elif svr == 'auto':  # 실전투자 - autotrading
+        ak1 = 'autotrading_app'  # 앱키 (실전투자용)
+        ak2 = 'autotrading_sec' # 앱시크리트 (실전투자용)
+    elif svr == 'vps':  # 모의투자
+        ak1 = 'paper_app'  # 앱키 (모의투자용)
+        ak2 = 'paper_sec'  # 앱시크리트 (모의투자용)
 
     p["appkey"] = _cfg[ak1]
     p["secretkey"] = _cfg[ak2]
@@ -491,7 +512,7 @@ def reAuth_ws(svr, product):
 
 
 def data_fetch(tr_id, tr_type, params, appendHeaders=None) -> dict:
-    headers = _getBaseHeader_ws(svr, product)  # 기본 header 값 정리
+    headers = _getBaseHeader_ws(getTREnv().my_svr, getTREnv().my_prod)  # 기본 header 값 정리
 
     headers["tr_type"] = tr_type
     headers["custtype"] = "P"
