@@ -33,6 +33,7 @@ token_path = os.path.join(config_root, 'KIS_token')
 with open(yaml_path, encoding="UTF-8") as f:
     _cfg = yaml.load(f, Loader=yaml.FullLoader)
 
+# 'prod', 'auto', 'vps'
 _svr_to_use = 'vps'  
 # _svr_to_use = _cfg["default_svr"]
 _TRENV = tuple()
