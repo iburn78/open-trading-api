@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # 인증
 ka.auth()
-# ka.auth_ws()
+ka.auth_ws()
 trenv = ka.getTREnv()
 
 # 웹소켓 선언

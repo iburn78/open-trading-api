@@ -165,3 +165,7 @@ cython_debug/
 *.lock
 
 *_logs/
+
+# Project Specific --------------------
+.pkl
+data/

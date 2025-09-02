@@ -33,9 +33,6 @@ token_path = os.path.join(config_root, 'KIS_token')
 with open(yaml_path, encoding="UTF-8") as f:
     _cfg = yaml.load(f, Loader=yaml.FullLoader)
 
-# 'prod', 'auto', 'vps'
-_svr_to_use = 'vps'  
-# _svr_to_use = _cfg["default_svr"]
 _TRENV = tuple()
 _last_auth_time = dict()
 _autoReAuth = False
@@ -189,7 +186,7 @@ def _getResultObject(json_data):
 
 # Token 발급, 유효기간 1일, 6시간 이내 발급시 기존 token값 유지, 발급시 알림톡 무조건 발송
 # 모의투자인 경우  svr='vps', 투자계좌(01)이 아닌경우 product='XX' 변경하세요 (계좌번호 뒤 2자리)
-def auth(svr=_svr_to_use, product=_cfg["my_prod"], url=None):
+def auth(svr, product=_cfg["my_prod"], url=None):
     token_file = os.path.join(token_path, 'KIS_'+datetime.today().strftime("%Y%m%d")+'_'+svr)  # 토큰 파일명
     p = {
         "grant_type": "client_credentials",
@@ -472,7 +469,7 @@ def _getBaseHeader_ws(svr, product):
     return copy.deepcopy(_base_headers_ws)
 
 
-def auth_ws(svr=_svr_to_use, product=_cfg["my_prod"]):
+def auth_ws(svr, product=_cfg["my_prod"]):
     p = {"grant_type": "client_credentials"}
 
     if svr == 'prod':  # 실전투자 - main
@@ -682,7 +679,10 @@ class KISWebSocket:
 
                 dm = data_map[tr_id]
                 d = d1[3]
-                if dm.get("encrypt", None) == "Y":
+                ##################################################
+                # if dm.get("encrypt", None) == "Y":
+                ##################################################
+                if raw[0] == "1":
                     d = aes_cbc_base64_dec(dm["key"], dm["iv"], d)
 
                 df = pd.read_csv(

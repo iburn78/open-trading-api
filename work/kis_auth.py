@@ -186,7 +186,7 @@ def _getResultObject(json_data):
 
 # Token 발급, 유효기간 1일, 6시간 이내 발급시 기존 token값 유지, 발급시 알림톡 무조건 발송
 # 모의투자인 경우  svr='vps', 투자계좌(01)이 아닌경우 product='XX' 변경하세요 (계좌번호 뒤 2자리)
-def auth(svr, product=_cfg["my_prod"], url=None):
+def auth(svr, product=_cfg["my_prod"], url=None, renew_token=False):
     token_file = os.path.join(token_path, 'KIS_'+datetime.today().strftime("%Y%m%d")+'_'+svr)  # 토큰 파일명
     p = {
         "grant_type": "client_credentials",
@@ -207,8 +207,11 @@ def auth(svr, product=_cfg["my_prod"], url=None):
     p["appkey"] = _cfg[ak1]
     p["appsecret"] = _cfg[ak2]
 
-    # 기존 발급된 토큰이 있는지 확인
-    saved_token = read_token(token_file)  # 기존 발급 토큰 확인
+    if renew_token: 
+        saved_token = None
+    else:
+        # 기존 발급된 토큰이 있는지 확인
+        saved_token = read_token(token_file)  # 기존 발급 토큰 확인
     # print("saved_token: ", saved_token)
     if saved_token is None:  # 기존 발급 토큰 확인이 안되면 발급처리
         url = f"{_cfg[svr]}/oauth2/tokenP"
@@ -669,6 +672,7 @@ class KISWebSocket:
             show_result = False
 
             df = pd.DataFrame()
+            print(data_map)
 
             if raw[0] in ["0", "1"]:
                 d1 = raw.split("|")
@@ -679,6 +683,7 @@ class KISWebSocket:
 
                 dm = data_map[tr_id]
                 d = d1[3]
+
                 ##################################################
                 # if dm.get("encrypt", None) == "Y":
                 ##################################################
