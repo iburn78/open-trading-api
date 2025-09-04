@@ -3858,7 +3858,7 @@ def inquire_balance(
                 "N", dataframe1, dataframe2, depth + 1, max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            # logging.info("Data fetch complete.")
             return dataframe1, dataframe2
     else:
         res.printError(url=api_url)
@@ -6465,7 +6465,7 @@ def inquire_psbl_rvsecncl(
                 cano, acnt_prdt_cd, inqr_dvsn_1, inqr_dvsn_2, FK100, NK100, "N", dataframe, depth + 1, max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            # logging.info("Data fetch complete.")
             return dataframe
     else:
         res.printError(url=api_url)

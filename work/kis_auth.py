@@ -21,6 +21,8 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 
 clearConsole = lambda: os.system("cls" if os.name in ("nt", "dos") else "clear")
+logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 key_bytes = 32
 
@@ -91,7 +93,7 @@ def _getBaseHeader(svr, product):
 def _setTRENV(cfg):
     nt1 = namedtuple(
         "KISEnv",
-        ["my_app", "my_sec", "my_acct", "my_svr", "my_prod", "my_htsid", "my_token", "my_url", "my_url_ws"],
+        ["my_app", "my_sec", "my_acct", "my_svr", "my_prod", "my_htsid", "my_token", "my_url", "my_url_ws", "env_dv"],
     )
     d = {
         "my_app": cfg["my_app"],  # 앱키
@@ -103,13 +105,13 @@ def _setTRENV(cfg):
         "my_token": cfg["my_token"],  # 토큰
         "my_url": cfg["my_url"],  
         "my_url_ws": cfg["my_url_ws"],
+        "env_dv": 'demo' if cfg["my_svr"] == "vps" else 'real',
     }  
     # 실전 도메인 (https://openapi.koreainvestment.com:9443)
     # 모의 도메인 (https://openapivts.koreainvestment.com:29443)
 
     global _TRENV
     _TRENV = nt1(**d)
-
 
 def isPaperTrading():  # 모의투자 매매
     return _isPaper
@@ -668,11 +670,10 @@ class KISWebSocket:
     # private
     async def __subscriber(self, ws: websockets.ClientConnection):
         async for raw in ws:
-            logging.info("received message >> %s" % raw)
+            # logging.info("received message >> %s" % raw)
             show_result = False
 
             df = pd.DataFrame()
-            print(data_map)
 
             if raw[0] in ["0", "1"]:
                 d1 = raw.split("|")
@@ -689,12 +690,11 @@ class KISWebSocket:
                 ##################################################
                 if raw[0] == "1":
                     d = aes_cbc_base64_dec(dm["key"], dm["iv"], d)
-
                 df = pd.read_csv(
                     StringIO(d), header=None, sep="^", names=dm["columns"], dtype=object,
                     on_bad_lines='error'   # raise if columns mismatch
                 )
-
+                # print(df.T.to_string())
                 show_result = True
 
             else:
@@ -704,12 +704,12 @@ class KISWebSocket:
                 add_data_map(
                     tr_id=rsp.tr_id, encrypt=rsp.encrypt, key=rsp.ekey, iv=rsp.iv
                 )
-
+                raw_data = json.loads(raw)
                 if rsp.isPingPong:
-                    print(f"### RECV [PINGPONG] [{raw}]")
+                    # print(f"### RECV [PINGPONG] [{raw}]")
                     await ws.pong(raw)
-                    print(f"### SEND [PINGPONG] [{raw}]")
-
+                    # print(f"### SEND [PINGPONG] [{raw}]")
+                    print(f"# pingpong ---- {raw_data['header']['datetime'][-6:]}")
                 if self.result_all_data:
                     show_result = True
 
@@ -755,7 +755,7 @@ class KISWebSocket:
 
         add_data_map(tr_id=msg["body"]["input"]["tr_id"], columns=columns)
 
-        logging.info("send message >> %s" % json.dumps(msg))
+        # logging.info("send message >> %s" % json.dumps(msg))
 
         await ws.send(json.dumps(msg))
         smart_sleep()
@@ -805,5 +805,20 @@ class KISWebSocket:
         self.result_all_data = result_all_data
         try:
             asyncio.run(self.__runner())
+        except KeyboardInterrupt:
+            print("Closing by KeyboardInterrupt")
+
+    # async start - ADDED!!!!
+    async def start_async(
+        self,
+        on_result: Callable[
+            [websockets.ClientConnection, str, pd.DataFrame, dict], None
+        ],
+        result_all_data: bool = False,
+    ):
+        self.on_result = on_result
+        self.result_all_data = result_all_data
+        try:
+            await self.__runner()
         except KeyboardInterrupt:
             print("Closing by KeyboardInterrupt")
