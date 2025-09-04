@@ -26,8 +26,8 @@ def create_order(order_list):
     for i in range(10):
         code = "018000"
         quantity = i*3 + 1 
-        price = 1100+10*i
-        order = Order(code, "buy", quantity, "limit", price)
+        price = 1100+50*i
+        order = Order(code, "sell", quantity, "limit", price)
         order_list.register(order)
 
 # ---------------------------------
@@ -47,6 +47,7 @@ async def main():
     start_task = asyncio.create_task(kws.start_async(on_result=on_result))
 
     # submit order
+    create_order(order_list)
     for order in order_list.get_new_orders():
         await asyncio.to_thread(order.submit, trenv)
         await asyncio.sleep(0.5)
@@ -55,6 +56,18 @@ async def main():
     await asyncio.gather(start_task)
 
 
+from io import StringIO
 if __name__ == "__main__":
-    asyncio.run(main())
+    # asyncio.run(main())
+    class A:
+        def __init__(self, name):
+            self.name = name
 
+    obj1 = A("one")
+    obj2 = A("two")
+
+    lst = [obj1, obj2]
+    print("Before:", [o.name for o in lst])
+
+    lst.remove(obj1)  # removes obj1
+    print("After:", [o.name for o in lst])

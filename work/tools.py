@@ -105,7 +105,7 @@ class Order:
     code: str
     side: str
     quantity: int
-    mode: str
+    mode: str # market or limit
     price: Optional[int] = None
     market: str = "SOR" # Smart Order Routing
 
@@ -113,9 +113,12 @@ class Order:
     order_no: Optional[str] = None
     submitted_time: Optional[str] = None
 
+    submitted: bool = False
     processed: int = 0
     completed: bool = False
     cancelled: bool = False
+
+    ord_dvsn: str = None
 
     def __post_init__(self):
         # validity check
@@ -128,6 +131,14 @@ class Order:
             raise ValueError("Limit orders require a price")
         if self.mode == "market" and self.price is not None:
             raise ValueError("Market orders should not have a price")
+
+        if self.mode == "limit": 
+            self.ord_dvsn = "00"
+        elif self.mode == "market":
+            self.ord_dvsn = "01"
+        else: 
+            self.ord_dvsn = "##"  # there are many other options defined
+        
     
     def __str__(self):
         return "Order:" + json.dumps(asdict(self), indent=4, default=str)
@@ -136,33 +147,27 @@ class Order:
         if self.completed or self.cancelled:
             raise Exception('A completed or cancelled order submitted')
 
-        if self.mode == "limit": 
-            ord_dvsn = "00"
-        elif self.mode == "market":
-            ord_dvsn = "01"
-        else: 
-            ord_dvsn = "##"  # there are many other options defined
-
         ord_qty = str(self.quantity)
         ord_unpr = "0" if (self.price is None or self.price == "") else str(self.price)
-        res = order_cash(env_dv=trenv.env_dv, ord_dv=self.side, cano=trenv.my_acct, acnt_prdt_cd=trenv.my_prod, pdno=self.code, ord_dvsn=ord_dvsn, ord_qty=ord_qty, ord_unpr=ord_unpr, excg_id_dvsn_cd=self.market)
+        res = order_cash(env_dv=trenv.env_dv, ord_dv=self.side, cano=trenv.my_acct, acnt_prdt_cd=trenv.my_prod, pdno=self.code, ord_dvsn=self.ord_dvsn, ord_qty=ord_qty, ord_unpr=ord_unpr, excg_id_dvsn_cd=self.market)
 
         if res.empty:
             raise Exception('Order submission failed')
         else: 
+            if pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
+                raise Exception("Check submission response ---")
             self.order_no = res.ODNO.iloc[0]
-            if self.order_no is None or len(self.order_no.strip()) > 5: raise Exception("Check submitted order_no ---")
             self.submitted_time = res.ORD_TMD.iloc[0]
-            if self.submitted_time is None or len(self.submitted_time.strip()) > 5: raise Exception("Check submitted order_no ---")
             self.org_no = res.KRX_FWDG_ORD_ORGNO.iloc[0]
+            self.submitted = True
             print(f"Order {self.order_no} submitted")
     
     def update(self, notice: TradeNotice):
         if self.order_no != notice.oder_no: # checking order_no (or double-checking)
-            return
+            raise Exception(f"Notice does not match with order {self.order_no} ---")
         if self.completed or self.cancelled: 
             return 
-        if notice.rfus_yn != "0": # 승인
+        if notice.rfus_yn != "0": # "0": 승인
             raise Exception(f"Order {self.order_no} refused ---")
 
         # BELOW CASE CHECK REQUIRED.... 정정 또는 취소를 해도, 주문접수 및 확인이 있을 있음
@@ -192,27 +197,72 @@ class Order:
             else: 
                 raise Exception("Check logic ---")
 
+    # may test and understand behavior ----------
+    # basically use only full cancel ---------
+    def revise_cancel(self, trenv, **kwargs):
+        if not self.submitted:
+            raise Exception(f"Order {self.order_no} not submitted yet but revise-cancel called ---")
+
+        res = order_rvsecncl(
+            env_dv=trenv.env_dv,
+            cano=trenv.my_acct,
+            acnt_prdt_cd=trenv.my_prod,
+            krx_fwdg_ord_orgno=self.org_no,
+            orgn_odno=self.order_no,
+            ord_dvsn=self.ord_dvsn,
+            rvse_cncl_dvsn_cd="02",   # '01': revise, '02': cancel
+            ord_qty="0",
+            ord_unpr="0",
+            qty_all_ord_yn="Y",   # 잔량 전부 주문 - Y:전부, N: 일부
+            excg_id_dvsn_cd=self.market
+        )
+        print(res) # analysis res
+        # check if need to update order_no
+        # what will be he meaning of original order_no
+        # observe websocket response
+
+        if res.empty:
+            raise Exception('Order cancellation failed')
+        else: 
+            if pd.isna(res.loc[0, ["odno", "ord_tmd", "krx_fwdg_ord_orgno"]]).any():
+                raise Exception("Check cancellation response ---")
+            # self.order_no = res.odno.iloc[0]
+            # self.submitted_time = res.ord_tmd.iloc[0]
+            # self.org_no = res.krx_fwdg_ord_orgno.iloc[0]
+            print(self.order_no, res.odno.iloc[0])
+            print(self.submitted_time, res.ord_tmd.iloc[0])
+            print(self.org_no, res.krx_fwdg_ord_orgno.iloc[0])
+            # check if changed
+            print(f"Order {self.order_no} cancellation request submitted")
 
 @dataclass
 class OrderList:
     all: list[Order] = field(default_factory=list) 
 
-    def register(self, order):
-        if order.submitted_time is None: 
+    def register(self, order: Order):
+        if not order.submitted:
             self.all.append(order)
         else:
-            raise Exception('Register only new orders before submission...')
+            raise Exception('Register only new orders before their submission ---')
 
     def process_notice(self, notice: TradeNotice):
         # reroute notice to corresponding order
         # notice content handling logic should reside in Order class
         order = next((o for o in self.all if o.order_no is not None and o.order_no == notice.oder_no), None)
         if order is None:
-            raise LookupError(f"No order found for notice {notice.oder_no}")
+            raise LookupError(f"No order found for notice {notice.oder_no} ---")
         order.update(notice)
     
     def get_new_orders(self):
-        return [o for o in self.all if o.submitted_time is None]
+        return [o for o in self.all if not o.submitted]
+    
+    def delete_order(self, order: Order):
+        if order.submitted:
+            raise Exception(f"Order {self.order_no} already submitted, use cancel ---")
+        if order in self.all:
+            self.all.remove(order)
+        else: 
+            raise Exception(f"Order {order.order_no} not in the list ---")
 
 
 @dataclass
