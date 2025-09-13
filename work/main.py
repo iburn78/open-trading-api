@@ -22,10 +22,10 @@ main_orderlist = OrderList()
 # Order creation
 # ---------------------------------
 
-with open('data.pkl', 'rb') as f:
-    data_dict = pickle.load(f)
-to_order = data_dict['codelist_summary']['price'].astype(int)
-to_order = to_order.loc[to_order > 1200]
+# with open('data.pkl', 'rb') as f:
+#     data_dict = pickle.load(f)
+# to_order = data_dict['codelist_summary']['price'].astype(int)
+# to_order = to_order.loc[to_order > 1200]
 
 def create_order():
     new_orders = []
@@ -33,7 +33,7 @@ def create_order():
     for i in range(3):
         quantity = 10+i*3
         price = 16000+i*20
-        order = Order(code, "buy", quantity, "limit", price)
+        order = Order(code, "buy", quantity, ORD_DVSN.LIMIT, price)
         new_orders.append(order)
     return new_orders
 

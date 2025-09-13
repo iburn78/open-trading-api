@@ -10,13 +10,14 @@ from enum import Enum
 import asyncio
 from kis_auth import _smartSleep, _demoSleep
 import logging
+from collections import defaultdict
 
 logging.basicConfig(
     level=logging.INFO,  # 최소 출력 레벨
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.FileHandler("opt.log"),  # 파일 출력
-        logging.StreamHandler()           # 콘솔 출력
+        logging.StreamHandler()          # 콘솔 출력
     ]
 )
 
@@ -313,7 +314,10 @@ class ReviseCancelOrder(Order):
 @dataclass
 class OrderList: # submitted order list
     all: list[Order] = field(default_factory=list) 
-    _pending_notices: list[TradeNotice] = field(default_factory=list)
+    # _pending_notices: list[TradeNotice] = field(default_factory=list)
+    _pending_notices_by_order: dict[str, List["TradeNotice"]] = field(
+        default_factory=lambda: defaultdict(list)
+    )
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
     def __str__(self):
@@ -330,16 +334,20 @@ class OrderList: # submitted order list
             if order is not None:
                 order.update(notice)
             else:
-                self._pending_notices.append(notice)
-                # log_raise(f"No order found for notice {notice.oder_no} ---")
+                # self._pending_notices.append(notice)
+                self._pending_notices_by_order[notice.oder_no].append(notice)
 
     async def try_process_pending(self, order:Order):
         # Retry unmatched notices when new orders get order_no
         async with self._lock:
-            to_process = [n for n in self._pending_notices if n.oder_no == order.order_no]
+            # to_process = [n for n in self._pending_notices if n.oder_no == order.order_no]
+            # for notice in to_process:
+            #     order.update(notice)
+            #     self._pending_notices.remove(notice)
+            to_proces = self._pending_notices_by_order.get(order.order_no, [])
             for notice in to_process:
                 order.update(notice)
-                self._pending_notices.remove(notice)
+            self._pending_notices_by_order.pop(order.order_no, None)
 
     async def submit_orders_and_register(self, trenv, orders:list): # only accepts new orders not submitted.
         if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should not have been submitted ---')
