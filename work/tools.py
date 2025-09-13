@@ -313,11 +313,16 @@ class ReviseCancelOrder(Order):
                 
 @dataclass
 class OrderList: # submitted order list
+    # If order size grows, consider making all as a dict for faster lookup O(1)
+    # @dataclass need to define default values with care (e.g., field(...))
     all: list[Order] = field(default_factory=list) 
-    # _pending_notices: list[TradeNotice] = field(default_factory=list)
+
+    # defaultdict(list) is useful when there is 1 to N relationship, e.g., multiple notices to one order
+    # simple access to defaultdict would generate key inside with empty list - handle with care
     _pending_notices_by_order: dict[str, List["TradeNotice"]] = field(
         default_factory=lambda: defaultdict(list)
     )
+    # _pending_notices: list[TradeNotice] = field(default_factory=list)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
     def __str__(self):
@@ -327,27 +332,27 @@ class OrderList: # submitted order list
 
     async def process_notice(self, notice: TradeNotice):
         # reroute notice to corresponding order
-        # (notice content handling logic should reside in Order class)
+        # notice content handling logic should reside in Order class
         # process notice could arrive faster than order submit result - should not use order_no
         async with self._lock:
             order = next((o for o in self.all if o.order_no is not None and o.order_no == notice.oder_no), None)
             if order is not None:
                 order.update(notice)
             else:
-                # self._pending_notices.append(notice)
                 self._pending_notices_by_order[notice.oder_no].append(notice)
+                # self._pending_notices.append(notice)
 
     async def try_process_pending(self, order:Order):
         # Retry unmatched notices when new orders get order_no
         async with self._lock:
-            # to_process = [n for n in self._pending_notices if n.oder_no == order.order_no]
-            # for notice in to_process:
-            #     order.update(notice)
-            #     self._pending_notices.remove(notice)
             to_proces = self._pending_notices_by_order.get(order.order_no, [])
             for notice in to_process:
                 order.update(notice)
             self._pending_notices_by_order.pop(order.order_no, None)
+            # to_process = [n for n in self._pending_notices if n.oder_no == order.order_no]
+            # for notice in to_process:
+            #     order.update(notice)
+            #     self._pending_notices.remove(notice)
 
     async def submit_orders_and_register(self, trenv, orders:list): # only accepts new orders not submitted.
         if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should not have been submitted ---')
@@ -384,8 +389,14 @@ class OrderList: # submitted order list
             log_raise(f"Cannot close: {len(not_submitted)} orders not yet accepted ---")
 
         # 2. check if any pending notices remain
-        if self._pending_notices:
-            log_raise(f"Cannot close: {len(self._pending_notices)} unprocessed notices remain ---")
+        # if self._pending_notices:
+        #     log_raise(f"Cannot close: {len(self._pending_notices)} unprocessed notices remain ---")
+        if self._pending_notices_by_order:
+            l = len(self._pending_notices_by_order)
+            count = sum(len(v) for v in self._pending_notices_by_order.values())
+            log_raise(f"Cannot close: pending notices dict has {l} items, with total {count} pending notices")
+
+
         optlogger.info("[v] closing check successful")
         # #########################################
         # #########################################
