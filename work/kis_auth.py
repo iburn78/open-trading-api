@@ -40,7 +40,8 @@ _last_auth_time = dict()
 _autoReAuth = False
 _DEBUG = False
 _isPaper = False
-_smartSleep = 0.1
+_smartSleep = 0.1 # min 0.05
+_demoSleep = 0.5 # min 0.5
 
 # 기본 헤더값 정의
 _base_headers = {
@@ -112,6 +113,9 @@ def _setTRENV(cfg):
 
     global _TRENV
     _TRENV = nt1(**d)
+    global _smartSleep
+    if _TRENV.env_dv == 'demo':
+        _smartSleep = _demoSleep
 
 def isPaperTrading():  # 모의투자 매매
     return _isPaper
@@ -126,17 +130,14 @@ def changeTREnv(token_key, svr, product):
         ak1 = 'main_app'  # 실전투자용 앱키
         ak2 = 'main_sec'  # 실전투자용 앱시크리트
         _isPaper = False
-        _smartSleep = 0.1
     elif svr == 'auto':  # 실전투자 (autotrading)
         ak1 = 'autotrading_app'  # 실전투자용 앱키
         ak2 = 'autotrading_sec'  # 실전투자용 앱시크리트
         _isPaper = False
-        _smartSleep = 0.1
     elif svr == 'vps':  # 모의투자
         ak1 = 'paper_app'  # 모의투자용 앱키
         ak2 = 'paper_sec'  # 모의투자용 앱시크리트
         _isPaper = True
-        _smartSleep = 0.1
 
     cfg["my_app"] = _cfg[ak1]
     cfg["my_sec"] = _cfg[ak2]
@@ -709,7 +710,9 @@ class KISWebSocket:
                     # print(f"### RECV [PINGPONG] [{raw}]")
                     await ws.pong(raw)
                     # print(f"### SEND [PINGPONG] [{raw}]")
-                    print(f"# pingpong ---- {raw_data['header']['datetime'][-6:]}")
+                    # ------------
+                    # print(f"# pingpong ---- {raw_data['header']['datetime'][-6:]}")
+                    # ------------
                 if self.result_all_data:
                     show_result = True
 

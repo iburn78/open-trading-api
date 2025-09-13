@@ -1,6 +1,7 @@
 import kis_auth as ka
 from tools import *
-import asyncio
+import sys
+import pickle
 
 # ---------------------------------
 # 인증 and Set-up
@@ -9,33 +10,57 @@ svr = 'vps' # prod, auto, vps
 ka.auth(svr)  # renew_token=True
 ka.auth_ws(svr)
 trenv = ka.getTREnv()
-order_list = OrderList()
+main_orderlist = OrderList()
+
+# ---------------------------------
+# Account
+# ---------------------------------
+# the_account = Account().acc_load(trenv)
+# print(the_account)
+
+# ---------------------------------
+# Order creation
+# ---------------------------------
+
+with open('data.pkl', 'rb') as f:
+    data_dict = pickle.load(f)
+to_order = data_dict['codelist_summary']['price'].astype(int)
+to_order = to_order.loc[to_order > 1200]
+
+def create_order():
+    new_orders = []
+    code = '001440'
+    for i in range(3):
+        quantity = 10+i*3
+        price = 16000+i*20
+        order = Order(code, "buy", quantity, "limit", price)
+        new_orders.append(order)
+    return new_orders
+
+new_orders = create_order()
 
 # ---------------------------------
 # Response handling logic
 # ---------------------------------
-def on_result(ws, tr_id, result, data_info):
-    if get_tr(trenv, tr_id) == 'TradeNotice':
+async def async_on_result(ws, tr_id, result, data_info):
+    if get_tr(trenv, tr_id) == 'TradeNotice': # Domestic stocks
         tn = TradeNotice.from_response(result)
-        order_list.process_notice(tn)
-                    
-# ---------------------------------
-# Order creation
-# ---------------------------------
-def create_order(order_list):
-    for i in range(10):
-        code = "018000"
-        quantity = i*3 + 1 
-        price = 1100+50*i
-        order = Order(code, "sell", quantity, "limit", price)
-        order_list.register(order)
+        await main_orderlist.process_notice(tn)
+        print(tn)
+    else:
+        log_raise(f"Unexpected tr_id {tr_id} delivered")
 
+def on_result(ws, tr_id, result, data_info):
+    asyncio.create_task(async_on_result(ws, tr_id, result, data_info))
+
+code = '001440'
+o = Order(code, 'buy', 10, ORD_DVSN.LIMIT, 10)
+o.order_no = '0000007247'
+o.org_no = '00950'
+a = ReviseCancelOrder(code, 'buy', 0, 'limit', 10, rc = RCtype.CANCEL, all_yn=AllYN.ALL, original_order=o)
 # ---------------------------------
 # async main
 # ---------------------------------
-the_account = Account().acc_load(trenv)
-print(the_account)
-
 async def main():
     # Websocket
     kws = ka.KISWebSocket(api_url="/tryitout")
@@ -45,29 +70,24 @@ async def main():
 
     # run websocket until cancelled
     start_task = asyncio.create_task(kws.start_async(on_result=on_result))
+    await async_sleep(trenv)
 
     # submit order
-    create_order(order_list)
-    for order in order_list.get_new_orders():
-        await asyncio.to_thread(order.submit, trenv)
-        await asyncio.sleep(0.5)
+    await main_orderlist.submit_orders_and_register(trenv, new_orders)
+
+    # revise-cancel logic
+    rc_orders = [a]
+
+    await main_orderlist.submit_orders_and_register(trenv, rc_orders)
+    await main_orderlist.cancel_all_outstanding(trenv)
+
+    # closing 
+    await main_orderlist.closing_check()
+
+    print(main_orderlist)
 
     # wait forever
     await asyncio.gather(start_task)
 
-
-from io import StringIO
 if __name__ == "__main__":
-    # asyncio.run(main())
-    class A:
-        def __init__(self, name):
-            self.name = name
-
-    obj1 = A("one")
-    obj2 = A("two")
-
-    lst = [obj1, obj2]
-    print("Before:", [o.name for o in lst])
-
-    lst.remove(obj1)  # removes obj1
-    print("After:", [o.name for o in lst])
+    asyncio.run(main())

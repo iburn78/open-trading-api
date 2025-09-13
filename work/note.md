@@ -55,3 +55,12 @@ First, focus on building an MVP (minimum viable product)
     - Visualize data and progress
 
 
+---
+
+### Notes: 
+- Every orders that are not processed is cancelled over night
+- 모의투자 has some limitations: e.g., price < 1000 does not go through.
+- Race conditions could occur when getting responses from API server: e.g., 1) direct response of the command, 2) websocket response 
+- Revise is basically the same as cancel and then re-order
+- Cancelled order is only progressed up to order.processed quantity
+
