@@ -345,7 +345,7 @@ class OrderList: # submitted order list
     async def try_process_pending(self, order:Order):
         # Retry unmatched notices when new orders get order_no
         async with self._lock:
-            to_proces = self._pending_notices_by_order.get(order.order_no, [])
+            to_process = self._pending_notices_by_order.get(order.order_no, [])
             for notice in to_process:
                 order.update(notice)
             self._pending_notices_by_order.pop(order.order_no, None)
@@ -376,7 +376,6 @@ class OrderList: # submitted order list
         
         optlogger.info(f'Cancelling all outstanding {len(to_cancel_list)} orders:')
         await self.submit_orders_and_register(trenv, to_cancel_list)
-
 
     async def closing_check(self, delay=5): 
         await asyncio.sleep(delay)
