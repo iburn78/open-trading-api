@@ -1,93 +1,106 @@
+from gen_tools import *
+get_logger("main", "log/main.log")
+
 import kis_auth as ka
-from tools import *
-import sys
-import pickle
+from kis_tools import *
+from local_comm import *
 
 # ---------------------------------
-# 인증 and Set-up
+# auth and Set-up
 # ---------------------------------
 svr = 'vps' # prod, auto, vps
-ka.auth(svr)  # renew_token=True
+if svr != 'vps':
+    cfm = input("Running real trading mode, sure? (Enter svr name): ")
+    if cfm != svr:
+        log_raise("Check svr ---")
+
+ka.auth(svr)
 ka.auth_ws(svr)
 trenv = ka.getTREnv()
 main_orderlist = OrderList()
+ws_ready = asyncio.Event()
+command_queue = asyncio.Queue()
 
 # ---------------------------------
 # Account
 # ---------------------------------
 # the_account = Account().acc_load(trenv)
-# print(the_account)
+# optlog.info(the_account)
 
 # ---------------------------------
-# Order creation
-# ---------------------------------
-
-# with open('data.pkl', 'rb') as f:
-#     data_dict = pickle.load(f)
-# to_order = data_dict['codelist_summary']['price'].astype(int)
-# to_order = to_order.loc[to_order > 1200]
-
-def create_order():
-    new_orders = []
-    code = '001440'
-    for i in range(3):
-        quantity = 10+i*3
-        price = 16000+i*20
-        order = Order(code, "buy", quantity, ORD_DVSN.LIMIT, price)
-        new_orders.append(order)
-    return new_orders
-
-new_orders = create_order()
-
-# ---------------------------------
-# Response handling logic
+# Websocket and response handling logic
 # ---------------------------------
 async def async_on_result(ws, tr_id, result, data_info):
     if get_tr(trenv, tr_id) == 'TradeNotice': # Domestic stocks
         tn = TradeNotice.from_response(result)
-        await main_orderlist.process_notice(tn)
-        print(tn)
+        await main_orderlist.process_notice(tn, trenv)
+        optlog.info(tn)
+    # to add more tr_id ...
+    
     else:
         log_raise(f"Unexpected tr_id {tr_id} delivered")
 
 def on_result(ws, tr_id, result, data_info):
     asyncio.create_task(async_on_result(ws, tr_id, result, data_info))
 
-code = '001440'
-o = Order(code, 'buy', 10, ORD_DVSN.LIMIT, 10)
-o.order_no = '0000007247'
-o.org_no = '00950'
-a = ReviseCancelOrder(code, 'buy', 0, 'limit', 10, rc = RCtype.CANCEL, all_yn=AllYN.ALL, original_order=o)
-# ---------------------------------
-# async main
-# ---------------------------------
-async def main():
+async def websocket_loop():
     # Websocket
     kws = ka.KISWebSocket(api_url="/tryitout")
 
     # subscriptions
     kws.subscribe(request=ccnl_notice, data=[trenv.my_htsid])
+    # to add more ....
 
-    # run websocket until cancelled
-    start_task = asyncio.create_task(kws.start_async(on_result=on_result))
-    await async_sleep(trenv)
+    # run websocket 
+    asyncio.create_task(kws.start_async(on_result=on_result))
+    ws_ready.set()
 
-    # submit order
-    await main_orderlist.submit_orders_and_register(trenv, new_orders)
+# ---------------------------------
+# Process orders through the websocket
+# ---------------------------------
+async def process_commands():
+    await ws_ready.wait()
+    while True:
+        command = await command_queue.get()
+        if command is CANCEL:
+            await main_orderlist.cancel_all_outstanding(trenv)
+            await main_orderlist.closing_check()
+        elif isinstance(command, list):
+            if command: 
+                # in case command is a list of orders
+                if all(isinstance(item, Order) for item in command): 
+                    optlog.info(f"Trading main got: {command}")
+                    await main_orderlist.submit_orders_and_register(command, trenv)
+                else: 
+                    pass 
+        else:
+            log_raise("Undefined:", command)
+        command_queue.task_done()
 
-    # revise-cancel logic
-    rc_orders = [a]
+# ---------------------------------
+# Local comm handlers, server 
+# ---------------------------------
+async def handler(reader, writer):
+    await handle_client(reader, writer, 
+        # kwargs ------
+        command_queue=command_queue, 
+        main_orderlist=main_orderlist, 
+        trenv=trenv
+        )
 
-    await main_orderlist.submit_orders_and_register(trenv, rc_orders)
-    await main_orderlist.cancel_all_outstanding(trenv)
+async def start_server():
+    await ws_ready.wait()
+    server = await asyncio.start_server(handler, HOST, PORT)  # initializing and running in the background
+    optlog.info(f"Server listening on {HOST}:{PORT}")
+    async with server:  # catches server and manage with closing
+        await server.serve_forever() 
 
-    # closing 
-    await main_orderlist.closing_check()
-
-    print(main_orderlist)
-
-    # wait forever
-    await asyncio.gather(start_task)
+async def main():
+    await asyncio.gather(
+        websocket_loop(),
+        process_commands(),
+        start_server()
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())

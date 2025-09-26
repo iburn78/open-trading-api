@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # ====|  (REST) 접근 토큰 / (Websocket) 웹소켓 접속키 발급 에 필요한 API 호출 샘플 아래 참고하시기 바랍니다.  |=====================
 # ====|  API 호출 공통 함수 포함                                  |=====================
-
 import asyncio
 import copy
 import json
@@ -11,7 +10,7 @@ import time
 from base64 import b64decode
 from collections import namedtuple
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import StringIO
 import pandas as pd
 import requests
@@ -25,6 +24,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 key_bytes = 32
+reauth_safety_seconds = 300
 
 ppd_ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # ../..
 config_root = os.path.join(ppd_, 'config') 
@@ -36,59 +36,59 @@ with open(yaml_path, encoding="UTF-8") as f:
     _cfg = yaml.load(f, Loader=yaml.FullLoader)
 
 _TRENV = tuple()
-_last_auth_time = dict()
-_autoReAuth = False
+_expire_time = dict()
+_expire_time_ws = dict()
+_autoReAuth = True   # USAGE: when token file name is static, check token status when _url_fetch called
 _DEBUG = False
 _isPaper = False
 _smartSleep = 0.1 # min 0.05
 _demoSleep = 0.5 # min 0.5
 
 # 기본 헤더값 정의
-_base_headers = {
+_min_headers = {
     "Content-Type": "application/json",
     "Accept": "text/plain",
     "charset": "UTF-8",
-    "User-Agent": _cfg["my_agent"],
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
 }
+_base_headers = copy.deepcopy(_min_headers)
+
+_url_real = "https://openapi.koreainvestment.com:9443"
+_url_real_ws = "ws://ops.koreainvestment.com:21000" # 웹소켓
+_url_demo = "https://openapivts.koreainvestment.com:29443"
+_url_demo_ws = "ws://ops.koreainvestment.com:31000" # 모의투자 웹소켓
 
 # 토큰 발급 받아 저장 (토큰값, 토큰 유효시간,1일, 6시간 이내 발급신청시는 기존 토큰값과 동일, 발급시 알림톡 발송)
-def save_token(my_token, my_expired, token_file):
-    valid_date = datetime.strptime(my_expired, "%Y-%m-%d %H:%M:%S")
+def save_token(my_token, valid_date, token_file):
     with open(token_file, "w", encoding="utf-8") as f:
         f.write(f"token: {my_token}\n")
         f.write(f"valid-date: {valid_date}\n")
-
 
 # 토큰 확인 (토큰값, 토큰 유효시간_1일, 6시간 이내 발급신청시는 기존 토큰값과 동일, 발급시 알림톡 발송)
 def read_token(token_file):
     try:
         # 토큰이 저장된 파일 읽기
         with open(token_file, encoding="UTF-8") as f:
-            tkg_tmp = yaml.load(f, Loader=yaml.FullLoader)
+            tkg_tmp = yaml.load(f, Loader=yaml.FullLoader)   # datetime obj catched
 
-        # 토큰 만료 일,시간
-        exp_dt = datetime.strftime(tkg_tmp["valid-date"], "%Y-%m-%d %H:%M:%S")
-        # 현재일자,시간
-        now_dt = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+        # 토큰 만료 일,시간 
+        # exp_dt = datetime.strftime(tkg_tmp["valid-date"], "%Y-%m-%d %H:%M:%S")
+        # check_dt = (datetime.now()+timedelta(seconds=600)).strftime("%Y-%m-%d %H:%M:%S") 
 
-        # print('expire dt: ', exp_dt, ' vs now dt:', now_dt)
         # 저장된 토큰 만료일자 체크 (만료일시 > 현재일시 인경우 보관 토큰 리턴)
-        if exp_dt > now_dt:
-            return tkg_tmp["token"]
+        if tkg_tmp['valid-date'] > datetime.now() + timedelta(seconds=reauth_safety_seconds): # if at least xxx seconds left until exp
+            return tkg_tmp["token"], tkg_tmp["valid-date"]
         else:
             # print('Need new token: ', tkg_tmp['valid-date'])
-            return None
-    except Exception:
-        # print('read token error: ', e)
-        return None
-
+            return None, None
+    except Exception as e:
+        return None, None
 
 # 토큰 유효시간 체크해서 만료된 토큰이면 재발급처리
-def _getBaseHeader(svr, product):
+def _getBaseHeader(svr):
     if _autoReAuth:
-        reAuth(svr, product)
+        reAuth(svr) 
     return copy.deepcopy(_base_headers)
-
 
 # 가져오기 : 앱키, 앱시크리트, 종합계좌번호(계좌번호 중 숫자8자리), 계좌상품코드(계좌번호 중 숫자2자리), 토큰, 도메인
 def _setTRENV(cfg):
@@ -100,126 +100,87 @@ def _setTRENV(cfg):
         "my_app": cfg["my_app"],  # 앱키
         "my_sec": cfg["my_sec"],  # 앱시크리트
         "my_acct": cfg["my_acct"],  # 종합계좌번호(8자리)
-        "my_svr": cfg["my_svr"],  # current SVR
+        "my_svr": cfg["my_svr"],
         "my_prod": cfg["my_prod"],  # 계좌상품코드(2자리)
         "my_htsid": cfg["my_htsid"],  # HTS ID
         "my_token": cfg["my_token"],  # 토큰
         "my_url": cfg["my_url"],  
         "my_url_ws": cfg["my_url_ws"],
-        "env_dv": 'demo' if cfg["my_svr"] == "vps" else 'real',
+        "env_dv": 'demo' if _isPaper else 'real',
     }  
-    # 실전 도메인 (https://openapi.koreainvestment.com:9443)
-    # 모의 도메인 (https://openapivts.koreainvestment.com:29443)
-
     global _TRENV
     _TRENV = nt1(**d)
-    global _smartSleep
-    if _TRENV.env_dv == 'demo':
-        _smartSleep = _demoSleep
 
-def isPaperTrading():  # 모의투자 매매
-    return _isPaper
-
-
-# 실전투자면 'prod' or 'auto', 모의투자면 'vps'를 셋팅 하시기 바랍니다.
-def changeTREnv(token_key, svr, product):
+def changeTREnv(token_key, svr):
     cfg = dict()
-
     global _isPaper
     if svr == 'prod':  # 실전투자 
-        ak1 = 'main_app'  # 실전투자용 앱키
-        ak2 = 'main_sec'  # 실전투자용 앱시크리트
+        cfg["my_app"] = _cfg['main_app']
+        cfg["my_sec"] = _cfg['main_sec']
+        cfg['my_acct'] = _cfg['main_acct_stock']
         _isPaper = False
     elif svr == 'auto':  # 실전투자 (autotrading)
-        ak1 = 'autotrading_app'  # 실전투자용 앱키
-        ak2 = 'autotrading_sec'  # 실전투자용 앱시크리트
+        cfg["my_app"] = _cfg['autotrading_app']
+        cfg["my_sec"] = _cfg['autotrading_sec']
+        cfg['my_acct'] = _cfg['auto_acct_stock']
         _isPaper = False
     elif svr == 'vps':  # 모의투자
-        ak1 = 'paper_app'  # 모의투자용 앱키
-        ak2 = 'paper_sec'  # 모의투자용 앱시크리트
+        cfg["my_app"] = _cfg['paper_app']
+        cfg["my_sec"] = _cfg['paper_sec']
+        cfg['my_acct'] = _cfg['paper_acct_stock']
         _isPaper = True
 
-    cfg["my_app"] = _cfg[ak1]
-    cfg["my_sec"] = _cfg[ak2]
-
-    if svr == 'prod' and product == '01':  # 실전투자 주식투자, 위탁계좌, 투자계좌
-        cfg['my_acct'] = _cfg['main_acct_stock']
-    elif svr == 'auto' and product == '01':  # 실전투자 주식투자, 위탁계좌, 투자계좌 (autotrading)
-        cfg['my_acct'] = _cfg['auto_acct_stock']
-    elif svr == 'vps' and product == '01':  # 모의투자 주식투자, 위탁계좌, 투자계좌
-        cfg['my_acct'] = _cfg['paper_acct_stock']
-
-    # original account assignment logic
-    # if svr == "prod" and product == "01":  # 실전투자 주식투자, 위탁계좌, 투자계좌
-    #     cfg["my_acct"] = _cfg["my_acct_stock"]
-    # elif svr == "prod" and product == "03":  # 실전투자 선물옵션(파생)
-    #     cfg["my_acct"] = _cfg["my_acct_future"]
-    # elif svr == "prod" and product == "08":  # 실전투자 해외선물옵션(파생)
-    #     cfg["my_acct"] = _cfg["my_acct_future"]
-    # elif svr == "prod" and product == "22":  # 실전투자 개인연금저축계좌
-    #     cfg["my_acct"] = _cfg["my_acct_stock"]
-    # elif svr == "prod" and product == "29":  # 실전투자 퇴직연금계좌
-    #     cfg["my_acct"] = _cfg["my_acct_stock"]
-    # elif svr == "vps" and product == "01":  # 모의투자 주식투자, 위탁계좌, 투자계좌
-    #     cfg["my_acct"] = _cfg["my_paper_stock"]
-    # elif svr == "vps" and product == "03":  # 모의투자 선물옵션(파생)
-    #     cfg["my_acct"] = _cfg["my_paper_future"]
-
     cfg["my_svr"] = svr
-    cfg["my_prod"] = product
+    cfg["my_prod"] = _cfg["my_prod"]
     cfg["my_htsid"] = _cfg["my_htsid"]
-    cfg["my_url"] = _cfg[svr]
+    cfg["my_url"] = _url_demo if _isPaper else _url_real
+    cfg["my_url_ws"] = _url_demo_ws if _isPaper else _url_real_ws
 
     try:
         my_token = _TRENV.my_token
     except AttributeError:
         my_token = ""
     cfg["my_token"] = my_token if token_key else token_key
-    cfg["my_url_ws"] = _cfg["ops" if svr == "prod" else "auto_ops" if svr == "auto" else "vops"]
 
-    # print(cfg)
     _setTRENV(cfg)
 
+def getTREnv():
+    # if not initialized it is just empty
+    return _TRENV
+
+def smart_sleep():
+    if _DEBUG:
+        print(f"[RateLimit] Sleeping {_smartSleep}s ")
+    if _isPaper:
+        time.sleep(_demoSleep)
+    else: 
+        time.sleep(_smartSleep)
 
 def _getResultObject(json_data):
     _tc_ = namedtuple("res", json_data.keys())
 
     return _tc_(**json_data)
 
-
 # Token 발급, 유효기간 1일, 6시간 이내 발급시 기존 token값 유지, 발급시 알림톡 무조건 발송
 # 모의투자인 경우  svr='vps', 투자계좌(01)이 아닌경우 product='XX' 변경하세요 (계좌번호 뒤 2자리)
-def auth(svr, product=_cfg["my_prod"], url=None, renew_token=False):
-    token_file = os.path.join(token_path, 'KIS_'+datetime.today().strftime("%Y%m%d")+'_'+svr)  # 토큰 파일명
-    p = {
-        "grant_type": "client_credentials",
-    }
-    # 개인 환경파일 "kis_devlp.yaml" 파일을 참조하여 앱키, 앱시크리트 정보 가져오기
-    # 개인 환경파일명과 위치는 고객님만 아는 위치로 설정 바랍니다.
-    if svr == 'prod':  # 실전투자 - main
-        ak1 = 'main_app'  # 앱키 (실전투자용)
-        ak2 = 'main_sec'  # 앱시크리트 (실전투자용)
-    elif svr == 'auto':  # 실전투자 - autotrading
-        ak1 = 'autotrading_app'  # 앱키 (실전투자용)
-        ak2 = 'autotrading_sec' # 앱시크리트 (실전투자용)
-    elif svr == 'vps':  # 모의투자
-        ak1 = 'paper_app'  # 앱키 (모의투자용)
-        ak2 = 'paper_sec'  # 앱시크리트 (모의투자용)
+# 1분안에 두번 요청하면, 오류 
+def auth(svr):
+    # token_file = os.path.join(token_path, 'KIS_'+datetime.today().strftime("%Y%m%d")+'_'+svr)  # 토큰 파일명
+    token_file = os.path.join(token_path, 'KIS_token_'+svr)  # 토큰 파일명
 
-    # 앱키, 앱시크리트 가져오기
-    p["appkey"] = _cfg[ak1]
-    p["appsecret"] = _cfg[ak2]
-
-    if renew_token: 
-        saved_token = None
-    else:
-        # 기존 발급된 토큰이 있는지 확인
-        saved_token = read_token(token_file)  # 기존 발급 토큰 확인
-    # print("saved_token: ", saved_token)
+    # 기존 발급된 토큰이 있는지 확인
+    saved_token, exp_dt_obj = read_token(token_file)  # 기존 발급 토큰 확인 및 유효시간 체크
+    global _expire_time
     if saved_token is None:  # 기존 발급 토큰 확인이 안되면 발급처리
-        url = f"{_cfg[svr]}/oauth2/tokenP"
+        changeTREnv(None, svr) # initialize _TRENV
+        p = {
+            "grant_type": "client_credentials",
+            "appkey": _TRENV.my_app,
+            "appsecret": _TRENV.my_sec, 
+        }
+        url = f"{_TRENV.my_url}/oauth2/tokenP"
         res = requests.post(
-            url, data=json.dumps(p), headers=_getBaseHeader(svr, product)
+            url, data=json.dumps(p), headers=_min_headers
         )  # 토큰 발급
         rescode = res.status_code
         if rescode == 200:  # 토큰 정상 발급
@@ -227,49 +188,31 @@ def auth(svr, product=_cfg["my_prod"], url=None, renew_token=False):
             my_expired = _getResultObject(
                 res.json()
             ).access_token_token_expired  # 토큰값 만료일시 가져오기
-            save_token(my_token, my_expired, token_file)  # 새로 발급 받은 토큰 저장
+
+            valid_date = datetime.strptime(my_expired, "%Y-%m-%d %H:%M:%S")
+            save_token(my_token, valid_date, token_file)  # 새로 발급 받은 토큰 저장
+            _expire_time[svr] = valid_date
+            if _DEBUG:
+                print(f"[{_expire_time[svr]}] => get AUTH Key completed!")
         else:
             print("Get Authentification token fail!\nYou have to restart your app!!!")
             return
     else:
         my_token = saved_token  # 기존 발급 토큰 확인되어 기존 토큰 사용
+        _expire_time[svr] = exp_dt_obj
 
     # 발급토큰 정보 포함해서 헤더값 저장 관리, API 호출시 필요
-    changeTREnv(my_token, svr, product)
+    changeTREnv(my_token, svr)
 
     _base_headers["authorization"] = f"Bearer {my_token}"
     _base_headers["appkey"] = _TRENV.my_app
     _base_headers["appsecret"] = _TRENV.my_sec
 
-    global _last_auth_time
-    _last_auth_time[svr] = datetime.now()
-
-    if _DEBUG:
-        print(f"[{_last_auth_time[svr]}] => get AUTH Key completed!")
-
-
 # end of initialize, 토큰 재발급, 토큰 발급시 유효시간 1일
-# 프로그램 실행시 _last_auth_time 에 저장하여 유효시간 체크, 유효시간 만료시 토큰 발급 처리
-def reAuth(svr, product):
-    n2 = datetime.now()
-    if (n2 - _last_auth_time[svr]).seconds >= 86400:  # 유효시간 1일
-        auth(svr, product)
-
-
-def getEnv():
-    return _cfg
-
-
-def smart_sleep():
-    if _DEBUG:
-        print(f"[RateLimit] Sleeping {_smartSleep}s ")
-
-    time.sleep(_smartSleep)
-
-
-def getTREnv():
-    return _TRENV
-
+# 프로그램 실행시 _expire_time 에 저장하여 유효시간 체크, 유효시간 만료시 토큰 발급 처리
+def reAuth(svr):
+    if datetime.now() + timedelta(seconds=reauth_safety_seconds) > _expire_time[svr]:
+        auth(svr)
 
 # 주문 API에서 사용할 hash key값을 받아 header에 설정해 주는 함수
 # 현재는 hash key 필수 사항아님, 생략가능, API 호출과정에서 변조 우려를 하는 경우 사용
@@ -284,7 +227,6 @@ def set_order_hash_key(h, p):
         h["hashkey"] = _getResultObject(res.json()).HASH
     else:
         print("Error:", rescode)
-
 
 # API 호출 응답에 필요한 처리 공통 함수
 class APIResp:
@@ -364,7 +306,6 @@ class APIResp:
 
     # end of class APIResp
 
-
 class APIRespError(APIResp):
     def __init__(self, status_code, error_text):
         # 부모 생성자 호출하지 않고 직접 초기화
@@ -411,21 +352,18 @@ class APIRespError(APIResp):
         if url:
             print(f"URL: {url}")
 
-
 ########### API call wrapping : API 호출 공통
-
-
 def _url_fetch(
         api_url, ptr_id, tr_cont, params, appendHeaders=None, postFlag=False, hashFlag=True
 ):
     url = f"{getTREnv().my_url}{api_url}"
 
-    headers = _getBaseHeader(getTREnv().my_svr, getTREnv().my_prod)  # 기본 header 값 정리
+    headers = _getBaseHeader(getTREnv().my_svr)  # 기본 header 값 정리
 
     # 추가 Header 설정
     tr_id = ptr_id
     if ptr_id[0] in ("T", "J", "C"):  # 실전투자용 TR id 체크
-        if isPaperTrading():  # 모의투자용 TR id 식별
+        if _isPaper:  
             tr_id = "V" + ptr_id[1:]
 
     headers["tr_id"] = tr_id  # 트랜젝션 TR id
@@ -459,40 +397,29 @@ def _url_fetch(
         return APIRespError(res.status_code, res.text)
 
 
-
-
 ########### New - websocket 대응
-
-_base_headers_ws = {
+_min_headers_ws = {
     "content-type": "utf-8",
 }
+_base_headers_ws = copy.deepcopy(_min_headers_ws)
 
-
-def _getBaseHeader_ws(svr, product):
+def _getBaseHeader_ws(svr):
     if _autoReAuth:
-        reAuth_ws(svr, product)
+        reAuth_ws(svr)
 
     return copy.deepcopy(_base_headers_ws)
 
+# 접속키의 유효기간은 24시간이지만, 접속키는 세션 연결 시 초기 1회만 사용하기 때문에 접속키 인증 후에는 세션종료되지 않는 이상 접속키 신규 발급받지 않아도됨
+def auth_ws(svr):
+    changeTREnv(None, svr) # initialize _TRENV
+    p = {
+        "grant_type": "client_credentials",
+        "appkey": _TRENV.my_app,
+        "secretkey": _TRENV.my_sec, 
+    }
 
-def auth_ws(svr, product=_cfg["my_prod"]):
-    p = {"grant_type": "client_credentials"}
-
-    if svr == 'prod':  # 실전투자 - main
-        ak1 = 'main_app'  # 앱키 (실전투자용)
-        ak2 = 'main_sec'  # 앱시크리트 (실전투자용)
-    elif svr == 'auto':  # 실전투자 - autotrading
-        ak1 = 'autotrading_app'  # 앱키 (실전투자용)
-        ak2 = 'autotrading_sec' # 앱시크리트 (실전투자용)
-    elif svr == 'vps':  # 모의투자
-        ak1 = 'paper_app'  # 앱키 (모의투자용)
-        ak2 = 'paper_sec'  # 앱시크리트 (모의투자용)
-
-    p["appkey"] = _cfg[ak1]
-    p["secretkey"] = _cfg[ak2]
-
-    url = f"{_cfg[svr]}/oauth2/Approval"
-    res = requests.post(url, data=json.dumps(p), headers=_getBaseHeader(svr, product))  # 토큰 발급
+    url = f"{_TRENV.my_url}/oauth2/Approval" 
+    res = requests.post(url, data=json.dumps(p), headers=_min_headers_ws)  # 토큰 발급
     rescode = res.status_code
     if rescode == 200:  # 토큰 정상 발급
         approval_key = _getResultObject(res.json()).approval_key
@@ -500,25 +427,20 @@ def auth_ws(svr, product=_cfg["my_prod"]):
         print("Get Approval token fail!\nYou have to restart your app!!!")
         return
 
-    changeTREnv(None, svr, product)
-
     _base_headers_ws["approval_key"] = approval_key
 
-    global _last_auth_time
-    _last_auth_time[svr] = datetime.now()
+    global _expire_time_ws
+    _expire_time_ws[svr] = datetime.now() + timedelta(hours = 24)
 
     if _DEBUG:
-        print(f"[{_last_auth_time[svr]}] => get AUTH Key completed!")
+        print(f"[{_expire_time_ws[svr]}] => get AUTH Key completed!")
 
-
-def reAuth_ws(svr, product):
-    n2 = datetime.now()
-    if (n2 - _last_auth_time[svr]).seconds >= 86400:
-        auth_ws(svr, product)
-
+def reAuth_ws(svr):
+    if datetime.now() + timedelta(seconds=reauth_safety_seconds) > _expire_time_ws[svr]:
+        auth_ws(svr)
 
 def data_fetch(tr_id, tr_type, params, appendHeaders=None) -> dict:
-    headers = _getBaseHeader_ws(getTREnv().my_svr, getTREnv().my_prod)  # 기본 header 값 정리
+    headers = _getBaseHeader_ws(getTREnv().my_svr) # 기본 header 값 정리
 
     headers["tr_type"] = tr_type
     headers["custtype"] = "P"
@@ -689,13 +611,19 @@ class KISWebSocket:
                 ##################################################
                 # if dm.get("encrypt", None) == "Y":
                 ##################################################
-                if raw[0] == "1":
+                if raw[0] == "1": # 실시간 응답의 경우, 0: 암호화되지 않은 데이터, 1: 암호화된 데이터
                     d = aes_cbc_base64_dec(dm["key"], dm["iv"], d)
                 df = pd.read_csv(
                     StringIO(d), header=None, sep="^", names=dm["columns"], dtype=object,
-                    on_bad_lines='error'   # raise if columns mismatch
+                    on_bad_lines='error'   # default / does not raise for mismatched columns
                 )
-                # print(df.T.to_string())
+                if df.shape[1] != len(dm['columns']):
+                    print("-------------------------------------------")
+                    print(d)
+                    print(dm['columns'])
+                    print("-------------------------------------------")
+                    raise Exception(f"tr_id {tr_id}: response length does not match with column length ---")
+
                 show_result = True
 
             else:

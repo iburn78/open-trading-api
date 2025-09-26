@@ -1,0 +1,58 @@
+import os
+import logging
+import pandas as pd
+import numpy as np
+
+_df_krx_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'trader/data_collection/data/df_krx.feather')
+df_krx = pd.read_feather(_df_krx_path)
+
+def get_market(code):
+    if code not in df_krx.index: 
+        log_raise(f'Code {code} not in df_krx ---')
+    market = df_krx.at[code, "Market"].strip()
+    words = market.replace("_", " ").split()
+    return words[0].upper()
+
+optlog: logging.Logger = None
+
+def get_logger(name: str, log_file: str, level=logging.INFO) -> logging.Logger:
+    global optlog
+    if optlog is not None: 
+        return # already initialized
+
+    optlog = logging.getLogger(name) # name is necessary not to override root logger
+    optlog.setLevel(level)
+    optlog.propagate = False
+
+    if not optlog.handlers:  # avoid duplicate handlers on re-import
+        formatter = logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%m/%d %H:%M:%S"
+        )
+
+        fh = logging.FileHandler(log_file)
+        fh.setFormatter(formatter)
+
+        sh = logging.StreamHandler()
+        sh.setFormatter(formatter)
+
+        optlog.addHandler(fh)
+        optlog.addHandler(sh)
+
+def log_raise(msg, logger=None):
+    logger = logger or optlog # arg default value looped up only once in reading func def. when dynamically initiallizing, need to catch dynamically.
+    logger.error(msg)
+    raise Exception(msg) 
+
+# only works for int!
+def excel_round_int(x, ndigits=0):  # excel like rounding / works for scaler and vector
+    x = np.asarray(x)
+    eps = 1e-10
+    eps_sign = np.where(x >=0, eps, -eps)
+    return (np.round(x + eps_sign, ndigits)+eps_sign).astype(int)
+
+def adj_int(x):   # float issue removed / works for scaler and vector
+    x = np.asarray(x)
+    eps = 1e-10
+    eps_sign = np.where(x >=0, eps, -eps)
+    return (x+eps_sign).astype(int)
