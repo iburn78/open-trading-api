@@ -3,6 +3,7 @@ get_logger("client", "log/client.log")
 
 from kis_tools import *
 from local_comm import *
+from agent import *
 
 def create_order():
     new_orders = []
@@ -19,13 +20,20 @@ new_orders = create_order()
 # toc = new_orders[0]
 # a = ReviseCancelOrder(toc.code, toc.side, toc.quantity, toc.ord_dvsn, toc.price, rc=RCtype.CANCEL, all_yn=AllYN.ALL, original_order=toc)
 
-asyncio.run(send_command('submit_orders', {'data': new_orders}))   
-time.sleep(15)
+# asyncio.run(send_command('submit_orders', {'data': new_orders}))   
+# time.sleep(15)
 
-a = asyncio.run(send_command('get_account', None))
-print(a['data'])
+# a = asyncio.run(send_command('get_account', None))
+# print(a['data'])
 
-a = asyncio.run(send_command('get_orders')) 
-print(a['data'])
+# a = asyncio.run(send_command('get_orderlist')) 
+# print(a['data'])
+
+code = '001440' 
+response = asyncio.run(send_command('get_agent', code))
+
+print(response.get('response_status'))
+print(response.get('response_data'))
+
 
 

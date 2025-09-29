@@ -4,6 +4,25 @@ get_logger("main", "log/main.log")
 import kis_auth as ka
 from kis_tools import *
 from local_comm import *
+from strategy import *
+from agent import *
+
+# main.py -----------------------------------------------------------
+# KIS와의 Communication
+# - REST: 1회성 request/response
+# - WS: tradenotice 수신
+# Localhost Server
+# - local client의 request handle
+# Account 정보 관리
+# - the_account
+# - Server에서 정보 읽어옴
+# - Update (not yet implemented)
+# AgentManager 
+# - TradeTarget으로 trade_target 수신
+# - trade_target 및 the_account 감안해서 book 생성
+# - agents의 보관: agents 
+# - agents의 active 여부, 행동 관리 
+# - agents의 성과관리 (not yet implemented)
 
 # ---------------------------------
 # auth and Set-up
@@ -24,8 +43,44 @@ command_queue = asyncio.Queue()
 # ---------------------------------
 # Account
 # ---------------------------------
-# the_account = Account().acc_load(trenv)
-# optlog.info(the_account)
+the_account = Account().acc_load(trenv)
+optlog.info(the_account)
+
+# ---------------------------------
+# Target setting and agent creation
+# ---------------------------------
+trade_target = TradeTarget(the_account=the_account) # trade_target never changes while running
+agent_manager = AgentManager(trade_target=trade_target)
+
+# ---------------------------------
+# Variables to share with clients
+# ---------------------------------
+server_data_dict ={
+    'command_queue' : command_queue, 
+    'main_orderlist' : main_orderlist, 
+    'the_account' : the_account,
+    'agent_manager' : agent_manager,
+}
+
+# ---------------------------------
+# Process orders through the websocket
+# ---------------------------------
+async def process_commands():
+    await ws_ready.wait()
+    while True:
+        (request_command, request_data) = await command_queue.get()
+        if request_command == "cancel_orders":
+            await main_orderlist.cancel_all_outstanding(trenv)
+            await main_orderlist.closing_check()
+        
+        elif request_command == "submit_orders":
+            if request_data: # list [order, order, ... ]
+                optlog.info(f"Trading main got: {request_data}")
+                await main_orderlist.submit_orders_and_register(request_data, trenv)
+
+        else:
+            log_raise("Undefined:", request_command)
+        command_queue.task_done()
 
 # ---------------------------------
 # Websocket and response handling logic
@@ -56,41 +111,14 @@ async def websocket_loop():
     ws_ready.set()
 
 # ---------------------------------
-# Process orders through the websocket
-# ---------------------------------
-async def process_commands():
-    await ws_ready.wait()
-    while True:
-        command = await command_queue.get()
-        if command is CANCEL:
-            await main_orderlist.cancel_all_outstanding(trenv)
-            await main_orderlist.closing_check()
-        elif isinstance(command, list):
-            if command: 
-                # in case command is a list of orders
-                if all(isinstance(item, Order) for item in command): 
-                    optlog.info(f"Trading main got: {command}")
-                    await main_orderlist.submit_orders_and_register(command, trenv)
-                else: 
-                    pass 
-        else:
-            log_raise("Undefined:", command)
-        command_queue.task_done()
-
-# ---------------------------------
 # Local comm handlers, server 
 # ---------------------------------
-async def handler(reader, writer):
-    await handle_client(reader, writer, 
-        # kwargs ------
-        command_queue=command_queue, 
-        main_orderlist=main_orderlist, 
-        trenv=trenv
-        )
+async def handler_shell(reader, writer):
+    await handle_client(reader, writer, **server_data_dict)
 
 async def start_server():
     await ws_ready.wait()
-    server = await asyncio.start_server(handler, HOST, PORT)  # initializing and running in the background
+    server = await asyncio.start_server(handler_shell, HOST, PORT)  # initializing and running in the background
     optlog.info(f"Server listening on {HOST}:{PORT}")
     async with server:  # catches server and manage with closing
         await server.serve_forever() 
