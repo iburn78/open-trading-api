@@ -11,17 +11,18 @@ from kis_auth import _smartSleep, _demoSleep
 from collections import defaultdict
 
 tr_id_dict = {
-    'TradeNotice': {'demo': 'H0STCNI9', 'real': 'H0STCNI0',},
+    'TransactionNotice': {'demo': 'H0STCNI9', 'real': 'H0STCNI0',},
+    'TransactionPrices_KRX': {'demo': 'H0STCNT0', 'real': 'H0STCNT0',}, # 실시간 체결가 (KRX) 
+    'TransactionPrices_Total': {'demo': None, 'real': 'H0UNCNT0',}, # 실시간 체결가 (종합) - 종합은 모의투자 미지원
     # to add more...
 }
 
-rev_tr_id_dict = {
-    (env, tr): name
-    for name, env_dict in tr_id_dict.items()
-    for env, tr in env_dict.items()
-}
-
-def get_tr(trenv, tr_id, rev_tr_id_dict = rev_tr_id_dict):
+def get_tr(trenv, tr_id):
+    rev_tr_id_dict = { 
+        (env, tr): name 
+        for name, env_dict in tr_id_dict.items()
+        for env, tr in env_dict.items()
+        }
     return rev_tr_id_dict.get((trenv.env_dv, tr_id))
 
 async def async_sleep(trenv):
@@ -283,19 +284,19 @@ class Order:
 
     def __post_init__(self):
         if type(self.quantity) != int or type(self.price) != int:
-            log_raise("submit with quantity and/or price as int")
+            log_raise("submit with quantity and/or price as int ---")
         if self.side not in ("buy", "sell"):
-            log_raise("side must be 'buy' or 'sell'")
+            log_raise("side must be 'buy' or 'sell' ---")
 
         if self.ord_dvsn == ORD_DVSN.LIMIT and self.price == 0:
             log_raise("Limit orders require a price")
         if self.ord_dvsn == ORD_DVSN.MARKET and self.price != 0:
-            log_raise("Market orders should not have a price")
+            log_raise("Market orders should not have a price ---")
 
         self.market = get_market(self.code)
 
         if self.market not in ['KOSPI', 'KOSDAQ']:
-            log_raise("Check the market of the stock: KOSPI or KOSDAQ")
+            log_raise("Check the market of the stock: KOSPI or KOSDAQ ---")
         
     
     def __str__(self):
@@ -320,7 +321,7 @@ class Order:
             self.submitted = True
             optlog.info(f"Order {self.order_no} submitted")
     
-    def update(self, notice: TradeNotice, trenv):
+    def update(self, notice: TransactionNotice, trenv):
         if self.order_no != notice.oder_no: # checking order_no (or double-checking)
             log_raise(f"Notice does not match with order {self.order_no} ---")
         if self.completed or self.cancelled: 
@@ -395,7 +396,7 @@ class ReviseCancelOrder(Order):
     def __post_init__(self):
         super().__post_init__()  # need to call explicitly 
         if self.original_order is None: 
-            log_raise(f"Check revise-cancel original order ---")
+            log_raise("Check revise-cancel original order ---")
 
     # revise is cancel + re-order
     # new order_no is assigned both for revise and cancel
@@ -470,9 +471,11 @@ class OrderList: # submitted order list
 
     # defaultdict(list) is useful when there is 1 to N relationship, e.g., multiple notices to one order
     # simple access to defaultdict would generate key inside with empty list - handle with care
-    _pending_notices_by_order: dict[str, list[TradeNotice]] = field(
+    _pending_tr_notices: dict[str, list[TransactionNotice]] = field(
         default_factory=lambda: defaultdict(list)
     )
+    # the _lock is an instance variable used to protect the 'all' variable and '_pending_tr_notices' variable in each OrderList instance
+    # if and only if the two variables are indenpendent, you may split it to two _locks for performance
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
     def __str__(self):
@@ -480,24 +483,25 @@ class OrderList: # submitted order list
             return "<no orders>"
         return "\n".join(str(order) for order in self.all)
 
-    async def process_notice(self, notice: TradeNotice, trenv):
+    async def process_tr_notice(self, notice: TransactionNotice, trenv):
         # reroute notice to corresponding order
         # notice content handling logic should reside in Order class
-        # process notice could arrive faster than order submit result - should not use order_no
+        # tr notice could arrive faster than order submit result - should not use order_no
+        # i.e., race condition could occur
         async with self._lock:
             order = next((o for o in self.all if o.order_no is not None and o.order_no == notice.oder_no), None)
             if order is not None:
                 order.update(notice, trenv)
             else:
-                self._pending_notices_by_order[notice.oder_no].append(notice)
+                self._pending_tr_notices[notice.oder_no].append(notice)
 
-    async def try_process_pending(self, order:Order, trenv):
+    async def try_process_pending_tr_notices(self, order:Order, trenv):
         # Retry unmatched notices when new orders get order_no
         async with self._lock:
-            to_process = self._pending_notices_by_order.get(order.order_no, [])
+            to_process = self._pending_tr_notices.get(order.order_no, [])
             for notice in to_process:
                 order.update(notice, trenv)
-            self._pending_notices_by_order.pop(order.order_no, None)
+            self._pending_tr_notices.pop(order.order_no, None)
 
     async def submit_orders_and_register(self, orders:list, trenv): # only accepts new orders not submitted.
         if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should not have been submitted ---')
@@ -505,7 +509,7 @@ class OrderList: # submitted order list
             await asyncio.to_thread(order.submit, trenv)
             async with self._lock:
                 self.all.append(order)
-            await self.try_process_pending(order, trenv) # catch notices that are delivered before registration into order list
+            await self.try_process_pending_tr_notices(order, trenv) # catch notices that are delivered before registration into order list
             await async_sleep(trenv)
     
     async def cancel_all_outstanding(self, trenv):
@@ -522,7 +526,7 @@ class OrderList: # submitted order list
         optlog.info(f'Cancelling all outstanding {len(to_cancel_list)} orders:')
         await self.submit_orders_and_register(to_cancel_list, trenv)
 
-    async def closing_check(self, delay=5): 
+    async def closing_checker(self, delay=5): 
         await asyncio.sleep(delay)
         # 1. check if any order not yet submitted or accepted
         not_submitted = [o for o in self.all if not o.submitted]
@@ -533,22 +537,24 @@ class OrderList: # submitted order list
             log_raise(f"Cannot close: {len(not_submitted)} orders not yet accepted ---")
 
         # 2. check if any pending notices remain
-        if self._pending_notices_by_order:
-            l = len(self._pending_notices_by_order)
-            count = sum(len(v) for v in self._pending_notices_by_order.values())
-            log_raise(f"Cannot close: pending notices dict has {l} items, with total {count} pending notices")
+        if self._pending_tr_notices:
+            l = len(self._pending_tr_notices)
+            count = sum(len(v) for v in self._pending_tr_notices.values())
+            log_raise(f"Cannot close: pending notices dict has {l} items, with total {count} pending notices ---")
 
         optlog.info("[v] closing check successful")
-        # #########################################
+        # ##################################################################################
         # MAY SAVE STATUS or .... follow-up
-        # #########################################
+        # Generate Report
+        # Is this truely the end of main.py? Or, could be a chance to save some state
+        # ################################################################################## 
 
 def pd_nan_chker_(casttype, val):
     # values are always str
     return None if pd.isna(val) else {"str": str, "int": int, "float": float}[casttype](val)
 
 @dataclass
-class TradeNotice: # 국내주식 실시간체결통보
+class TransactionNotice: # 국내주식 실시간체결통보
     acnt_no: Optional[str] = None # account number
     oder_no: Optional[str] = None # order number
     ooder_no: Optional[str] = None # original order number 
@@ -570,11 +576,11 @@ class TradeNotice: # 국내주식 실시간체결통보
     oder_prc: Optional[int] = None # order price    
 
     def __str__(self):
-        return "TradeNotice:" + json.dumps(asdict(self), indent=4, default=str)
+        return "TransactionNotice:" + json.dumps(asdict(self), indent=4, default=str)
 
     def _set_data(self, res):
         if res.empty:
-            log_raise("Empty response in TradeNotice.from_response ---")
+            log_raise("Empty response in TransactionNotice.from_response ---")
         row = res.iloc[0] 
         self.acnt_no        = pd_nan_chker_("str", row["ACNT_NO"])
         self.oder_no        = pd_nan_chker_("str", row["ODER_NO"])
@@ -604,5 +610,68 @@ class TradeNotice: # 국내주식 실시간체결통보
         obj = cls()
         obj._set_data(res)
         return obj
-    
+
+# WHY DO I NEED THIS? THINK .... 
+@dataclass
+class TransactionPrices: # 국내주식 실시간체결가 (KRX, but should be the same for NXT, total)
+    trprices: pd.DataFrame
+
+    # this doesn't do anything yet... 
+    def _get_columns(self, trenv):
+        if trenv.env_dv == 'demo': # KRX
+            CNTG_CLS_CODE = 'CCLD_DVSN'
+        else: 
+            CNTG_CLS_CODE = 'CNTG_CLS_CODE' # "CNTG_CLS_CODE" for 'NXT' and 'TOTAL' 
+        _columns = [
+            "MKSC_SHRN_ISCD", # code
+            "STCK_CNTG_HOUR", # hour
+            "STCK_PRPR", # 체결가
+            "PRDY_VRSS_SIGN", 
+            "PRDY_VRSS", 
+            "PRDY_CTRT",
+            "WGHN_AVRG_STCK_PRC",
+            "STCK_OPRC", # opening
+            "STCK_HGPR", # high
+            "STCK_LWPR", # low
+            "ASKP1", # 매도호가1
+            "BIDP1", # 매수호가1
+            "CNTG_VOL",  # 체결 거래량 
+            "ACML_VOL",  # 누적 거래량
+            "ACML_TR_PBMN", # 누적 거래 대금 
+            "SELN_CNTG_CSNU", # 매도 체결 건수 (1건 = multiple stocks)
+            "SHNU_CNTG_CSNU", # 매수 체결 건수
+            "NTBY_CNTG_CSNU", # 순매수 체결 건수
+            "CTTR",  # 체결강도
+            "SELN_CNTG_SMTN",  # 총매도수량 (number of stocks)
+            "SHNU_CNTG_SMTN",  # 총매수수량
+            CNTG_CLS_CODE,  # 1: 매수(+), 3: 장전, 5: 매도(-)
+            "SHNU_RATE", # 매수비율
+            "PRDY_VOL_VRSS_ACML_VOL_RATE", # 전일 거래량 대비 등락률
+            "OPRC_HOUR", 
+            "OPRC_VRSS_PRPR_SIGN",
+            "OPRC_VRSS_PRPR",
+            "HGPR_HOUR",
+            "HGPR_VRSS_PRPR_SIGN",
+            "HGPR_VRSS_PRPR",
+            "LWPR_HOUR",
+            "LWPR_VRSS_PRPR_SIGN",
+            "LWPR_VRSS_PRPR",
+            "BSOP_DATE", # 영업일자
+            "NEW_MKOP_CLS_CODE", # 20: 장중/보통, 32: 장종료후/종가
+            "TRHT_YN", # 거래정지 Y/N
+            "ASKP_RSQN1", # 매도호가 잔량1
+            "BIDP_RSQN1", # 매수호가 잔량1
+            "TOTAL_ASKP_RSQN", # 총 매도호가 잔량
+            "TOTAL_BIDP_RSQN", # 총 매수호가 잔량
+            "VOL_TNRT", # 거래량 회전률
+            "PRDY_SMNS_HOUR_ACML_VOL", # 전일 동시간 누적 거래량
+            "PRDY_SMNS_HOUR_ACML_VOL_RATE", # 전일 동시간 누적 거래량 비율
+            "HOUR_CLS_CODE", # 시간구분코드 0: 장중, A: 장후예상, B: 장전예상, C: 9시 이후의 예상가, VI발동, D: 시간외 단일가 예상
+            "MRKT_TRTM_CLS_CODE", # 임의종료구분코드
+            "VI_STND_PRC", # 정적VI발동기준가
+        ]
+        return _columns
+
+
+
 

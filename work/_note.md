@@ -54,6 +54,9 @@ First, focus on building an MVP (minimum viable product)
 - Functions:
     - Visualize data and progress
 
+### Guide book 
+- Wikidocs
+    - https://wikidocs.net/book/7847
 
 ---
 

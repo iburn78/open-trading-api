@@ -1,14 +1,24 @@
 from gen_tools import *
-from kis_tools import Account
+from kis_tools import Account, TransactionPrices
 from dataclasses import dataclass, field
+import asyncio
 from strategy import *
 
 @dataclass
 class Agent:
     code: str
+    # ---------------------------------
     # may add other properties
+    # ---------------------------------
     cash_t_2: int # available cash for trading
     active: bool = False
+    stats: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.stats = {
+            'key_data': 0, 
+            'count': 0,
+        }
 
     def report(self): # to AgentManager
         pass
@@ -16,11 +26,18 @@ class Agent:
     def report_performance(self): # to update overall performance
         pass
 
+    def update_stats(self, trp: TransactionPrices):
+        self.stats['key_data'] += int(trp.trprices['CNTG_VOL'].iat[0])
+        self.stats['count'] += 1
+
+
 @dataclass
 class AgentManager:
     trade_target: TradeTarget
     target_df: pd.DataFrame = None
     agent_list: list = field(default_factory=list)
+    # the _lock is instnace variable, which means it protects the agent_list in each AgentManager instance
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
     def __post_init__(self):
         self.target_df = self.trade_target.target_df
@@ -46,12 +63,12 @@ class AgentManager:
                 agent.active = True
                 return True
             else: 
-                optlog.error(f'Agent for {code} is already active - check logic')
+                optlog.warning(f'Agent for {code} is already active - check logic')
                 return False
         else: 
-            optlog.error(f"No such agent for {code} - check the code is in trade target")
+            optlog.warning(f"No such agent for {code} - check the code is in trade target")
             return False
-    
+
     def deactivate_agent(self, code):
         agent = self.get_agent(code)
         if agent: 
@@ -60,10 +77,25 @@ class AgentManager:
                 agent.active = False
                 return True
             else: 
-                optlog.error(f'Agent for {code} is already inactive - check logic')
+                optlog.warning(f'Agent for {code} is already inactive - check logic')
                 return False
 
         else: 
-            optlog.error(f"No such agent for {code} - check the code is in trade target")
+            optlog.warning(f"No such agent for {code} - check the code is in trade target")
             return False
     
+    def agent_status(self):
+        # ---------------------------------
+        # active agents: 
+        # inactive agents: 
+        # performance summary (if handled here)
+        # ---------------------------------
+        pass
+
+    async def process_tr_prices(self, trp: TransactionPrices):
+        code = trp.trprices['MKSC_SHRN_ISCD'].iat[0]
+        async with self._lock:
+            agent = next((agent for agent in self.agent_list if agent.code == code), None)
+            if agent is None:
+                log_raise(f"No matching agent for code {code} ---")
+            agent.update_stats(trp)

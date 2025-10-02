@@ -17,7 +17,9 @@ from kis_tools import Account
 class TradeTarget:
     # target has to reflect the current account situation
     the_account: Account
-    MAX_USAGE_CASH_T_2 = 0.9 # safety margin on cash_t_2
+
+    # safety margin on cash_t_2
+    MAX_USAGE_CASH_T_2 = 0.9 
 
     # may read this from an Excel file (then format checker is required)
     target_df: pd.DataFrame = None
@@ -27,13 +29,15 @@ class TradeTarget:
 
     def __post_init__(self):
         self.target_df = pd.DataFrame(columns=self._columns)
-        target_codes = self._get_target_codes()
+        target_codes = self._temporary_target_code_gen()
         self._initialize_target_df(target_codes)
         self._sync_with_account()
-        self._check_cash_t_2_total()
+        # ----------------------------------------------------
+        # self._check_cash_t_2_total()  # need to de-comment this...
+        # ----------------------------------------------------
 
-    def _get_target_codes(self):
-        some_codes = ['005930', '000660', '001440', '000240', '003230']
+    def _temporary_target_code_gen(self):
+        some_codes = ['000660', '001440', '000240', '003230']
         return some_codes
 
     def _initialize_target_df(self, target_codes: list):
@@ -84,5 +88,7 @@ class TradeTarget:
         cash_t_2_total_allocated = self.target_df.loc[~mask, 'cash_t_2'].sum() 
         if self.the_account.cash.t_2*self.MAX_USAGE_CASH_T_2 <= cash_t_2_total_allocated:
             # this case needs attention in allocating cash
-            log_raise("Total allocated exposure exceeds the available cash")
+            log_raise("Total allocated exposure exceeds the available cash ---")
         
+    def get_target_codes(self):
+        return self.target_df['code'].to_list()

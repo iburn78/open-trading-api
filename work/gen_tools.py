@@ -1,5 +1,6 @@
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 import pandas as pd
 import numpy as np
 
@@ -14,11 +15,17 @@ def get_market(code):
     return words[0].upper()
 
 optlog: logging.Logger = None
-
-def get_logger(name: str, log_file: str, level=logging.INFO) -> logging.Logger:
+MAX_BYTES = 10_000_000 # 10 MB
+BACKUP_COUNT = 5 # 5 files
+def get_logger(name: str, log_file: str, level=logging.INFO,
+            max_bytes=MAX_BYTES, backup_count=BACKUP_COUNT) -> logging.Logger:
+    """
+    max_bytes: max size in bytes before rotation
+    backup_count: number of backup files to keep
+    """
     global optlog
-    if optlog is not None: 
-        return # already initialized
+    if optlog is not None:
+        return optlog  # already initialized
 
     optlog = logging.getLogger(name) # name is necessary not to override root logger
     optlog.setLevel(level)
@@ -30,7 +37,7 @@ def get_logger(name: str, log_file: str, level=logging.INFO) -> logging.Logger:
             datefmt="%m/%d %H:%M:%S"
         )
 
-        fh = logging.FileHandler(log_file)
+        fh = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
         fh.setFormatter(formatter)
 
         sh = logging.StreamHandler()

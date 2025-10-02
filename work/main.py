@@ -1,5 +1,5 @@
 from gen_tools import *
-get_logger("main", "log/main.log")
+get_logger("main", "log/main.log", level=logging.DEBUG)
 
 import kis_auth as ka
 from kis_tools import *
@@ -56,8 +56,8 @@ agent_manager = AgentManager(trade_target=trade_target)
 # Variables to share with clients
 # ---------------------------------
 server_data_dict ={
-    'command_queue' : command_queue, 
     'main_orderlist' : main_orderlist, 
+    'command_queue' : command_queue, 
     'the_account' : the_account,
     'agent_manager' : agent_manager,
 }
@@ -71,29 +71,35 @@ async def process_commands():
         (request_command, request_data) = await command_queue.get()
         if request_command == "cancel_orders":
             await main_orderlist.cancel_all_outstanding(trenv)
-            await main_orderlist.closing_check()
+            await main_orderlist.closing_checker()
         
         elif request_command == "submit_orders":
             if request_data: # list [order, order, ... ]
-                optlog.info(f"Trading main got: {request_data}")
+                optlog.debug(f"Trading main got: {request_data}")
                 await main_orderlist.submit_orders_and_register(request_data, trenv)
 
         else:
-            log_raise("Undefined:", request_command)
+            log_raise(f"Undefined: {request_command} ---")
         command_queue.task_done()
 
 # ---------------------------------
 # Websocket and response handling logic
 # ---------------------------------
 async def async_on_result(ws, tr_id, result, data_info):
-    if get_tr(trenv, tr_id) == 'TradeNotice': # Domestic stocks
-        tn = TradeNotice.from_response(result)
-        await main_orderlist.process_notice(tn, trenv)
-        optlog.info(tn)
+    if tr_id is None or tr_id == '':
+        log_raise(f"tr_id is None or '': {tr_id} ---")
+
+    if get_tr(trenv, tr_id) == 'TransactionNotice': # Notices to my trade orders
+        trn = TransactionNotice.from_response(result)
+        await main_orderlist.process_tr_notice(trn, trenv)
+        optlog.debug(trn)
+    elif get_tr(trenv, tr_id) in ('TransactionPrices_KRX',  'TransactionPrices_Total'): # 실시간 체결가
+        trp = TransactionPrices(trprices=result)
+        await agent_manager.process_tr_prices(trp)
+        optlog.debug(trp.trprices.to_string())
     # to add more tr_id ...
-    
     else:
-        log_raise(f"Unexpected tr_id {tr_id} delivered")
+        log_raise(f"Unexpected tr_id {tr_id} received ---")
 
 def on_result(ws, tr_id, result, data_info):
     asyncio.create_task(async_on_result(ws, tr_id, result, data_info))
@@ -104,6 +110,10 @@ async def websocket_loop():
 
     # subscriptions
     kws.subscribe(request=ccnl_notice, data=[trenv.my_htsid])
+    if trenv.env_dv == 'demo':
+        kws.subscribe(request=ccnl_krx, data=trade_target.get_target_codes())
+    else: 
+        kws.subscribe(request=ccnl_total, data=trade_target.get_target_codes()) # 모의투자 미지원
     # to add more ....
 
     # run websocket 

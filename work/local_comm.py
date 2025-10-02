@@ -101,7 +101,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 handler = COMMAND_HANDLERS.get(request_command)
                 response = await handler(request_command, request_data_dict, **server_data_dict)
             else: 
-                optlog.error(f"Invalid request received: {client_request}")
+                optlog.warning(f"Invalid request received: {client_request}")
                 response = {"response_status": "Invalid request: " + client_request}
 
             # Send response back
@@ -141,14 +141,14 @@ async def send_command(request_command: str, request_data = None, **other_kwargs
     while len(response_data) < length:
         chunk = await reader.read(length - len(response_data))
         if not chunk:
-            log_raise("Connection closed prematurely")
+            log_raise("Connection closed prematurely ---")
         response_data += chunk
     try:
         response = pickle.loads(response_data)
         optlog.info("Response received:")
         optlog.info(response)
     except Exception as e:
-        log_raise(f"Invalid response received: {e}\n" + response_data.decode())
+        log_raise(f"Invalid response received: {e}\n" + f"* response_data: {response_data.decode()} ---")
     finally:
         writer.close()
         await writer.wait_closed()

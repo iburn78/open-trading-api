@@ -606,24 +606,35 @@ class KISWebSocket:
                 tr_id = d1[1]
 
                 dm = data_map[tr_id]
+
                 d = d1[3]
 
-                ##################################################
-                # if dm.get("encrypt", None) == "Y":
-                ##################################################
+                # [modification 1] #################################################
+                # system_resp().encrypt 는 해당 메세지 자체의 Encrypt 여부인것으로 보임... 
+                # if dm.get("encrypt", None) == "Y":             
                 if raw[0] == "1": # 실시간 응답의 경우, 0: 암호화되지 않은 데이터, 1: 암호화된 데이터
                     d = aes_cbc_base64_dec(dm["key"], dm["iv"], d)
-                df = pd.read_csv(
-                    StringIO(d), header=None, sep="^", names=dm["columns"], dtype=object,
-                    on_bad_lines='error'   # default / does not raise for mismatched columns
-                )
-                if df.shape[1] != len(dm['columns']):
-                    print("-------------------------------------------")
-                    print(d)
-                    print(dm['columns'])
-                    print("-------------------------------------------")
-                    raise Exception(f"tr_id {tr_id}: response length does not match with column length ---")
 
+                # [modification 2] #################################################
+                # read csv blow needs modification to read multiple lines to df
+                # df = pd.read_csv(
+                #     StringIO(d), header=None, sep="^", names=dm["columns"], dtype=object,
+                #     on_bad_lines='error'   # default / does not raise for mismatched columns
+                # )
+                n_rows = int(d1[2]) # data의 개수 (예, DF의 행수)
+                parts = d.split("^")  # split all fields
+                n_cols = len(dm["columns"])
+
+                # Safety check
+                if len(parts) != n_rows * n_cols:
+                    raise ValueError(
+                        f"Data length ({len(parts)}) does not match n_rows × n_cols ({n_rows * n_cols})"
+                    )
+
+                rows = [parts[i * n_cols : (i + 1) * n_cols] for i in range(n_rows)]
+                df = pd.DataFrame(rows, columns=dm["columns"], dtype=object)
+                # [end of modification 2] -----
+                
                 show_result = True
 
             else:
