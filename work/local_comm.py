@@ -3,7 +3,8 @@ from kis_tools import *
 from agent import AgentManager
 
 HOST = "127.0.0.1"   # Localhost
-PORT = 5001
+# later can variate port 1) for order making, 2) getting readtime data (esp, prices)
+PORT = 5001   
 
 # ---------------------------------------------------------------------------------
 # Parameters:

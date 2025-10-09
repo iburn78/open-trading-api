@@ -1,18 +1,23 @@
 from gen_tools import *
-from kis_tools import Account, TransactionPrices
+from kis_tools import TransactionPrices, Order, OrderList, ORD_DVSN
 from dataclasses import dataclass, field
 import asyncio
 from strategy import *
 
 @dataclass
 class Agent:
+    id: str
     code: str
-    # ---------------------------------
-    # may add other properties
-    # ---------------------------------
-    cash_t_2: int # available cash for trading
+    target_return_rate: float = 0.0
+    strategy: str | None = 'strategy for this agent'  # to be implemented
+    assigned_cash_t_2: int # available cash for trading
+    holding_quantity: int = 0
+    total_cost_incurred: int = 0
     active: bool = False
+
+    # may introduce a class to measure performance
     stats: dict = field(default_factory=dict)
+    agent_orderlist: OrderList = field(default_factory=OrderList)
 
     def __post_init__(self):
         self.stats = {
@@ -29,6 +34,15 @@ class Agent:
     def update_stats(self, trp: TransactionPrices):
         self.stats['key_data'] += int(trp.trprices['CNTG_VOL'].iat[0])
         self.stats['count'] += 1
+    
+    def make_order(self):
+        side = 'buy'
+        quantity = 10
+        ord_dvsn = ORD_DVSN.MARKET
+        price = 0
+        order = Order(self.code, side, quantity, ord_dvsn, price)
+
+
 
 
 @dataclass
@@ -48,7 +62,7 @@ class AgentManager:
         for code in self.target_df['code']:
             agent = Agent(
                 code=code,
-                cash_t_2=self.target_df.loc[self.target_df['code']==code, 'cash_t_2'].iat[0],
+                assigned_cash_t_2=self.target_df.loc[self.target_df['code']==code, 'cash_t_2'].iat[0],
             )
             self.agent_list.append(agent)
 

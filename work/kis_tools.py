@@ -36,7 +36,7 @@ class CashBalance:
     available: int = 0      # 현재 예수금 (T+0)
     t_1: int = 0            # T+1 예수금
     t_2: int = 0            # T+2 예수금
-    cost: int = 0         # 제비용 (금일 발생????)
+    cost: int = 0         # 제비용 (금일 발생)
 
     def __str__(self):
         return (

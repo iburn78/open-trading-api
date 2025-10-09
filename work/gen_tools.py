@@ -15,8 +15,8 @@ def get_market(code):
     return words[0].upper()
 
 optlog: logging.Logger = None
-MAX_BYTES = 10_000_000 # 10 MB
-BACKUP_COUNT = 5 # 5 files
+MAX_BYTES = 10_000_000 
+BACKUP_COUNT = 5 # num of files
 def get_logger(name: str, log_file: str, level=logging.INFO,
             max_bytes=MAX_BYTES, backup_count=BACKUP_COUNT) -> logging.Logger:
     """

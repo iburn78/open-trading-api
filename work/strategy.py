@@ -92,3 +92,9 @@ class TradeTarget:
         
     def get_target_codes(self):
         return self.target_df['code'].to_list()
+
+
+# Below define strategies
+# - Foreign follower
+# - Value / Volatility tracker
+# - Volume trigger strategy
