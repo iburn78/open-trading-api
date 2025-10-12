@@ -67,3 +67,13 @@ First, focus on building an MVP (minimum viable product)
 - Revise is basically the same as cancel and then re-order
 - Cancelled order is only progressed up to order.processed quantity
 
+
+### Gen Python Knowledege
+- mutables (list, dict, set, custom classes) vs immutables (int, float, str, tuple, frozenset)
+- variables are just references to objects 
+- everything is passed by reference (i.e., passing variables)
+- is vs == (__eq__) are different especially for dataclasses, 
+    where == means if data are all the same between two instances 
+    and 'is' means if two instance references point to the same memory
+- behavior of 'if i in a_list: ...' internally applies '=='
+

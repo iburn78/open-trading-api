@@ -1,13 +1,12 @@
 from __future__ import annotations
-from gen_tools import *
-from domestic_stock_functions_ws import *
-from domestic_stock_functions import *
+import pandas as pd
 import json
+from kis_auth import _smartSleep, _demoSleep
+from gen_tools import get_market, optlog, log_raise, excel_round_int
+from domestic_stock_functions import inquire_balance, order_cash, order_rvsecncl
 from dataclasses import dataclass, field, asdict
-from typing import Optional
 from enum import Enum
 import asyncio
-from kis_auth import _smartSleep, _demoSleep
 from collections import defaultdict
 
 tr_id_dict = {
@@ -62,18 +61,6 @@ class Holding: # Stock Holding
             f"{self.code} / {self.quantity:,} / {self.name}\n"
             f"total amount: {self.amount:,}, avg price: {self.avg_price:,}, bep price: {self.bep_price:,}\n"
         )
-
-# -------------------------------------------------
-# -------------------------------------------------
-# -------------------------------------------------
-# Book keeping, choronological order 
-# update cash and account
-@dataclass
-class TransactionRecord: # 
-    record = pd.DataFrame() 
-# -------------------------------------------------
-# -------------------------------------------------
-# -------------------------------------------------
 
 
 @dataclass
@@ -261,9 +248,9 @@ class Order:
     market: str = None # KOSPI, KOSDAQ, etc
     exchange: str = "SOR" # Smart Order Routing - KRX, NXT, etc.
 
-    org_no: Optional[str] = None
-    order_no: Optional[str] = None
-    submitted_time: Optional[str] = None
+    org_no: str | None = None
+    order_no: str | None = None
+    submitted_time: str | None = None
 
     submitted: bool = False
     accepted: bool = False
@@ -555,25 +542,25 @@ def pd_nan_chker_(casttype, val):
 
 @dataclass
 class TransactionNotice: # 국내주식 실시간체결통보
-    acnt_no: Optional[str] = None # account number
-    oder_no: Optional[str] = None # order number
-    ooder_no: Optional[str] = None # original order number 
-    seln_byov_cls: Optional[str] = None # 01: sell, 02: buy
-    rctf_cls: Optional[str] = None # 0:정상, 1:정정, 2:취소
-    oder_kind: Optional[ORD_DVSN] = None # 00: limit, 01: market
-    oder_cond: Optional[str] = None # 0: None, 1: IOC (Immediate or Cancel), 2: FOK (Fill or Kill)
-    code: Optional[str] = None     
-    cntg_qty: Optional[int] = None # traded quantity
-    cntg_unpr: Optional[int] = None # traded price
-    stck_cntg_hour: Optional[str] = None # traded time (HHMMSS)
-    rfus_yn: Optional[str] = None # 0: 승인, 1: 거부 
-    cntg_yn: Optional[str] = None # 1: 주문, 정정, 취소, 거부, 2: 체결 
-    acpt_yn: Optional[str] = None # 1: 주문접수, 2: 확인, 3: 취소(IOC/FOK)
-    brnc_no: Optional[str] = None # 지점번호
-    oder_qty: Optional[int] = None # total order quantity  
-    exg_yn: Optional[str] = None # 1:KRX, 2:NXT, 3:SOR-KRX, 4:SOR-NXT + 실시간체결창 표시여부(Y/N)
-    crdt_cls: Optional[str] = None # 신용구분 
-    oder_prc: Optional[int] = None # order price    
+    acnt_no: str | None = None # account number
+    oder_no: str | None = None # order number
+    ooder_no: str | None = None # original order number 
+    seln_byov_cls: str | None = None # 01: sell, 02: buy
+    rctf_cls: str | None = None # 0:정상, 1:정정, 2:취소
+    oder_kind: ORD_DVSN | None = None # 00: limit, 01: market
+    oder_cond: str | None = None # 0: None, 1: IOC (Immediate or Cancel), 2: FOK (Fill or Kill)
+    code: str | None = None     
+    cntg_qty: int | None = None # traded quantity
+    cntg_unpr: int | None = None # traded price
+    stck_cntg_hour: str | None = None # traded time (HHMMSS)
+    rfus_yn: str | None = None # 0: 승인, 1: 거부 
+    cntg_yn: str | None = None # 1: 주문, 정정, 취소, 거부, 2: 체결 
+    acpt_yn: str | None = None # 1: 주문접수, 2: 확인, 3: 취소(IOC/FOK)
+    brnc_no: str | None = None # 지점번호
+    oder_qty: int | None = None # total order quantity  
+    exg_yn: str | None = None # 1:KRX, 2:NXT, 3:SOR-KRX, 4:SOR-NXT + 실시간체결창 표시여부(Y/N)
+    crdt_cls: str | None = None # 신용구분 
+    oder_prc: int | None = None # order price    
 
     def __str__(self):
         return "TransactionNotice:" + json.dumps(asdict(self), indent=4, default=str)
@@ -671,7 +658,3 @@ class TransactionPrices: # 국내주식 실시간체결가 (KRX, but should be t
             "VI_STND_PRC", # 정적VI발동기준가
         ]
         return _columns
-
-
-
-

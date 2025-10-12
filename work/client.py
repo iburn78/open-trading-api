@@ -1,8 +1,8 @@
-from gen_tools import *
+from gen_tools import logging, optlog, get_logger
 get_logger("client", "log/client.log", level=logging.DEBUG)
 
-from kis_tools import *
-from local_comm import *
+# from kis_tools import *
+# from local_comm import *
 from agent import *
 
 # def create_order():
@@ -29,14 +29,40 @@ from agent import *
 # a = asyncio.run(send_command('get_orderlist')) 
 # print(a['data'])
 
-code = '001440' 
-response = asyncio.run(send_command('get_agent', code)) 
 
-status = response.get('response_status')
-agent = response.get('response_data') # type: Agent
+# async def main():
 
-print(status)
-print(agent)
+    # client = PersistentClient()
+    # await client.connect()
 
+    # # send a command
+    # code = '000661' 
+    # # code = '000330' 
+    # id = 'agent_'+code
+    # agent1 = AgentCard(id, code)
+    # print(agent1)
+    # resp = await client.send_command("register_agent_card", request_data=agent1)
+    # # resp = await client.send_command("remove_agent_card", request_data=agent1)
+    # print("Response:", resp)
 
+    # # resp = await client.send_command("subscribe_trp_by_agent_id", request_data=id)
+    # resp = await client.send_command("unsubscribe_trp_by_agent_id", request_data=id)
+    # print("Response:", resp)
 
+    # # The client continues to receive server pushes asynchronously
+    # await asyncio.sleep(500)  # keep running to receive server pushes
+    # await client.close()
+
+async def main():
+    A = Agent(id = 'A1', code = '000663')
+    task = asyncio.create_task(A.run())  # background task
+    await asyncio.sleep(10)
+    A._stop_event.set()
+    await task
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        optlog.info("Client stopped by user (Ctrl+C).\n")
+    

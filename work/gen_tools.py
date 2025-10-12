@@ -4,6 +4,10 @@ from logging.handlers import RotatingFileHandler
 import pandas as pd
 import numpy as np
 
+HOST = "127.0.0.1"   # Localhost
+PORT = 30001 # 1024–49151 → registered/user ports → safe for your server
+# 49152–65535 → ephemeral → usually assigned automatically to clients
+
 _df_krx_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'trader/data_collection/data/df_krx.feather')
 df_krx = pd.read_feather(_df_krx_path)
 

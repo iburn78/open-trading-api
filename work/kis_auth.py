@@ -526,27 +526,112 @@ def aes_cbc_base64_dec(key, iv, cipher_text):
     return bytes.decode(unpad(cipher.decrypt(b64decode(cipher_text)), AES.block_size))
 
 
-#####
-open_map: dict = {}
-
+# subscription management 
+open_map: dict = {} # comprehensive dict for all subscribed
+to_add_map: dict = {} # incremental addition
+to_remove_map: dict = {} # incremental removal
 
 def add_open_map(
         name: str,
-        request: Callable[[str, str, ...], (dict, list[str])],
+        request: Callable[[str, str, ], (dict, list[str])],
         data: str | list[str],
         kwargs: dict = None,
 ):
-    if open_map.get(name, None) is None:
+    # [revised version] -----------------------------------------------------
+    global open_map, to_add_map
+
+    # normalize to list
+    if isinstance(data, str):
+        data = [data]
+
+    # remove duplicates while keeping order    
+    data = list(dict.fromkeys(data))
+
+    # initialize to_add_map
+    to_add_map = {}
+    
+    # initialize open_map entry if missing
+    if name not in open_map:
         open_map[name] = {
             "func": request,
             "items": [],
             "kwargs": kwargs,
         }
 
-    if type(data) is list:
-        open_map[name]["items"] += data
-    elif type(data) is str:
-        open_map[name]["items"].append(data)
+    # find only new items (avoid duplicates)
+    new_items = [x for x in data if x not in open_map[name]["items"]]
+    subscribed_items = [x for x in data if x in open_map[name]["items"]]
+    if new_items:
+        to_add_map = {
+            name: {
+                "func": request,
+                "items": new_items,
+                "kwargs": kwargs,
+            }
+        }
+        open_map[name]["items"].extend(new_items)
+    
+    if subscribed_items:
+        print(f"[kis_auth] (warning) {name} already subscribed for {subscribed_items}")
+
+    # [original version] -----------------------------------------------------
+    # if open_map.get(name, None) is None:
+    #     open_map[name] = {
+    #         "func": request,
+    #         "items": [],
+    #         "kwargs": kwargs,
+    #     }
+
+    # if type(data) is list:
+    #     open_map[name]["items"] += data
+    # elif type(data) is str:
+    #     open_map[name]["items"].append(data)
+
+def remove_open_map(
+        name: str,
+        request: Callable[[str, str, ], (dict, list[str])],
+        data: str | list[str],
+        kwargs: dict = None,
+):
+    global open_map, to_remove_map
+
+    # normalize to list
+    if isinstance(data, str):
+        data = [data]
+
+    # remove duplicates while keeping order    
+    data = list(dict.fromkeys(data))
+
+    # initialize to_remove_map
+    to_remove_map = {}
+
+    if name not in open_map:
+        # func (name) not subscribed
+        print(f"[kis_auth] (warning) {name} is not subscribed - nothing to remove")
+        return
+
+    # find only items that actually exist in open_map
+    subscribed_items = open_map[name]["items"]
+    remove_items = [x for x in data if x in subscribed_items]
+    non_exist_items = [x for x in data if x not in subscribed_items]
+
+    if remove_items:
+        to_remove_map = {
+            name: {
+                "func": request,
+                "items": remove_items,
+                "kwargs": kwargs,
+            }
+        }
+        # update open_map (remove)
+        open_map[name]["items"] = [x for x in subscribed_items if x not in remove_items]
+
+        # if no more items, optionally remove the entry entirely
+        if not open_map[name]["items"]:
+            del open_map[name]
+
+    if non_exist_items:
+        print(f"[kis_auth] (warning) {non_exist_items} not subscribed under {name} - unable to remove")
 
 
 data_map: dict = {}
@@ -583,12 +668,12 @@ class KISWebSocket:
     result_all_data: bool = False
 
     retry_count: int = 0
-    amx_retries: int = 0
 
     # init
     def __init__(self, api_url: str, max_retries: int = 3):
         self.api_url = api_url
         self.max_retries = max_retries
+        self.queue = asyncio.Queue()  # for dynamic subscription updates
 
     # private
     async def __subscriber(self, ws: websockets.ClientConnection):
@@ -609,13 +694,13 @@ class KISWebSocket:
 
                 d = d1[3]
 
-                # [modification 1] #################################################
+                # [modification 1] ----------------------------------------------------- 
                 # system_resp().encrypt 는 해당 메세지 자체의 Encrypt 여부인것으로 보임... 
                 # if dm.get("encrypt", None) == "Y":             
                 if raw[0] == "1": # 실시간 응답의 경우, 0: 암호화되지 않은 데이터, 1: 암호화된 데이터
                     d = aes_cbc_base64_dec(dm["key"], dm["iv"], d)
 
-                # [modification 2] #################################################
+                # [modification 2] ----------------------------------------------------- 
                 # read csv blow needs modification to read multiple lines to df
                 # df = pd.read_csv(
                 #     StringIO(d), header=None, sep="^", names=dm["columns"], dtype=object,
@@ -628,7 +713,7 @@ class KISWebSocket:
                 # Safety check
                 if len(parts) != n_rows * n_cols:
                     raise ValueError(
-                        f"Data length ({len(parts)}) does not match n_rows × n_cols ({n_rows * n_cols})"
+                        f"[kis_auth] (error) Data length ({len(parts)}) does not match n_rows × n_cols ({n_rows * n_cols})"
                     )
 
                 rows = [parts[i * n_cols : (i + 1) * n_cols] for i in range(n_rows)]
@@ -658,36 +743,67 @@ class KISWebSocket:
             if show_result is True and self.on_result is not None:
                 self.on_result(ws, tr_id, df, data_map[tr_id])
 
+    # [newly added] -----------------------------------------------------
+    async def __subscription_manager(self, ws):
+        """Listen for updates from self.queue and apply them dynamically."""
+        while True:
+            action = await self.queue.get()  # signal to recheck subscription
+            try:
+                # adjust subscriptions
+                if action == "subscribe":
+                    # request subscribe
+                    for name, obj in to_add_map.items():
+                        await self.send_multiple(
+                            ws, obj["func"], "1", obj["items"], obj["kwargs"]
+                        )
+                        print(f'[kis_auth] (info) {name} for {obj["items"]} subscribed')
+                elif action == "unsubscribe":
+                    for name, obj in to_remove_map.items():
+                        await self.send_multiple(
+                            ws, obj["func"], "2", obj["items"], obj["kwargs"]
+                        )
+                        print(f'[kis_auth] (info) {name} for {obj["items"]} unsubscribed')
+
+            except Exception as e:
+                print(f"[kis_auth] (error) {action} action failed for: {e}")
+            self.queue.task_done()
+
     async def __runner(self):
         if len(open_map.keys()) > 40:
-            raise ValueError("Subscription's max is 40")
+            raise ValueError("[kis_auth] (error) Subscription's max is 40 - as defined in kis_auth.py")
 
         url = f"{getTREnv().my_url_ws}{self.api_url}"
 
         while self.retry_count < self.max_retries:
             try:
                 async with websockets.connect(url) as ws:
-                    # request subscribe
-                    for name, obj in open_map.items():
-                        await self.send_multiple(
-                            ws, obj["func"], "1", obj["items"], obj["kwargs"]
-                        )
+                    # [original version] -----------------------------------------------------
+                    # # request subscribe
+                    # for name, obj in open_map.items():
+                    #     await self.send_multiple(
+                    #         ws, obj["func"], "1", obj["items"], obj["kwargs"]
+                    #     )
 
-                    # subscriber
+                    # # subscriber
+                    # await asyncio.gather(
+                    #     self.__subscriber(ws),
+                    # )
+                    
+                    # [modified version - subscriptions handled dynamically] -----------------------------------------------------
                     await asyncio.gather(
+                        self.__subscription_manager(ws), 
                         self.__subscriber(ws),
                     )
             except Exception as e:
-                print("Connection exception >> ", e)
+                print("[kis_auth] (error) Connection exception >> ", e)
                 self.retry_count += 1
                 await asyncio.sleep(1)
 
-    # func
     @classmethod
     async def send(
             cls,
             ws: websockets.ClientConnection,
-            request: Callable[[str, str, ...], (dict, list[str])],
+            request: Callable[[str, str, ], (dict, list[str])],
             tr_type: str,
             data: str,
             kwargs: dict = None,
@@ -705,7 +821,7 @@ class KISWebSocket:
     async def send_multiple(
             self,
             ws: websockets.ClientConnection,
-            request: Callable[[str, str, ...], (dict, list[str])],
+            request: Callable[[str, str, ], (dict, list[str])],
             tr_type: str,
             data: list | str,
             kwargs: dict = None,
@@ -716,26 +832,46 @@ class KISWebSocket:
             for d in data:
                 await self.send(ws, request, tr_type, d, kwargs)
         else:
-            raise ValueError("data must be str or list")
+            raise ValueError("[kis_auth] (error) data must be str or list")
 
-    @classmethod
+    # [modified version: subs and unsubs] -----------------------------------------------------
     def subscribe(
-            cls,
-            request: Callable[[str, str, ...], (dict, list[str])],
+            self,
+            request: Callable[[str, str, ], (dict, list[str])],
             data: list | str,
             kwargs: dict = None,
     ):
         add_open_map(request.__name__, request, data, kwargs)
+        self.queue.put_nowait("subscribe")
 
     def unsubscribe(
             self,
-            ws: websockets.ClientConnection,
-            request: Callable[[str, str, ...], (dict, list[str])],
+            request: Callable[[str, str, ], (dict, list[str])],
             data: list | str,
+            kwargs: dict = None,
     ):
-        self.send_multiple(ws, request, "2", data)
+        remove_open_map(request.__name__, request, data, kwargs)
+        self.queue.put_nowait("unsubscribe")
 
-    # start
+    # [original version] -----------------------------------------------------
+    # @classmethod
+    # def subscribe(
+    #         cls,
+    #         request: Callable[[str, str, ...], (dict, list[str])],
+    #         data: list | str,
+    #         kwargs: dict = None,
+    # ):
+    #     add_open_map(request.__name__, request, data, kwargs)
+
+    # def unsubscribe(
+    #         self,
+    #         ws: websockets.ClientConnection,
+    #         request: Callable[[str, str, ...], (dict, list[str])],
+    #         data: list | str,
+    # ):
+    #     self.send_multiple(ws, request, "2", data)
+
+    # [original version - left uncommented for compatibility] -----------------------------------------------------
     def start(
             self,
             on_result: Callable[
@@ -748,9 +884,9 @@ class KISWebSocket:
         try:
             asyncio.run(self.__runner())
         except KeyboardInterrupt:
-            print("Closing by KeyboardInterrupt")
+            print("[kis_auth] (error) Closing by KeyboardInterrupt")
 
-    # async start - ADDED!!!!
+    # [modified version as async] -----------------------------------------------------
     async def start_async(
         self,
         on_result: Callable[
@@ -762,5 +898,6 @@ class KISWebSocket:
         self.result_all_data = result_all_data
         try:
             await self.__runner()
-        except KeyboardInterrupt:
-            print("Closing by KeyboardInterrupt")
+        except asyncio.CancelledError:
+            print("[kis_auth] (info) Closing by KeyboardInterrupt")
+            raise  # re-raise for proper TaskGroup shutdown
