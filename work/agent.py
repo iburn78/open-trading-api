@@ -1,5 +1,5 @@
 import pandas as pd
-from gen_tools import optlog
+from gen_tools import optlog, log_raise
 from kis_tools import TransactionPrices, Order, OrderList, ORD_DVSN
 from local_comm import PersistentClient
 from dataclasses import dataclass, field
@@ -11,11 +11,13 @@ class AgentCard: # an agent's business card (e.g., agents submit their business 
     id: str
     code: str
 
-    # server managed info
+    # server managed info / may change per connection
     client_port: str | None = None # assigned by the server/OS 
+    writer: object | None = None 
 
 @dataclass
 class Agent:
+    # id and code do not change for the lifetime
     id: str
     code: str
 
@@ -32,9 +34,7 @@ class Agent:
 
     # for server communication
     card: AgentCard = field(default_factory=lambda: AgentCard(id="", code=""))
-    _registered: bool = False
     client: PersistentClient = field(default_factory=PersistentClient)
-    _connected: bool = False
     _stop_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     def __post_init__(self):
@@ -46,32 +46,22 @@ class Agent:
             'key_data': 0, 
             'count': 0,
         }
-    async def connect(self):
+
+    async def run(self, **kwargs):
+        """Keeps the agent alive until stopped. """
         await self.client.connect()
-        self._connected = True
-        if not self._registered:
-            resp = await self.client.send_command("register_agent_card", request_data=self.card)
-            self._registered = True
-            optlog.info(resp.get('response_status'))
+        resp = await self.client.send_command("register_agent_card", request_data=self.card)
+        optlog.info(resp.get('response_status'))
 
-    # for graceful close 
-    async def close(self): 
-        if self._registered:
-            resp = await self.client.send_command("remove_agent_card", request_data=self.card)
-            self._registered = False
-            optlog.info(resp.get('response_status'))
-        await self.client.close()
-        self._connected = False
+        resp = await self.client.send_command("subscribe_trp_by_agent_card", request_data=self.card)
+        optlog.info(resp.get('response_status'))
 
-    async def run(self):
-        """Keeps the agent alive until stopped externally or via close()."""
         try:
-            await self.connect()
             await self._stop_event.wait()  # wait until .close() is called
         except asyncio.CancelledError:
-            optlog.info(f"{self.id} cancelled")
+            optlog.info(f"Agent {self.id} cancelled")
         finally:
-            await self.close()
+            await self.client.close()
 
     def report_performance(self): 
         pass
@@ -103,35 +93,41 @@ class ConnectedAgents:
     code_agent_card_dict: dict[str, list[AgentCard]]= field(default_factory=dict) 
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
-    async def add(self, agent_card):
+    async def add(self, agent_card: AgentCard):
         async with self._lock:
-            agent_card_list = self.code_agent_card_dict.setdefault(agent_card.code, [])
-            # compares based on data between dataclass instances
-            if agent_card not in agent_card_list: 
-                agent_card_list.append(agent_card)
-                msg = f'agent_card {agent_card} registered in the server'
-            else:
-                msg = f'[Warning] agent_card {agent_card} already registered --- '
-            return msg
+            if not agent_card.client_port:
+                log_raise(f'Client port is not assigned for agent {agent_card.id} --- ')
 
-    async def remove(self, agent_card):
+            if self.get_agent_card_by_id(agent_card.id):
+                return f'[Warning] agent_card {agent_card.id} already registered --- '
+
+            if self.get_agent_card_by_port(agent_card.client_port):
+                log_raise(f'Client port is {agent_card.client_port} is alreay in use --- ')
+
+            self.code_agent_card_dict.setdefault(agent_card.code, []).append(agent_card)
+            return f'agent_card {agent_card.id} registered in the server'
+
+    async def remove(self, agent_card: AgentCard):
         async with self._lock:
             agent_card_list = self.code_agent_card_dict.get(agent_card.code)
-            if agent_card_list:
-                try:
-                    agent_card_list.remove(agent_card) 
-                    msg = f'agent_card {agent_card} removed from the server'
-                except ValueError:
-                    msg = f'[Warning] agent_card {agent_card} does not exist but removal attempted ---- '
-                # Clean up empty list
+            if not agent_card_list:
+                return f"[Warning] agent_card {agent_card.id} not found"
+
+            target = next((x for x in agent_card_list if x.id == agent_card.id), None)
+            if target:
+                agent_card_list.remove(target)
+                # clean up emtpy code
                 if not agent_card_list:
                     del self.code_agent_card_dict[agent_card.code]
-            else:
-                msg = f'[Warning] agent_card {agent_card} does not exist but removal attepmted ---- '
-            return msg
-    
-    def get_agent_cards_by_code(self, code):
-        return self.code_agent_card_dict.get(code)
+                return f"agent_card {agent_card.id} removed from the server"
+            return f"[Warning] agent_card {agent_card.id} not found"
+
+    def get_agent_card_by_port(self, port):
+        for code, list in self.code_agent_card_dict.items():
+            for agent_card in list:
+                if agent_card.client_port == port:
+                    return agent_card
+        return None
 
     def get_agent_card_by_id(self, id):
         for code, list in self.code_agent_card_dict.items():
@@ -139,6 +135,13 @@ class ConnectedAgents:
                 if agent_card.id == id:
                     return agent_card
         return None
+
+    def get_all_agent_writers(self):
+        res = set()
+        for code, list in self.code_agent_card_dict:
+            for i in list: 
+                res.add(i) 
+        return res
 
     ###### SHOULD Implement this #############------------------------
     ###### SHOULD Implement this #############------------------------

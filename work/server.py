@@ -5,7 +5,7 @@ import asyncio
 import kis_auth as ka
 from domestic_stock_functions_ws import ccnl_notice
 from kis_tools import get_tr, OrderList, TransactionNotice, TransactionPrices
-from command_handlers import handle_client, broadcast
+from command_handlers import handle_client, broadcast, SubscriptionManager
 from strategy import *
 from agent import ConnectedAgents
 
@@ -32,6 +32,7 @@ master_orderlist = OrderList()
 ws_ready = asyncio.Event()
 command_queue = asyncio.Queue() # to process submit and cancel orders
 connected_agents = ConnectedAgents() 
+subs_manager = SubscriptionManager()
 
 # ---------------------------------
 # Variables to share with clients
@@ -41,7 +42,7 @@ server_data_dict ={
     'connected_agents' : connected_agents,
     'master_orderlist' : master_orderlist, 
     'command_queue' : command_queue, 
-    '_kws': None, # later assigned dynamically
+    'subs_manager' : subs_manager, 
 }
 
 # ---------------------------------
@@ -82,7 +83,7 @@ async def async_on_result(ws, tr_id, result, data_info):
         ###################### NEED REVIEW 
         code = trp.trprices['MKSC_SHRN_ISCD'].iat[0]
         optlog.debug(trp.trprices.to_string())
-        await broadcast(clients, trp)
+        await broadcast(connected_agents.get_all_agent_writers(), trp)
     # to add more tr_id ...
     else:
         log_raise(f"Unexpected tr_id {tr_id} received ---")
@@ -92,7 +93,7 @@ def on_result(ws, tr_id, result, data_info):
 
 async def websocket_loop():
     kws = ka.KISWebSocket(api_url="/tryitout")
-    server_data_dict['_kws'] = kws
+    subs_manager.kws = kws
 
     # default subscriptions
     kws.subscribe(request=ccnl_notice, data=[trenv.my_htsid])
@@ -104,20 +105,22 @@ async def websocket_loop():
 # ---------------------------------
 # Local comm handlers, server 
 # ---------------------------------
-clients = set() # treats duplicates automatically
-
 async def handler_shell(reader, writer):
-    clients.add(writer)
     addr = writer.get_extra_info("peername") # peername: network term / unique in a session
-    optlog.info(f"Connected by {addr}")
+    optlog.info(f"Client connected {addr}")
     try:
         await handle_client(reader, writer, **server_data_dict)
     finally:
-        clients.discard(writer)
         writer.close() # marks the stream as closed.
         await writer.wait_closed() # actual close
-        #### Assign name #### 
-        optlog.info(f"Client {addr} disconnected")  # intentional
+
+        target = connected_agents.get_agent_card_by_port(addr[1])
+        # unsusbcribe everything 
+        msg = subs_manager.remove_agent(target)
+        optlog.info(msg)  
+        # remove from connected_agents/clien
+        msg = await connected_agents.remove(target)
+        optlog.info(f"Client disconnected {addr} | {msg}")  
 
 async def start_server():
     await ws_ready.wait()
@@ -131,15 +134,15 @@ async def broadcast_simul():
     while True:
         message = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
         message += ' some random broadcast --- '
-        print('to broadcast: ', message)
-        print('agent connected')
-        print(connected_agents)
-        print('open map')
-        print(ka.open_map)
-        print('data map')
-        print(ka.data_map)
-        await broadcast(clients, message)
-        await asyncio.sleep(30)
+        # print('to broadcast: ', message)
+        # print('agent connected')
+        # print(connected_agents)
+        # print('open map')
+        # print(ka.open_map)
+        # print('data map')
+        # print(ka.data_map)
+        await broadcast(connected_agents.get_all_agent_writers(), message)
+        await asyncio.sleep(15)
 
 async def server():
     async with asyncio.TaskGroup() as tg: 
@@ -153,3 +156,5 @@ if __name__ == "__main__":
         asyncio.run(server())
     except KeyboardInterrupt:
         optlog.info("Server stopped by user (Ctrl+C).\n")
+
+

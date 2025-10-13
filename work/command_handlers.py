@@ -1,7 +1,9 @@
 import pickle
 import asyncio
-from gen_tools import optlog, log_raise
+from gen_tools import optlog
 from kis_tools import Order, OrderList
+from dataclasses import dataclass, field
+from typing import Callable
 from agent import ConnectedAgents, AgentCard
 from domestic_stock_functions_ws import ccnl_krx, ccnl_total
 
@@ -18,17 +20,17 @@ from domestic_stock_functions_ws import ccnl_krx, ccnl_total
 # server side
 # ---------------------------------------------------------------------------------
 # 현재 server의 trenv를 return
-async def handle_get_trenv(request_command, request_data_dict, **server_data_dict):
+async def handle_get_trenv(request_command, request_data_dict, writer, **server_data_dict):
     trenv = server_data_dict.get("trenv")
     return {"response_status": "trenv info retrieved", "response_data": trenv}
 
 # master_order_list return
-async def handle_get_orderlist(request_command, request_data_dict, **server_data_dict):
+async def handle_get_orderlist(request_command, request_data_dict, writer, **server_data_dict):
     master_orderlist: OrderList = server_data_dict.get("master_orderlist", None)
     return {"response_status": "orders retrieved", "response_data": master_orderlist}
 
 # list[Order]를 받아서 submit
-async def handle_submit_order(request_command, request_data_dict, **server_data_dict):
+async def handle_submit_order(request_command, request_data_dict, writer, **server_data_dict):
     orderlist: list[Order] = request_data_dict.get("request_data") 
     command_queue: asyncio.Queue = server_data_dict.get("command_queue")
     command = (request_command, orderlist)
@@ -36,56 +38,51 @@ async def handle_submit_order(request_command, request_data_dict, **server_data_
     return {"response_status": "order queued"}
 
 # 현재 server의 모든 order에 대해 cancel을 submit
-async def handle_cancel_orders(request_command, request_data_dict, **server_data_dict):
+async def handle_cancel_orders(request_command, request_data_dict, writer, **server_data_dict):
     command_queue: asyncio.Queue = server_data_dict.get("command_queue")
     command = (request_command, None)
     await command_queue.put(command)
     return {"response_status": "stop loop and cancel all orders requested"}
 
 # 연결된 Agent를 Register함 (AgentCard가 ConnectedAgents에 연결)
-async def handle_register_agent_card(request_command, request_data_dict, **server_data_dict):
+async def handle_register_agent_card(request_command, request_data_dict, writer, **server_data_dict):
     agent_card: AgentCard = request_data_dict.get("request_data") 
     connected_agents: ConnectedAgents = server_data_dict.get('connected_agents')
+    agent_card.writer = writer
+    agent_card.client_port = writer.get_extra_info("peername")[1] 
     res = await connected_agents.add(agent_card)
     return {"response_status": res}
 
-# 연결된 Agent를 Remove함 
-async def handle_remove_agent_card(request_command, request_data_dict, **server_data_dict):
-    agent_card: AgentCard = request_data_dict.get("request_data") 
-    connected_agents: ConnectedAgents = server_data_dict.get('connected_agents')
-    res = await connected_agents.remove(agent_card)
-    return {"response_status": res}
+# 연결된 Agent를 Remove함 - auto-remove (when disconnect)
+# async def handle_remove_agent_card(request_command, request_data_dict, writer, **server_data_dict):
+#     agent_card: AgentCard = request_data_dict.get("request_data") 
+#     connected_agents: ConnectedAgents = server_data_dict.get('connected_agents')
+#     res = await connected_agents.remove(agent_card)
+#     return {"response_status": res}
 
 # Agent의 관리 종목(code) 실시간 시세에 대해 subscribe / unsubscribe
-async def handle_subscribe_trp_by_agent_id(request_command, request_data_dict, **server_data_dict):
+async def handle_subscribe_trp_by_agent_card(request_command, request_data_dict, writer, **server_data_dict):
+    agent_card: AgentCard = request_data_dict.get("request_data") 
     trenv = server_data_dict.get("trenv")
-    agent_id: str = request_data_dict.get("request_data") 
-    connected_agents: ConnectedAgents = server_data_dict.get("connected_agents") 
-    agent_card = connected_agents.get_agent_card_by_id(agent_id)
-    if not agent_card:
-        return {"response_status": f"Agent with id {agent_id} not exists."}
-    kws = server_data_dict.get("_kws")
+    subs_manager: SubscriptionManager = server_data_dict.get("subs_manager")
     if trenv.env_dv == 'demo':
-        kws.subscribe(request=ccnl_krx, data=agent_card.code)
+        subs_manager.add(ccnl_krx, agent_card)
     else: 
-        kws.subscribe(request=ccnl_total, data=agent_card.code) # 모의투자 미지원
+        subs_manager.add(ccnl_total, agent_card) # 모의투자 미지원
 
     return {"response_status": f"{agent_card.code} subscribed by {agent_card.id}"}
 
-async def handle_unsubscribe_trp_by_agent_id(request_command, request_data_dict, **server_data_dict):
-    trenv = server_data_dict.get("trenv")
-    agent_id: str = request_data_dict.get("request_data") 
-    connected_agents: ConnectedAgents = server_data_dict.get("connected_agents") 
-    agent_card = connected_agents.get_agent_card_by_id(agent_id)
-    if not agent_card:
-        return {"response_status": f"Agent with id {agent_id} not exists."}
-    kws = server_data_dict.get("_kws")
-    if trenv.env_dv == 'demo':
-        kws.unsubscribe(request=ccnl_krx, data=agent_card.code)
-    else: 
-        kws.unsubscribe(request=ccnl_total, data=agent_card.code) # 모의투자 미지원
+# auto-unsubscribe (when disconnect)
+# async def handle_unsubscribe_trp_by_agent_card(request_command, request_data_dict, writer, **server_data_dict):
+#     agent_card: AgentCard = request_data_dict.get("request_data") 
+#     trenv = server_data_dict.get("trenv")
+#     subs_manager: SubscriptionManager = server_data_dict.get("subs_manager")
+#     if trenv.env_dv == 'demo':
+#         subs_manager.remove(ccnl_krx, agent_card)
+#     else: 
+#         subs_manager.remove(ccnl_total, agent_card) # 모의투자 미지원
 
-    return {"response_status": f"{agent_card.code} unsubscribed by {agent_card.id}"}
+#     return {"response_status": f"{agent_card.code} unsubscribed by {agent_card.id}"}
 
 # Command registry - UNIQUE PLACE TO REGISTER
 COMMAND_HANDLERS = {
@@ -94,9 +91,9 @@ COMMAND_HANDLERS = {
     "submit_orders": handle_submit_order, 
     "CANCEL_orders": handle_cancel_orders, # note the cap letters
     "register_agent_card": handle_register_agent_card, 
-    "remove_agent_card": handle_remove_agent_card,
-    "subscribe_trp_by_agent_id": handle_subscribe_trp_by_agent_id, 
-    "unsubscribe_trp_by_agent_id": handle_unsubscribe_trp_by_agent_id, 
+    # "remove_agent_card": handle_remove_agent_card, # auto-remove (when disconnect)
+    "subscribe_trp_by_agent_card": handle_subscribe_trp_by_agent_card, 
+    # "unsubscribe_trp_by_agent_card": handle_unsubscribe_trp_by_agent_card, # auto-unsubscribe (when disconnect)
 }
 
 def validate_client_request(client_sent_data: bytes):
@@ -131,10 +128,9 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             request_id: str = client_request.get("request_id")
             request_command: str = client_request.get("request_command")
             request_data_dict: dict = client_request.get("request_data_dict")
-            optlog.info(f"Request received - {request_command}")
-            optlog.info(f"{request_data_dict}")
+            optlog.info(f"Request received - {request_command} | {request_data_dict}")
             handler = COMMAND_HANDLERS.get(request_command)
-            response = await handler(request_command, request_data_dict, **server_data_dict)
+            response = await handler(request_command, request_data_dict, writer, **server_data_dict)
             response['request_id'] = request_id
         else: 
             optlog.warning(f"Invalid request received - {err_msg}")
@@ -146,14 +142,15 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         writer.write(resp_bytes)
         await writer.drain()
 
+### MAY FIX THESE TO AGENTS // CURRENTLY TO WRITER
 async def send_to_client(writer: asyncio.StreamWriter, message: object):
     await broadcast(set(writer), message)
 
-async def broadcast(target_clients: set[asyncio.StreamWriter], message: object):
+async def broadcast(target_writers: set[asyncio.StreamWriter], message: object):
     data = pickle.dumps(message)
     msg_bytes = len(data).to_bytes(4, 'big') + data
 
-    for writer in target_clients:
+    for writer in target_writers:
         try:
             writer.write(msg_bytes)
             await writer.drain()  # await ensures exceptions are caught here
@@ -163,3 +160,70 @@ async def broadcast(target_clients: set[asyncio.StreamWriter], message: object):
             ######## WRITER AND PEER AND AGENT ID SHOULD MATCH ##############
         except Exception as e:
             optlog.error(f"Unexpected broadcast error: {e}")
+
+
+@dataclass
+class SubscriptionManager:
+    """
+    map = {
+        func_name: {
+            code: [agent_id, agent_id, ...],
+            ...
+        },
+        ...
+    }
+    """
+    map: dict = field(default_factory=dict)
+    kws: object = None
+
+    def add(self, func: Callable, agent_card):
+        func_name = func.__name__
+        func_map = self.map.setdefault(func_name, {})
+        agent_list = func_map.get(agent_card.code)
+        if not agent_list:
+            func_map[agent_card.code] = [agent_card.id]
+            # new entry of (func, code), so subscribe 
+            self._subscribe(func, agent_card.code)
+        else:
+            if agent_card.id not in agent_list:
+                agent_list.append(agent_card.id)
+
+    def remove(self, func: Callable, agent_card):
+        func_name = func.__name__
+
+        # if this func_name or code not in map, nothing to do
+        if func_name not in self.map:
+            return f"[Warning] {func_name} not found in subscription map"
+
+        func_map = self.map[func_name]
+        if agent_card.code not in func_map:
+            return f"[Warning] {agent_card.code} not found under {func_name}"
+
+        agent_list = func_map[agent_card.code]
+        if agent_card.id not in agent_list:
+            return f"[Warning] {agent_card.id} not subscribed to {agent_card.code}"
+
+        # remove id
+        agent_list.remove(agent_card.id)
+
+        # cleanup empty code list
+        if not agent_list:
+            # (func, code) does not exist, so unsubscribe
+            self._unsubscribe(func, agent_card.code)
+            del func_map[agent_card.code]
+
+        # cleanup empty func entry
+        if not func_map:
+            del self.map[func_name]
+
+        return f"Removed {agent_card.id} from {func_name} ({agent_card.code})"
+    
+    def remove_agent(self, agent_card):
+        for key, item in self.map: 
+            self.remove(key, agent_card)
+
+    def _subscribe(self, func: Callable, code):
+        self.kws.subscribe(request=func, data=code)
+
+    def _unsubscribe(self, kws, func: Callable, code):
+        self.kws.unsubscribe(request=func, data=code)

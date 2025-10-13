@@ -102,7 +102,8 @@ class PersistentClient:
             raise  # usually propagate cancellation
         except asyncio.IncompleteReadError:
             if self._closing:
-                optlog.info("Listen task closed")  # intentional
+                pass
+                # optlog.info("Listen task closed")  
             elif not self.listen_task.cancelled(): # if not keyboard-interrupt
                 optlog.warning("Server closed connection")  # actual EOF / disconnect
         except Exception as e:
@@ -110,7 +111,8 @@ class PersistentClient:
 
     async def send_command(self, request_command: str, request_data=None, **other_kwargs):
         if not self.is_connected:
-            log_raise("Client is not connected")
+            optlog.error(f"Client is not connected for command {request_command}")
+            return {}  
 
         # create unique request ID
         request_id = str(uuid.uuid4())

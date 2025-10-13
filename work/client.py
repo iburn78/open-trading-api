@@ -54,11 +54,12 @@ from agent import *
     # await client.close()
 
 async def main():
-    A = Agent(id = 'A1', code = '000663')
-    task = asyncio.create_task(A.run())  # background task
-    await asyncio.sleep(10)
+    A = Agent(id = 'A1', code = '000660')
+    task = asyncio.create_task(A.run())  
+
+    await asyncio.sleep(100)
     A._stop_event.set()
-    await task
+    await task # necessary
 
 if __name__ == "__main__":
     try:
