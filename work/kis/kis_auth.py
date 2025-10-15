@@ -11,7 +11,7 @@ from base64 import b64decode
 from collections import namedtuple
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from io import StringIO
+# from io import StringIO
 import pandas as pd
 import requests
 import websockets
@@ -26,8 +26,9 @@ logger = logging.getLogger(__name__)
 key_bytes = 32
 reauth_safety_seconds = 300
 
-ppd_ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # ../..
-config_root = os.path.join(ppd_, 'config') 
+# ppd_ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # ../..
+pppd_ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # ../../..
+config_root = os.path.join(pppd_, 'config') 
 yaml_path = os.path.join(config_root, 'kis_devlp.yaml') 
 token_path = os.path.join(config_root, 'KIS_token') 
 
@@ -94,7 +95,7 @@ def _getBaseHeader(svr):
 def _setTRENV(cfg):
     nt1 = namedtuple(
         "KISEnv",
-        ["my_app", "my_sec", "my_acct", "my_svr", "my_prod", "my_htsid", "my_token", "my_url", "my_url_ws", "env_dv"],
+        ["my_app", "my_sec", "my_acct", "my_svr", "my_prod", "my_htsid", "my_token", "my_url", "my_url_ws", "env_dv", "sleep"],
     )
     d = {
         "my_app": cfg["my_app"],  # 앱키
@@ -107,6 +108,7 @@ def _setTRENV(cfg):
         "my_url": cfg["my_url"],  
         "my_url_ws": cfg["my_url_ws"],
         "env_dv": 'demo' if _isPaper else 'real',
+        "sleep": _demoSleep if _isPaper else _smartSleep,
     }  
     global _TRENV
     _TRENV = nt1(**d)
@@ -884,7 +886,7 @@ class KISWebSocket:
         try:
             asyncio.run(self.__runner())
         except KeyboardInterrupt:
-            print("[kis_auth] (error) Closing by KeyboardInterrupt")
+            print("[kis_auth] (error) Closing by cancel (e.g., by task-group cancel or keyboard)")
 
     # [modified version as async] -----------------------------------------------------
     async def start_async(
@@ -899,5 +901,5 @@ class KISWebSocket:
         try:
             await self.__runner()
         except asyncio.CancelledError:
-            print("[kis_auth] (info) Closing by KeyboardInterrupt")
+            print("[kis_auth] (info) Closing by cancel (e.g., by task-group cancel or keyboard)")
             raise  # re-raise for proper TaskGroup shutdown

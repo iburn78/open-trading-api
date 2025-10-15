@@ -1,8 +1,8 @@
 import logging
-import sys
+# import sys
 
-sys.path.extend(['..', '.'])
-import kis_auth as ka
+# sys.path.extend(['..', '.'])
+from . import kis_auth as ka
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')

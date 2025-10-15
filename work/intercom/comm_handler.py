@@ -1,11 +1,12 @@
 import pickle
 import asyncio
-from gen_tools import optlog
-from kis_tools import Order, OrderList
 from dataclasses import dataclass, field
 from typing import Callable
-from agent import ConnectedAgents, AgentCard
-from domestic_stock_functions_ws import ccnl_krx, ccnl_total
+
+from common.optlog import optlog
+from model.order import Order, OrderList
+from model.agent import ConnectedAgents, AgentCard
+from kis.domestic_stock_functions_ws import ccnl_krx, ccnl_total
 
 # ---------------------------------------------------------------------------------
 # Parameters:
@@ -50,8 +51,8 @@ async def handle_register_agent_card(request_command, request_data_dict, writer,
     connected_agents: ConnectedAgents = server_data_dict.get('connected_agents')
     agent_card.writer = writer
     agent_card.client_port = writer.get_extra_info("peername")[1] 
-    res = await connected_agents.add(agent_card)
-    return {"response_status": res}
+    msg, success = await connected_agents.add(agent_card)
+    return {"response_status": msg, "response_success": success}
 
 # 연결된 Agent를 Remove함 - auto-remove (when disconnect)
 # async def handle_remove_agent_card(request_command, request_data_dict, writer, **server_data_dict):
@@ -142,31 +143,26 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         writer.write(resp_bytes)
         await writer.drain()
 
-### MAY FIX THESE TO AGENTS // CURRENTLY TO WRITER
-async def send_to_client(writer: asyncio.StreamWriter, message: object):
-    await broadcast(set(writer), message)
+async def dispatch(to: AgentCard | list[AgentCard], message: object):
+    if isinstance(to, AgentCard):
+        to = [to]
 
-async def broadcast(target_writers: set[asyncio.StreamWriter], message: object):
     data = pickle.dumps(message)
     msg_bytes = len(data).to_bytes(4, 'big') + data
-
-    for writer in target_writers:
+    for agent in to:
         try:
-            writer.write(msg_bytes)
-            await writer.drain()  # await ensures exceptions are caught here
+            agent.writer.write(msg_bytes)
+            await agent.writer.drain()  # await ensures exceptions are caught here
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
-            peer = writer.get_extra_info('peername')
-            optlog.error(f"Client {peer} disconnected - broadcast failed.")
-            ######## WRITER AND PEER AND AGENT ID SHOULD MATCH ##############
+            optlog.error(f"Agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed.")
         except Exception as e:
-            optlog.error(f"Unexpected broadcast error: {e}")
-
+            optlog.error(f"Unexpected dispatch error: {e}")
 
 @dataclass
 class SubscriptionManager:
     """
     map = {
-        func_name: {
+        func: {
             code: [agent_id, agent_id, ...],
             ...
         },
@@ -176,9 +172,8 @@ class SubscriptionManager:
     map: dict = field(default_factory=dict)
     kws: object = None
 
-    def add(self, func: Callable, agent_card):
-        func_name = func.__name__
-        func_map = self.map.setdefault(func_name, {})
+    def add(self, func: Callable, agent_card: AgentCard):
+        func_map = self.map.setdefault(func, {})
         agent_list = func_map.get(agent_card.code)
         if not agent_list:
             func_map[agent_card.code] = [agent_card.id]
@@ -188,16 +183,17 @@ class SubscriptionManager:
             if agent_card.id not in agent_list:
                 agent_list.append(agent_card.id)
 
-    def remove(self, func: Callable, agent_card):
-        func_name = func.__name__
+    def remove(self, func: Callable, agent_card: AgentCard):
+        if not agent_card:
+            return
 
-        # if this func_name or code not in map, nothing to do
-        if func_name not in self.map:
-            return f"[Warning] {func_name} not found in subscription map"
+        # if this func or code not in map, nothing to do
+        if func not in self.map:
+            return f"[Warning] {func.__name__} not found in subscription map"
 
-        func_map = self.map[func_name]
+        func_map = self.map[func]
         if agent_card.code not in func_map:
-            return f"[Warning] {agent_card.code} not found under {func_name}"
+            return f"[Warning] {agent_card.code} not found under {func.__name__}"
 
         agent_list = func_map[agent_card.code]
         if agent_card.id not in agent_list:
@@ -214,16 +210,16 @@ class SubscriptionManager:
 
         # cleanup empty func entry
         if not func_map:
-            del self.map[func_name]
+            del self.map[func]
 
-        return f"Removed {agent_card.id} from {func_name} ({agent_card.code})"
+        return f"Removed {agent_card.id} from {func.__name__} ({agent_card.code})"
     
-    def remove_agent(self, agent_card):
-        for key, item in self.map: 
+    def remove_agent(self, agent_card: AgentCard):
+        for key in list(self.map.keys()): # list is necessary as self.remove modifies the map while iterating
             self.remove(key, agent_card)
 
     def _subscribe(self, func: Callable, code):
         self.kws.subscribe(request=func, data=code)
 
-    def _unsubscribe(self, kws, func: Callable, code):
+    def _unsubscribe(self, func: Callable, code):
         self.kws.unsubscribe(request=func, data=code)

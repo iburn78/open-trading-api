@@ -1,7 +1,10 @@
 import pickle
 import asyncio
 import uuid
-from gen_tools import optlog, log_raise, HOST, PORT
+from typing import Callable
+
+from common.setup import HOST, PORT
+from common.optlog import optlog, log_raise
 
 # ---------------------------------------------------------------------------------
 # client side
@@ -54,14 +57,14 @@ async def send_command(request_command: str, request_data = None, **other_kwargs
 
 # client remains connected
 class PersistentClient:
-    def __init__(self, host=HOST, port=PORT, on_broadcast=None):
+    def __init__(self, host=HOST, port=PORT, on_dispatch: Callable=None):
         self.host = host
         self.port = port
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
         self.listen_task: asyncio.Task | None = None
         self.pending_requests: dict[str, asyncio.Future] = {}
-        self.on_broadcast = on_broadcast  # callback for unsolicited server messages
+        self.on_dispatch = on_dispatch  # callback for unsolicited server messages
         self._closing = False
 
     async def connect(self):
@@ -91,11 +94,11 @@ class PersistentClient:
                         if not fut.done():
                             fut.set_result(msg)
                 else:
-                    # handle broadcast message
-                    if self.on_broadcast:
-                        await self.on_broadcast(msg)
+                    # handle dispatch message
+                    if self.on_dispatch:
+                        self.on_dispatch(msg)
                     else:
-                        optlog.info(f"Broadcast - {msg}")
+                        optlog.info(f"Dispatched - {msg}")
 
         except asyncio.CancelledError:
             optlog.info("Listen task cancelled")  # intentional

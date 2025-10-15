@@ -1,10 +1,11 @@
 import pandas as pd
-from gen_tools import optlog, log_raise
-from kis_tools import TransactionPrices, Order, OrderList, ORD_DVSN
-from local_comm import PersistentClient
-from dataclasses import dataclass, field
 import asyncio
-from strategy import TradeTarget
+from dataclasses import dataclass, field
+
+from .order import Order, OrderList
+from .client import PersistentClient
+from common.optlog import optlog, log_raise
+from kis.ws_data import ORD_DVSN, TransactionNotice, TransactionPrices
 
 @dataclass
 class AgentCard: # an agent's business card (e.g., agents submit their business cards in registration)
@@ -36,11 +37,14 @@ class Agent:
     card: AgentCard = field(default_factory=lambda: AgentCard(id="", code=""))
     client: PersistentClient = field(default_factory=PersistentClient)
     _stop_event: asyncio.Event = field(default_factory=asyncio.Event)
+    _ready_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     def __post_init__(self):
         # keep AgentCard consistent with Agent's id/code
         self.card.id = self.id
         self.card.code = self.code
+
+        self.client.on_dispatch = self.on_dispatch
 
         self.stats = {
             'key_data': 0, 
@@ -52,9 +56,14 @@ class Agent:
         await self.client.connect()
         resp = await self.client.send_command("register_agent_card", request_data=self.card)
         optlog.info(resp.get('response_status'))
+        if not resp.get('response_success'):
+            await self.client.close()
+            return 
 
         resp = await self.client.send_command("subscribe_trp_by_agent_card", request_data=self.card)
         optlog.info(resp.get('response_status'))
+
+        self._ready_event.set()
 
         try:
             await self._stop_event.wait()  # wait until .close() is called
@@ -75,16 +84,18 @@ class Agent:
         quantity = 10
         ord_dvsn = ORD_DVSN.MARKET
         price = 0
-        order = Order(self.code, side, quantity, ord_dvsn, price)
+        order = Order(self.id, self.code, side, quantity, ord_dvsn, price)
+        return order
         ######### IMPLEMENT AND TEST THIS ##############
         ######### IMPLEMENT AND TEST THIS ##############
         ######### IMPLEMENT AND TEST THIS ##############
         ######### IMPLEMENT AND TEST THIS ##############
         ######### IMPLEMENT AND TEST THIS ##############
 
-    def on_broadcast(self, msg):
-        print('in call back ---------')
-        print(msg)
+    def on_dispatch(self, msg):
+        pass
+        # print(f'in call async back {self.code}---------')
+        # print(msg)
 
 
 # used in server on AgentCard
@@ -99,15 +110,18 @@ class ConnectedAgents:
                 log_raise(f'Client port is not assigned for agent {agent_card.id} --- ')
 
             if self.get_agent_card_by_id(agent_card.id):
-                return f'[Warning] agent_card {agent_card.id} already registered --- '
+                return f'[Warning] agent_card {agent_card.id} already registered --- ', False
 
             if self.get_agent_card_by_port(agent_card.client_port):
                 log_raise(f'Client port is {agent_card.client_port} is alreay in use --- ')
 
             self.code_agent_card_dict.setdefault(agent_card.code, []).append(agent_card)
-            return f'agent_card {agent_card.id} registered in the server'
+            return f'agent_card {agent_card.id} registered in the server', True
 
     async def remove(self, agent_card: AgentCard):
+        if not agent_card: 
+            return 
+
         async with self._lock:
             agent_card_list = self.code_agent_card_dict.get(agent_card.code)
             if not agent_card_list:
@@ -127,7 +141,7 @@ class ConnectedAgents:
             for agent_card in list:
                 if agent_card.client_port == port:
                     return agent_card
-        return None
+        return None   # This case could be an agent connected, but registration failed and disconnected. 
 
     def get_agent_card_by_id(self, id):
         for code, list in self.code_agent_card_dict.items():
@@ -136,29 +150,30 @@ class ConnectedAgents:
                     return agent_card
         return None
 
-    def get_all_agent_writers(self):
-        res = set()
-        for code, list in self.code_agent_card_dict:
+    def get_all_agents(self):
+        res = []
+        for code, list in self.code_agent_card_dict.items():
             for i in list: 
-                res.add(i) 
+                res.append(i) 
         return res
 
-    ###### SHOULD Implement this #############------------------------
-    ###### SHOULD Implement this #############------------------------
-    ###### SHOULD Implement this #############------------------------
-    async def process_tr_prices(self, trp: TransactionPrices):
-        async with self._lock:
-            code = trp.trprices['MKSC_SHRN_ISCD'].iat[0]
-            for agent in self.code_agent_card_dict.get(code, []):
-                print(agent.id)
-                print(agent.code)
-                print(trp)
+    def get_target_agents(self, trp: TransactionPrices):
+        code = trp.trprices['MKSC_SHRN_ISCD'].iat[0]
+        return self.code_agent_card_dict.get(code, [])
+
+    def process_tr_notice(self, trn:TransactionNotice, trenv): 
+        pass
+
+
 
 
 # Refine why this is needed and what to do
+# Refine why this is needed and what to do
+# Refine why this is needed and what to do
+# Refine why this is needed and what to do
 @dataclass
 class AgentManager:
-    trade_target: TradeTarget
+    # trade_target: TradeTarget
     target_df: pd.DataFrame = None
     agent_list: list = field(default_factory=list)
 

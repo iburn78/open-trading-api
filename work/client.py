@@ -1,69 +1,48 @@
-from gen_tools import logging, optlog, get_logger
-get_logger("client", "log/client.log", level=logging.DEBUG)
+from common.optlog import set_logger
+set_logger()
 
-# from kis_tools import *
-# from local_comm import *
-from agent import *
+import asyncio
 
-# def create_order():
-#     new_orders = []
-#     code = '001440'
-#     for i in range(3):
-#         quantity = 9 + 3*i
-#         price = 15700
-#         order = Order(code, "buy", quantity, ORD_DVSN.LIMIT, price)
-#         new_orders.append(order)
-#     return new_orders
+from common.optlog import optlog
+from model.agent import Agent
 
-# new_orders = create_order()
+import sys
+async def main(sw=None):
+    if sw == "1":
+        A = Agent(id = 'A1', code = '000660')
+        task1 = asyncio.create_task(A.run())  
 
-# toc = new_orders[0]
-# a = ReviseCancelOrder(toc.code, toc.side, toc.quantity, toc.ord_dvsn, toc.price, rc=RCtype.CANCEL, all_yn=AllYN.ALL, original_order=toc)
-
-# asyncio.run(send_command('submit_orders', {'data': new_orders}))   
-# time.sleep(15)
-
-# a = asyncio.run(send_command('get_account', None))
-# print(a['data'])
-
-# a = asyncio.run(send_command('get_orderlist')) 
-# print(a['data'])
+        B = Agent(id = 'B1', code = '001440')
+        task2 = asyncio.create_task(B.run())  
 
 
-# async def main():
+        await A._ready_event.wait()  # wait until .close() is called
+        order = A.make_order()
+        print(order)
+        resp = await A.client.send_command("submit_orders", request_data=[order])
+        optlog.info(resp.get('response_status'))
 
-    # client = PersistentClient()
-    # await client.connect()
 
-    # # send a command
-    # code = '000661' 
-    # # code = '000330' 
-    # id = 'agent_'+code
-    # agent1 = AgentCard(id, code)
-    # print(agent1)
-    # resp = await client.send_command("register_agent_card", request_data=agent1)
-    # # resp = await client.send_command("remove_agent_card", request_data=agent1)
-    # print("Response:", resp)
+        await asyncio.sleep(100)
 
-    # # resp = await client.send_command("subscribe_trp_by_agent_id", request_data=id)
-    # resp = await client.send_command("unsubscribe_trp_by_agent_id", request_data=id)
-    # print("Response:", resp)
+        A._stop_event.set()
+        B._stop_event.set()
 
-    # # The client continues to receive server pushes asynchronously
-    # await asyncio.sleep(500)  # keep running to receive server pushes
-    # await client.close()
+        await asyncio.gather(task1, task2)
 
-async def main():
-    A = Agent(id = 'A1', code = '000660')
-    task = asyncio.create_task(A.run())  
+    else: 
+        C = Agent(id = 'C1', code = '006400')
+        task3 = asyncio.create_task(C.run())  
 
-    await asyncio.sleep(100)
-    A._stop_event.set()
-    await task # necessary
+        await asyncio.sleep(100)
+
+        C._stop_event.set()
+        await asyncio.gather(task3)
+
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        asyncio.run(main(sys.argv[1]))
     except KeyboardInterrupt:
         optlog.info("Client stopped by user (Ctrl+C).\n")
     
