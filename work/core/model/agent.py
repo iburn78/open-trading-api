@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 
 from .order import Order, OrderList
 from .client import PersistentClient
-from common.optlog import optlog, log_raise
-from kis.ws_data import ORD_DVSN, TransactionNotice, TransactionPrices
+from ..common.optlog import optlog, log_raise
+from ..kis.ws_data import ORD_DVSN, TransactionNotice, TransactionPrices
 
 @dataclass
 class AgentCard: # an agent's business card (e.g., agents submit their business cards in registration)

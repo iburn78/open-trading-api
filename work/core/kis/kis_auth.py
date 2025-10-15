@@ -27,8 +27,8 @@ key_bytes = 32
 reauth_safety_seconds = 300
 
 # ppd_ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # ../..
-pppd_ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) # ../../..
-config_root = os.path.join(pppd_, 'config') 
+ppppd_ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))) # ../../../..
+config_root = os.path.join(ppppd_, 'config') 
 yaml_path = os.path.join(config_root, 'kis_devlp.yaml') 
 token_path = os.path.join(config_root, 'KIS_token') 
 

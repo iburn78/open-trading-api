@@ -1,15 +1,15 @@
-from common.optlog import set_logger
+from core.common.optlog import set_logger
 set_logger()
 
 import asyncio
-from common.optlog import optlog, log_raise
-from common.setup import HOST, PORT
-import kis.kis_auth as ka
-from kis.domestic_stock_functions_ws import ccnl_notice
-from kis.ws_data import get_tr, TransactionNotice, TransactionPrices
-from model.order import OrderList
-from model.agent import ConnectedAgents
-from intercom.comm_handler import handle_client, dispatch, SubscriptionManager
+from core.common.optlog import optlog, log_raise
+from core.common.setup import HOST, PORT
+import core.kis.kis_auth as ka
+from core.kis.domestic_stock_functions_ws import ccnl_notice
+from core.kis.ws_data import get_tr, TransactionNotice, TransactionPrices
+from core.model.order import OrderList
+from core.model.agent import ConnectedAgents
+from app.comm.comm_handler import handle_client, dispatch, SubscriptionManager
 
 # server.py -----------------------------------------------------------
 # KIS와의 Communication

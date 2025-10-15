@@ -1,10 +1,10 @@
-from common.optlog import set_logger
+from core.common.optlog import set_logger
 set_logger()
 
 import asyncio
 
-from common.optlog import optlog
-from model.agent import Agent
+from core.common.optlog import optlog
+from core.model.agent import Agent
 
 import sys
 async def main(sw=None):

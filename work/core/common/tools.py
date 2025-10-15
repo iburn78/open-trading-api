@@ -21,7 +21,7 @@ def adj_int(x):   # int() with float issue removed / works for scaler and vector
 # ----------------------------------------
 # Get external data
 # ----------------------------------------
-_df_krx_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), 'trader/data_collection/data/df_krx.feather')
+_df_krx_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))), 'trader/data_collection/data/df_krx.feather')
 df_krx = pd.read_feather(_df_krx_path)
 
 def get_market(code):

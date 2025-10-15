@@ -3,8 +3,8 @@ import asyncio
 import uuid
 from typing import Callable
 
-from common.setup import HOST, PORT
-from common.optlog import optlog, log_raise
+from ..common.setup import HOST, PORT
+from ..common.optlog import optlog, log_raise
 
 # ---------------------------------------------------------------------------------
 # client side

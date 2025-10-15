@@ -3,10 +3,10 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Callable
 
-from common.optlog import optlog
-from model.order import Order, OrderList
-from model.agent import ConnectedAgents, AgentCard
-from kis.domestic_stock_functions_ws import ccnl_krx, ccnl_total
+from core.common.optlog import optlog
+from core.model.order import Order, OrderList
+from core.model.agent import ConnectedAgents, AgentCard
+from core.kis.domestic_stock_functions_ws import ccnl_krx, ccnl_total
 
 # ---------------------------------------------------------------------------------
 # Parameters:
