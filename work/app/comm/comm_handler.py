@@ -1,8 +1,7 @@
 import pickle
 import asyncio
-from dataclasses import dataclass, field
-from typing import Callable
 
+from .subs_manager import SubscriptionManager
 from core.common.optlog import optlog
 from core.model.order import Order, OrderList
 from core.model.agent import ConnectedAgents, AgentCard
@@ -25,16 +24,20 @@ async def handle_get_trenv(request_command, request_data_dict, writer, **server_
     trenv = server_data_dict.get("trenv")
     return {"response_status": "trenv info retrieved", "response_data": trenv}
 
-# master_order_list return
-async def handle_get_orderlist(request_command, request_data_dict, writer, **server_data_dict):
-    master_orderlist: OrderList = server_data_dict.get("master_orderlist", None)
-    return {"response_status": "orders retrieved", "response_data": master_orderlist}
+################################### REVIEW ##############################
+# 1) make it as a agent order list getter or 
+# 2) master_orderlist (sum of all agent.orderlist) return... 
+
+# # master_order_list return
+# async def handle_get_orderlist(request_command, request_data_dict, writer, **server_data_dict):
+#     master_orderlist: OrderList = server_data_dict.get("master_orderlist", None)
+#     return {"response_status": "orders retrieved", "response_data": master_orderlist}
 
 # list[Order]를 받아서 submit
 async def handle_submit_order(request_command, request_data_dict, writer, **server_data_dict):
     orderlist: list[Order] = request_data_dict.get("request_data") 
     command_queue: asyncio.Queue = server_data_dict.get("command_queue")
-    command = (request_command, orderlist)
+    command = (writer, request_command, orderlist)
     await command_queue.put(command)
     return {"response_status": "order queued"}
 
@@ -88,7 +91,7 @@ async def handle_subscribe_trp_by_agent_card(request_command, request_data_dict,
 # Command registry - UNIQUE PLACE TO REGISTER
 COMMAND_HANDLERS = {
     "get_trenv": handle_get_trenv, 
-    "get_orderlist": handle_get_orderlist, 
+    # "get_orderlist": handle_get_orderlist, 
     "submit_orders": handle_submit_order, 
     "CANCEL_orders": handle_cancel_orders, # note the cap letters
     "register_agent_card": handle_register_agent_card, 
@@ -157,69 +160,3 @@ async def dispatch(to: AgentCard | list[AgentCard], message: object):
             optlog.error(f"Agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed.")
         except Exception as e:
             optlog.error(f"Unexpected dispatch error: {e}")
-
-@dataclass
-class SubscriptionManager:
-    """
-    map = {
-        func: {
-            code: [agent_id, agent_id, ...],
-            ...
-        },
-        ...
-    }
-    """
-    map: dict = field(default_factory=dict)
-    kws: object = None
-
-    def add(self, func: Callable, agent_card: AgentCard):
-        func_map = self.map.setdefault(func, {})
-        agent_list = func_map.get(agent_card.code)
-        if not agent_list:
-            func_map[agent_card.code] = [agent_card.id]
-            # new entry of (func, code), so subscribe 
-            self._subscribe(func, agent_card.code)
-        else:
-            if agent_card.id not in agent_list:
-                agent_list.append(agent_card.id)
-
-    def remove(self, func: Callable, agent_card: AgentCard):
-        if not agent_card:
-            return
-
-        # if this func or code not in map, nothing to do
-        if func not in self.map:
-            return f"[Warning] {func.__name__} not found in subscription map"
-
-        func_map = self.map[func]
-        if agent_card.code not in func_map:
-            return f"[Warning] {agent_card.code} not found under {func.__name__}"
-
-        agent_list = func_map[agent_card.code]
-        if agent_card.id not in agent_list:
-            return f"[Warning] {agent_card.id} not subscribed to {agent_card.code}"
-
-        # remove id
-        agent_list.remove(agent_card.id)
-
-        # cleanup empty code list
-        if not agent_list:
-            # (func, code) does not exist, so unsubscribe
-            self._unsubscribe(func, agent_card.code)
-            del func_map[agent_card.code]
-
-        # cleanup empty func entry
-        if not func_map:
-            del self.map[func]
-
-        return f"Removed {agent_card.id} from {func.__name__} ({agent_card.code})"
-    
-    def remove_agent(self, agent_card: AgentCard):
-        for key in list(self.map.keys()): # list is necessary as self.remove modifies the map while iterating
-            self.remove(key, agent_card)
-
-    def _subscribe(self, func: Callable, code):
-        self.kws.subscribe(request=func, data=code)
-
-    def _unsubscribe(self, func: Callable, code):
-        self.kws.unsubscribe(request=func, data=code)

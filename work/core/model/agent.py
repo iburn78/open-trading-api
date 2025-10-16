@@ -13,14 +13,17 @@ class AgentCard: # an agent's business card (e.g., agents submit their business 
     code: str
 
     # server managed info / may change per connection
+    # e.g., server memos additional info to the agent's business card
     client_port: str | None = None # assigned by the server/OS 
     writer: object | None = None 
+    orderlist: OrderList = field(default_factory=OrderList)
 
 @dataclass
 class Agent:
     # id and code do not change for the lifetime
     id: str
     code: str
+    orderlist: OrderList = field(default_factory=OrderList)
 
     # temporary vars for trading stretegy - need review 
     target_return_rate: float = 0.0
@@ -28,7 +31,6 @@ class Agent:
     assigned_cash_t_2: int = 0 # available cash for trading
     holding_quantity: int = 0
     total_cost_incurred: int = 0
-    agent_orderlist: OrderList = field(default_factory=OrderList)
 
     # temporary var for performance measure testing - need review 
     stats: dict = field(default_factory=dict)
@@ -54,6 +56,7 @@ class Agent:
     async def run(self, **kwargs):
         """Keeps the agent alive until stopped. """
         await self.client.connect()
+
         resp = await self.client.send_command("register_agent_card", request_data=self.card)
         optlog.info(resp.get('response_status'))
         if not resp.get('response_success'):
@@ -93,6 +96,7 @@ class Agent:
         ######### IMPLEMENT AND TEST THIS ##############
 
     def on_dispatch(self, msg):
+        # first classify what is receieved
         pass
         # print(f'in call async back {self.code}---------')
         # print(msg)
@@ -141,7 +145,7 @@ class ConnectedAgents:
             for agent_card in list:
                 if agent_card.client_port == port:
                     return agent_card
-        return None   # This case could be an agent connected, but registration failed and disconnected. 
+        return None   # This case could be an agent connected and port is assigned but registration failed (e.g., duplication) so not in connected_agent.
 
     def get_agent_card_by_id(self, id):
         for code, list in self.code_agent_card_dict.items():
@@ -160,10 +164,6 @@ class ConnectedAgents:
     def get_target_agents(self, trp: TransactionPrices):
         code = trp.trprices['MKSC_SHRN_ISCD'].iat[0]
         return self.code_agent_card_dict.get(code, [])
-
-    def process_tr_notice(self, trn:TransactionNotice, trenv): 
-        pass
-
 
 
 

@@ -19,15 +19,18 @@ entry point to run
 - imports core and app
 - run in the root dir (e.g., work/) as a module ```python -m scripts.xxx```
 
-## Notes: 
+## Notes 
 ### Market knowledge
 - Every orders that are not processed is cancelled over night
 - 모의투자 has some limitations: e.g., price < 1000 does not go through.
 - Revise is basically the same as cancel and then re-order
 
-### Project coding notes
+### Design notes
 - Race conditions could occur when getting responses from API server: e.g., 1) direct response of the command, 2) websocket response 
 - Cancelled order is only progressed up to order.processed quantity
+- Each agent is a client (one to one)
+- Agent registration is done by AgentCard
+- A client can send command but the corresponding agent has to be registered already
 
 ### Python knowledge
 - variables are just references to objects, and everything is passed by reference (i.e., passing variables)
@@ -39,4 +42,8 @@ entry point to run
     - ==: executes __eq__, which is defined differently for objects
     - behavior of 'if i in a_list: ...' internally applies '=='
 
+## To develop
+- make it run each agent only once: use local lock file method etc
+- manage agents using AgentManager
+- Excel 관리 (read, etc)
 

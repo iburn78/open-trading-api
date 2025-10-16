@@ -42,7 +42,7 @@ class Order:
     fee_rounded: int = 0   # if completed or cancelled, this is final 
     tax_rounded: int = 0   # if completed or cancelled, this is final 
 
-    # NEED TO CLARIFY CALCELLED LOGIC
+    # NEED TO CLARIFY CALCEL LOGIC
     # IOC, FOK, End of day cancellation etc
     # even not completed, remainder of order not to be processed
 
@@ -66,6 +66,7 @@ class Order:
     def __str__(self):
         return "Order:" + json.dumps(asdict(self), indent=4, default=str)
 
+    # async submit is handled in OrderList
     def submit(self, trenv):
         if self.completed or self.cancelled:
             log_raise('A completed or cancelled order submitted ---')
@@ -84,7 +85,8 @@ class Order:
             self.org_no = res.KRX_FWDG_ORD_ORGNO.iloc[0]
             self.submitted = True
             optlog.info(f"Order {self.order_no} submitted")
-    
+
+    # internal update logic 
     def update(self, notice: TransactionNotice, trenv):
         if self.order_no != notice.oder_no: # checking order_no (or double-checking)
             log_raise(f"Notice does not match with order {self.order_no} ---")
@@ -201,6 +203,7 @@ class ReviseCancelOrder(Order):
             else: # cancel
                 optlog.info(f"Order {self.original_order.order_no}'s {'full' if self.all_yn == AllYN.ALL else 'partial'} cancellation order {self.order_no} submitted")
 
+    # internal update logic for revise-cancel order
     def update_rc_specific(self):
         if self.original_order.completed or self.original_order.cancelled: 
             log_raise("Check update_original, as original order is completed or cancelled ---")
@@ -260,7 +263,7 @@ class OrderList: # submitted order list
             self._pending_tr_notices.pop(order.order_no, None)
 
     async def submit_orders_and_register(self, orders:list, trenv): # only accepts new orders not submitted.
-        if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should not have been submitted ---')
+        if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should have not been submitted ---')
         for order in orders:
             await asyncio.to_thread(order.submit, trenv)
             async with self._lock:
@@ -272,10 +275,24 @@ class OrderList: # submitted order list
     ############################## MAY CHANGE TO BY AGENT OR BY CODE ################################ 
     ############################## ALL CANCEL REQUIRED TOO ################################ 
     async def cancel_all_outstanding(self, trenv):
-        # submitted but not accepted oreders: cannot cancel... should try later again... 
-        not_accepted_orders = [o for o in self.all if not o.accepted]
-        if not_accepted_orders: 
-            log_raise('Submitted but not accepted orders exist; should try later again ---')
+        ################ improve logic ##################
+        ################ improve logic ##################
+        ################ improve logic ##################
+        ################ improve logic ##################
+        ################ not to wait fully but to cancel first possible ##################
+        while True:
+            not_accepted_orders = [o for o in self.all if not o.accepted]
+            sleep = 0.5
+            count = 0
+            count_max = 10
+            if not_accepted_orders: 
+                if count == count_max:
+                    log_raise("Non accepted order error ---")
+                count += 1
+                optlog.warning(f'Submitted but not accepted orders exist; sleeping {sleep} sec ---')
+                await asyncio.sleep(sleep)
+            else: 
+                break
         to_cancel = [o for o in self.all if not o.completed and not o.cancelled]
         to_cancel_list = []
         for o in to_cancel:

@@ -8,8 +8,10 @@ import core.kis.kis_auth as ka
 from core.kis.domestic_stock_functions_ws import ccnl_notice
 from core.kis.ws_data import get_tr, TransactionNotice, TransactionPrices
 from core.model.order import OrderList
-from core.model.agent import ConnectedAgents
-from app.comm.comm_handler import handle_client, dispatch, SubscriptionManager
+from core.model.agent import ConnectedAgents, AgentCard
+from app.comm.comm_handler import handle_client, dispatch
+from app.comm.subs_manager import SubscriptionManager
+from app.comm.order_manager import OrderManager
 
 # server.py -----------------------------------------------------------
 # KIS와의 Communication
@@ -30,11 +32,12 @@ if svr != 'vps':
 ka.auth(svr)
 ka.auth_ws(svr)
 trenv = ka.getTREnv()
-master_orderlist = OrderList() # to keep a record in the server / and to cancel all (breaker) 
+# master_orderlist = OrderList() # to keep a record in the server / and to cancel all (breaker) 
 ws_ready = asyncio.Event()
 command_queue = asyncio.Queue() # to process submit and cancel orders
 connected_agents = ConnectedAgents() 
 subs_manager = SubscriptionManager()
+order_manager = OrderManager()
 
 #### ASSURE INDENPENDENCE OF EACH AGENT #####################################
 ### MAY ASSIGN ORDERLIST FOR EACH 
@@ -44,7 +47,7 @@ subs_manager = SubscriptionManager()
 # ---------------------------------
 server_data_dict ={
     'trenv' : trenv,
-    'master_orderlist' : master_orderlist, 
+    # 'master_orderlist' : master_orderlist, 
     'command_queue' : command_queue, 
     'connected_agents' : connected_agents,
     'subs_manager' : subs_manager, 
@@ -56,15 +59,24 @@ server_data_dict ={
 async def process_commands():
     await ws_ready.wait()
     while True:
-        (request_command, request_data) = await command_queue.get()
+        (writer, request_command, request_data) = await command_queue.get()
+        # only agents can submit commands
+        port = writer.get_extra_info("peername")[1] 
+        agent = connected_agents.get_agent_card_by_port(port)
+
         if request_command == "CANCEL_orders":  #### CAN ANYONE CANCEL ALL? AGENT INTERFERENCE ##############
-            await master_orderlist.cancel_all_outstanding(trenv)
-            await master_orderlist.closing_checker()
+            await agent.orderlist.cancel_all_outstanding(trenv)
+            await agent.orderlist.closing_checker()
+
+            # await master_orderlist.cancel_all_outstanding(trenv)
+            # await master_orderlist.closing_checker()
         
         elif request_command == "submit_orders":
             if request_data: # list [order, order, ... ]
                 optlog.debug(f"Trading server got: {request_data}")
-                await master_orderlist.submit_orders_and_register(request_data, trenv)
+                await agent.orderlist.submit_orders_and_register(request_data, trenv)
+                order_manager.add(agent, request_data)
+                # await master_orderlist.submit_orders_and_register(request_data, trenv)
 
         else:
             log_raise(f"Undefined: {request_command} ---")
@@ -77,12 +89,17 @@ async def async_on_result(ws, tr_id, result, data_info):
     if tr_id is None or tr_id == '':
         log_raise(f"tr_id is None or '': {tr_id} ---")
 
-    if get_tr(trenv, tr_id) == 'TransactionNotice': # Notices to my trade orders
+    if get_tr(trenv, tr_id) == 'TransactionNotice': # Notices to the trade orders
         trn = TransactionNotice.from_response(result)
-        print(trn.oder_no)
-        await master_orderlist.process_tr_notice(trn, trenv) # BOOK KEEPING IN THE SERVER TOO
-        # FIND AGENT WHO SUBMITTED ORDER 
-        connected_agents.process_tr_notice(trn, trenv) 
+        agent: AgentCard = order_manager.get_agent_from_trn(trn)
+
+        # orderlist update in the agent_card (server side)
+        await agent.orderlist.process_tr_notice(trn, trenv) 
+
+        # await master_orderlist.process_tr_notice(trn, trenv) 
+
+        # also send trn to agent (client side) to follow its order status
+        await dispatch(agent, trn)
 
         optlog.debug(trn)
         
@@ -119,6 +136,7 @@ async def handler_shell(reader, writer):
     finally:
         writer.close() # marks the stream as closed.
         await writer.wait_closed() # actual close
+        # agent is registered by request (not automatically on connect)
         target = connected_agents.get_agent_card_by_port(addr[1])
         # unsusbcribe everything 
         msg = subs_manager.remove_agent(target)
@@ -144,7 +162,7 @@ async def broadcast():
         # print(subs_manager.map)
         # print(ka.open_map)
         # print(ka.data_map)
-        print(master_orderlist)
+        # print(master_orderlist)
         await dispatch(connected_agents.get_all_agents(), message)
         await asyncio.sleep(15)
 

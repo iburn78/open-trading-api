@@ -98,7 +98,7 @@ class PersistentClient:
                     if self.on_dispatch:
                         self.on_dispatch(msg)
                     else:
-                        optlog.info(f"Dispatched - {msg}")
+                        optlog.warning(f"Dispatched but no receiver - {msg}")
 
         except asyncio.CancelledError:
             optlog.info("Listen task cancelled")  # intentional

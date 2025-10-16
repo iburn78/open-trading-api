@@ -23,6 +23,7 @@ platformdirs==4.3.8
 prompt_toolkit==3.0.51
 psutil==7.0.0
 pure_eval==0.2.3
+pyarrow==21.0.0
 pycryptodome==3.23.0
 Pygments==2.19.2
 PyQt6==6.9.1
