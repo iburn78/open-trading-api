@@ -15,12 +15,14 @@ async def main(sw=None):
         B = Agent(id = 'B1', code = '001440')
         task2 = asyncio.create_task(B.run())  
 
+        C = Agent(id = 'C1', code = '001440')
+        task2 = asyncio.create_task(C.run())  
 
-        await A._ready_event.wait()  # wait until .close() is called
-        order = A.make_order()
-        print(order)
-        resp = await A.client.send_command("submit_orders", request_data=[order])
-        optlog.info(resp.get('response_status'))
+        # await A._ready_event.wait()  # wait until .close() is called
+        # order = A.make_order()
+        # print(order)
+        # resp = await A.client.send_command("submit_orders", request_data=[order])
+        # optlog.info(resp.get('response_status'))
 
 
         await asyncio.sleep(100)

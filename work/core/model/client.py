@@ -93,12 +93,15 @@ class PersistentClient:
                         fut = self.pending_requests.pop(req_id)
                         if not fut.done():
                             fut.set_result(msg)
+                            continue
+                        else:
+                            optlog.warning(f"Received response for already completed request_id {req_id}, received: {msg}")
+                            continue
+                # handle dispatch message
+                if self.on_dispatch:
+                    self.on_dispatch(msg)
                 else:
-                    # handle dispatch message
-                    if self.on_dispatch:
-                        self.on_dispatch(msg)
-                    else:
-                        optlog.warning(f"Dispatched but no receiver - {msg}")
+                    optlog.warning(f"Dispatched but no receiver - {msg}")
 
         except asyncio.CancelledError:
             optlog.info("Listen task cancelled")  # intentional

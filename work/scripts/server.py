@@ -149,12 +149,14 @@ async def broadcast():
         await asyncio.sleep(15)
         message = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
         message += ' ping from the server --- '
-        # print(connected_agents)
-        # print(subs_manager.map)
+        print('==================================================')
+        print(connected_agents)
+        print(subs_manager.map)
         # print(ka.open_map)
         # print(ka.data_map)
         # print(master_orderlist)
         print(order_manager)
+        print('-----------------')
         await dispatch(connected_agents.get_all_agents(), message)
 
 async def server():

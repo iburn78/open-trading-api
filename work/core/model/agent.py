@@ -108,10 +108,40 @@ class Agent:
         ######### IMPLEMENT AND TEST THIS ##############
         ######### IMPLEMENT AND TEST THIS ##############
 
+    # msg can be 1) str, 2) Order, 3) TransactionPrices, 4) TransactionNotice
+    # should be careful when datatype is dict (could be response to certain request, and captured before getting here)
     def on_dispatch(self, msg):
-        # first classify what is receieved (could be msg, trp, trn, etc.)
-        # print(f'in call async back {self.code}---------')
-        print(msg)
+        TYPE_HANDLERS = {
+            str: self.handle_str,
+            dict: self.handle_dict, 
+            Order: self.handle_order,
+            TransactionPrices: self.handle_prices,
+            TransactionNotice: self.handle_notice,
+        }
+
+        handler = TYPE_HANDLERS.get(type(msg))
+        if handler:
+            handler(msg)
+        else:
+            print("Unhandled type:", type(msg))
+
+    # --- HANDLERS FOR DISPATCHED MSG TYPES ---
+    def handle_str(self, msg):
+        print("String:", msg)
+
+    # dict should not have 'request_id' key, as it can be confused with response
+    def handle_dict(self, msg):
+        print("Dict:", msg)
+
+    def handle_order(self, msg):
+        print("Order:", msg)
+
+    def handle_prices(self, msg):
+        print("Prices:", msg)
+
+    def handle_notice(self, msg):
+        print("Notice:", msg)
+
 
 
 # used in server on AgentCard
