@@ -16,7 +16,10 @@ class AgentCard: # an agent's business card (e.g., agents submit their business 
     # e.g., server memos additional info to the agent's business card
     client_port: str | None = None # assigned by the server/OS 
     writer: object | None = None 
-    orderlist: OrderList = field(default_factory=OrderList)
+
+    # agent card is removed once disconnected...
+    # so, orderlist should not be here
+    # orderlist: OrderList = field(default_factory=OrderList)
 
 @dataclass
 class Agent:
@@ -54,7 +57,14 @@ class Agent:
         }
 
     async def run(self, **kwargs):
-        """Keeps the agent alive until stopped. """
+        """     
+        Keeps the agent alive until stopped.
+        agent's main loop 
+        - to be run in an asyncio task
+        - has to be the starting point of the agent
+        - does 1) connect to server, 2) register itself, 3) subscribe to trp by code, 4) wait until stopped
+        - orders can be made afterward
+        """
         await self.client.connect()
 
         resp = await self.client.send_command("register_agent_card", request_data=self.card)

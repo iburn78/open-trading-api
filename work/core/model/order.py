@@ -264,7 +264,8 @@ class OrderList: # submitted order list
 
     async def submit_orders_and_register(self, orders:list, trenv): # only accepts new orders not submitted.
         if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should have not been submitted ---')
-        for order in orders:
+        # below is sequential submission 
+        for order in orders: 
             await asyncio.to_thread(order.submit, trenv)
             async with self._lock:
                 self.all.append(order)
@@ -298,9 +299,14 @@ class OrderList: # submitted order list
         for o in to_cancel:
             cancel_order = ReviseCancelOrder(o.code, o.side, o.quantity, o.ord_dvsn, o.price, rc=RCtype.CANCEL, all_yn=AllYN.ALL, original_order=o)
             to_cancel_list.append(cancel_order)
-        
+
+        if not to_cancel_list:
+            optlog.info('No outstanding orders to cancel')
+            return [] 
+
         optlog.info(f'Cancelling all outstanding {len(to_cancel_list)} orders:')
         await self.submit_orders_and_register(to_cancel_list, trenv)
+        return to_cancel_list
 
     async def closing_checker(self, delay=5): 
         await asyncio.sleep(delay)

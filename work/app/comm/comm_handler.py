@@ -44,7 +44,7 @@ async def handle_submit_order(request_command, request_data_dict, writer, **serv
 # 현재 server의 모든 order에 대해 cancel을 submit
 async def handle_cancel_orders(request_command, request_data_dict, writer, **server_data_dict):
     command_queue: asyncio.Queue = server_data_dict.get("command_queue")
-    command = (request_command, None)
+    command = (writer, request_command, None)
     await command_queue.put(command)
     return {"response_status": "stop loop and cancel all orders requested"}
 
@@ -70,9 +70,9 @@ async def handle_subscribe_trp_by_agent_card(request_command, request_data_dict,
     trenv = server_data_dict.get("trenv")
     subs_manager: SubscriptionManager = server_data_dict.get("subs_manager")
     if trenv.env_dv == 'demo':
-        subs_manager.add(ccnl_krx, agent_card)
+        await subs_manager.add(ccnl_krx, agent_card)
     else: 
-        subs_manager.add(ccnl_total, agent_card) # 모의투자 미지원
+        await subs_manager.add(ccnl_total, agent_card) # 모의투자 미지원
 
     return {"response_status": f"{agent_card.code} subscribed by {agent_card.id}"}
 
@@ -82,9 +82,9 @@ async def handle_subscribe_trp_by_agent_card(request_command, request_data_dict,
 #     trenv = server_data_dict.get("trenv")
 #     subs_manager: SubscriptionManager = server_data_dict.get("subs_manager")
 #     if trenv.env_dv == 'demo':
-#         subs_manager.remove(ccnl_krx, agent_card)
+#         await subs_manager.remove(ccnl_krx, agent_card)
 #     else: 
-#         subs_manager.remove(ccnl_total, agent_card) # 모의투자 미지원
+#         await subs_manager.remove(ccnl_total, agent_card) # 모의투자 미지원
 
 #     return {"response_status": f"{agent_card.code} unsubscribed by {agent_card.id}"}
 

@@ -86,7 +86,7 @@ class TransactionNotice: # 국내주식 실시간체결통보
         self.oder_prc       = self.pd_nan_chker_("int", row["ODER_PRC"]) 
 
     @classmethod
-    def from_response(cls, res):
+    def create_object_from_response(cls, res):
         obj = cls()
         obj._set_data(res)
         return obj

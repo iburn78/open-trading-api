@@ -60,12 +60,21 @@ async def process_commands():
     await ws_ready.wait()
     while True:
         (writer, request_command, request_data) = await command_queue.get()
-        # only agents can submit commands
+        # only agents can submit commands, and agents should be registered already
         port = writer.get_extra_info("peername")[1] 
         agent = connected_agents.get_agent_card_by_port(port)
 
-        if request_command == "CANCEL_orders":  #### CAN ANYONE CANCEL ALL? AGENT INTERFERENCE ##############
-            await agent.orderlist.cancel_all_outstanding(trenv)
+        if request_command == "CANCEL_orders":  # agent specific cancel per its orderlist
+            cancelled_orders = await agent.orderlist.cancel_all_outstanding(trenv)
+            # revise-cancel orders are also new orders, so need to register to the order_manager
+            # 
+            ##########################
+            ##########################
+            # make sure there is no time gap between order submission and order registration
+            ##########################
+            ##########################
+            await order_manager.add_agent_orders(agent, cancelled_orders)
+
             await agent.orderlist.closing_checker()
 
             # await master_orderlist.cancel_all_outstanding(trenv)
@@ -75,7 +84,13 @@ async def process_commands():
             if request_data: # list [order, order, ... ]
                 optlog.debug(f"Trading server got: {request_data}")
                 await agent.orderlist.submit_orders_and_register(request_data, trenv)
-                order_manager.add(agent, request_data)
+
+                ##########################
+                ##########################
+                # make sure there is no time gap between order submission and order registration
+                ##########################
+                ##########################
+                await order_manager.add_agent_orders(agent, request_data) # request_data: submission completed orders
                 # await master_orderlist.submit_orders_and_register(request_data, trenv)
 
         else:
@@ -90,8 +105,21 @@ async def async_on_result(ws, tr_id, result, data_info):
         log_raise(f"tr_id is None or '': {tr_id} ---")
 
     if get_tr(trenv, tr_id) == 'TransactionNotice': # Notices to the trade orders
-        trn = TransactionNotice.from_response(result)
-        agent: AgentCard = order_manager.get_agent_from_trn(trn)
+        trn = TransactionNotice.create_object_from_response(result)
+        # at this time, an agent who sent the order should already be registered in connected_agents
+        # 1) agent in connected_agents and in order_manager
+        # 2) agent in connected_agents but not in order_manager yet
+        # 3) agent already dropped out, so removed from connected_agents 
+        # 4) agent already dropped out, so removed from connected_agents 
+        ############### revise connected_agents behavior ###############
+        agent_id = order_manager.get_agent_id_from_trn(trn)
+        if agent_id:
+            agent: AgentCard = connected_agents.get_agent_card_by_id(agent_id) if agent_id else None
+        else:
+            # trn arrived earlier than order registration
+
+
+
 
         # orderlist update in the agent_card (server side)
         await agent.orderlist.process_tr_notice(trn, trenv) 
@@ -139,7 +167,7 @@ async def handler_shell(reader, writer):
         # agent is registered by request (not automatically on connect)
         target = connected_agents.get_agent_card_by_port(addr[1])
         # unsusbcribe everything 
-        msg = subs_manager.remove_agent(target)
+        msg = await subs_manager.remove_agent(target)
         optlog.info(msg)  
 
         # remove from connected_agents/clien
