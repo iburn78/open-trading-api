@@ -24,10 +24,6 @@ async def handle_get_trenv(request_command, request_data_dict, writer, **server_
     trenv = server_data_dict.get("trenv")
     return {"response_status": "trenv info retrieved", "response_data": trenv}
 
-################################### REVIEW ##############################
-# 1) make it as a agent order list getter or 
-# 2) master_orderlist (sum of all agent.orderlist) return... 
-
 # # master_order_list return
 # async def handle_get_orderlist(request_command, request_data_dict, writer, **server_data_dict):
 #     master_orderlist: OrderList = server_data_dict.get("master_orderlist", None)
@@ -36,6 +32,11 @@ async def handle_get_trenv(request_command, request_data_dict, writer, **server_
 # list[Order]를 받아서 submit
 async def handle_submit_order(request_command, request_data_dict, writer, **server_data_dict):
     orderlist: list[Order] = request_data_dict.get("request_data") 
+    if not isinstance(orderlist, list):
+        if isinstance(orderlist, Order):
+            orderlist = [orderlist]
+        else: 
+            return {"response_status": "invalid orderlist format or not a proper Order object"}
     command_queue: asyncio.Queue = server_data_dict.get("command_queue")
     command = (writer, request_command, orderlist)
     await command_queue.put(command)
@@ -147,6 +148,9 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         await writer.drain()
 
 async def dispatch(to: AgentCard | list[AgentCard], message: object):
+    if not to:
+        optlog.info(f"No agents to dispatch: {message}")
+
     if isinstance(to, AgentCard):
         to = [to]
 
@@ -160,3 +164,4 @@ async def dispatch(to: AgentCard | list[AgentCard], message: object):
             optlog.error(f"Agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed.")
         except Exception as e:
             optlog.error(f"Unexpected dispatch error: {e}")
+

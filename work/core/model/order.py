@@ -147,6 +147,24 @@ class Order:
 
 @dataclass
 class ReviseCancelOrder(Order):
+    """
+    revise is cancel + re-order
+    new order_no is assigned both for revise and cancel
+    command rule/sequence: ----------------------
+    - check order_no 
+    - check revise or cancel
+    - check all or partial 
+    - if all and revise:
+    -     check ord_dvsn (market or limit etc)
+    -     check price (quantity can be any, at least "0" required)
+    - if all and cancel:
+    -     nothing matters (can be any, at least "0" required)
+    - if partial and revise:
+    -     check ord_dvsn (market or limit etc)
+    -     check price and quantity
+    - if partial and cancel:
+    -     check quantity (price can be any, at least "0" required)
+    """
     rc: RCtype = None # '01': revise, '02': cancel
     all_yn: AllYN = None # 잔량 전부 주문 - Y:전부, N: 일부 
     original_order: Order = None
@@ -156,22 +174,6 @@ class ReviseCancelOrder(Order):
         if self.original_order is None: 
             log_raise("Check revise-cancel original order ---")
 
-    # revise is cancel + re-order
-    # new order_no is assigned both for revise and cancel
-    # command rule/sequence: ----------------------
-    # - check order_no 
-    # - check revise or cancel
-    # - check all or partial 
-    # - if all and revise:
-    # -     check ord_dvsn (market or limit etc)
-    # -     check price (quantity can be any, at least "0" required)
-    # - if all and cancel:
-    # -     nothing matters (can be any, at least "0" required)
-    # - if partial and revise:
-    # -     check ord_dvsn (market or limit etc)
-    # -     check price and quantity
-    # - if partial and cancel:
-    # -     check quantity (price can be any, at least "0" required)
     def submit(self, trenv):
         ord_qty = str(self.quantity)
         ord_unpr = str(self.price)
@@ -221,7 +223,11 @@ class ReviseCancelOrder(Order):
         
         if self.rc == RCtype.CANCEL: 
             self.cancelled = True
-                
+
+# -----------------------------------------------------------------
+# Below OrderList is expanded to OrderManager class to incorporarte multiple agents' orders
+# NOT TO BE USED ANYMORE
+# -----------------------------------------------------------------
 @dataclass
 class OrderList: # submitted order list
     # If order size grows, consider making all as a dict for faster lookup O(1)
@@ -229,7 +235,7 @@ class OrderList: # submitted order list
     all: list[Order] = field(default_factory=list) 
 
     # defaultdict(list) is useful when there is 1 to N relationship, e.g., multiple notices to one order
-    # simple access to defaultdict would generate key inside with empty list - handle with care
+    # access to defaultdict would generate key inside with empty list - handle with care
     _pending_tr_notices: dict[str, list[TransactionNotice]] = field(
         default_factory=lambda: defaultdict(list)
     )
@@ -272,28 +278,7 @@ class OrderList: # submitted order list
             await self.try_process_pending_tr_notices(order, trenv) # catch notices that are delivered before registration into order list
             await asyncio.sleep(trenv.sleep)
 
-    ############################## NEED REVIEW ################################ 
-    ############################## MAY CHANGE TO BY AGENT OR BY CODE ################################ 
-    ############################## ALL CANCEL REQUIRED TOO ################################ 
     async def cancel_all_outstanding(self, trenv):
-        ################ improve logic ##################
-        ################ improve logic ##################
-        ################ improve logic ##################
-        ################ improve logic ##################
-        ################ not to wait fully but to cancel first possible ##################
-        while True:
-            not_accepted_orders = [o for o in self.all if not o.accepted]
-            sleep = 0.5
-            count = 0
-            count_max = 10
-            if not_accepted_orders: 
-                if count == count_max:
-                    log_raise("Non accepted order error ---")
-                count += 1
-                optlog.warning(f'Submitted but not accepted orders exist; sleeping {sleep} sec ---')
-                await asyncio.sleep(sleep)
-            else: 
-                break
         to_cancel = [o for o in self.all if not o.completed and not o.cancelled]
         to_cancel_list = []
         for o in to_cancel:
@@ -316,7 +301,7 @@ class OrderList: # submitted order list
         if not_submitted:
             log_raise(f"Cannot close: {len(not_submitted)} orders not yet submitted ---")
         if not_accepted:
-            log_raise(f"Cannot close: {len(not_submitted)} orders not yet accepted ---")
+            log_raise(f"Cannot close: {len(not_accepted)} orders not yet accepted ---")
 
         # 2. check if any pending notices remain
         if self._pending_tr_notices:
@@ -325,8 +310,3 @@ class OrderList: # submitted order list
             log_raise(f"Cannot close: pending notices dict has {l} items, with total {count} pending notices ---")
 
         optlog.info("[v] closing check successful")
-        # ##################################################################################
-        # MAY SAVE STATUS or .... follow-up
-        # Generate Report
-        # Is this truely the end of main.py? Or, could be a chance to save some state
-        # ################################################################################## 

@@ -2,6 +2,7 @@ from core.common.optlog import set_logger
 set_logger()
 
 import asyncio
+import datetime
 from core.common.optlog import optlog, log_raise
 from core.common.setup import HOST, PORT
 import core.kis.kis_auth as ka
@@ -39,9 +40,6 @@ connected_agents = ConnectedAgents()
 subs_manager = SubscriptionManager()
 order_manager = OrderManager()
 
-#### ASSURE INDENPENDENCE OF EACH AGENT #####################################
-### MAY ASSIGN ORDERLIST FOR EACH 
-
 # ---------------------------------
 # Variables to share with clients
 # ---------------------------------
@@ -65,32 +63,15 @@ async def process_commands():
         agent = connected_agents.get_agent_card_by_port(port)
 
         if request_command == "CANCEL_orders":  # agent specific cancel per its orderlist
-            cancelled_orders = await agent.orderlist.cancel_all_outstanding(trenv)
-            # revise-cancel orders are also new orders, so need to register to the order_manager
-            # 
-            ##########################
-            ##########################
-            # make sure there is no time gap between order submission and order registration
-            ##########################
-            ##########################
-            await order_manager.add_agent_orders(agent, cancelled_orders)
-
-            await agent.orderlist.closing_checker()
-
+            await order_manager.cancel_all_outstanding(agent, trenv)
+            await order_manager.closing_checker(agent)
             # await master_orderlist.cancel_all_outstanding(trenv)
             # await master_orderlist.closing_checker()
         
         elif request_command == "submit_orders":
-            if request_data: # list [order, order, ... ]
+            if request_data: # list [order, order, ... ] (checked in comm_handler)
                 optlog.debug(f"Trading server got: {request_data}")
-                await agent.orderlist.submit_orders_and_register(request_data, trenv)
-
-                ##########################
-                ##########################
-                # make sure there is no time gap between order submission and order registration
-                ##########################
-                ##########################
-                await order_manager.add_agent_orders(agent, request_data) # request_data: submission completed orders
+                await order_manager.submit_orders_and_register(agent, request_data, trenv)
                 # await master_orderlist.submit_orders_and_register(request_data, trenv)
 
         else:
@@ -106,34 +87,16 @@ async def async_on_result(ws, tr_id, result, data_info):
 
     if get_tr(trenv, tr_id) == 'TransactionNotice': # Notices to the trade orders
         trn = TransactionNotice.create_object_from_response(result)
-        # at this time, an agent who sent the order should already be registered in connected_agents
-        # 1) agent in connected_agents and in order_manager
-        # 2) agent in connected_agents but not in order_manager yet
-        # 3) agent already dropped out, so removed from connected_agents 
-        # 4) agent already dropped out, so removed from connected_agents 
-        ############### revise connected_agents behavior ###############
-        agent_id = order_manager.get_agent_id_from_trn(trn)
-        if agent_id:
-            agent: AgentCard = connected_agents.get_agent_card_by_id(agent_id) if agent_id else None
-        else:
-            # trn arrived earlier than order registration
-
-
-
-
-        # orderlist update in the agent_card (server side)
-        await agent.orderlist.process_tr_notice(trn, trenv) 
-
+        # at this time, an agent who sent the order should already be initially registered in connected_agents
+        # but agent could already dropped out and removed from connected_agents 
+        # so need to use order_manager, not the connected_agents directly
+        await order_manager.process_tr_notice(trn, connected_agents, trenv)
         # await master_orderlist.process_tr_notice(trn, trenv) 
-
-        # also send trn to agent (client side) to follow its order status
-        await dispatch(agent, trn)
-
         optlog.debug(trn)
         
     elif get_tr(trenv, tr_id) in ('TransactionPrices_KRX',  'TransactionPrices_Total'): # 실시간 체결가
         trp = TransactionPrices(trprices=result)
-        await dispatch(connected_agents.get_target_agents(trp), trp)
+        await dispatch(connected_agents.get_target_agents_by_trp(trp), trp)
 
     # to add more tr_id ...
     else:
@@ -181,9 +144,9 @@ async def start_server():
     async with server:  # ensures graceful shutdown
         await server.serve_forever()
 
-import datetime
 async def broadcast():
     while True:
+        await asyncio.sleep(15)
         message = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
         message += ' ping from the server --- '
         # print(connected_agents)
@@ -191,8 +154,8 @@ async def broadcast():
         # print(ka.open_map)
         # print(ka.data_map)
         # print(master_orderlist)
+        print(order_manager)
         await dispatch(connected_agents.get_all_agents(), message)
-        await asyncio.sleep(15)
 
 async def server():
     async with asyncio.TaskGroup() as tg: 

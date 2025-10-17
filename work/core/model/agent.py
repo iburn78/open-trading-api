@@ -26,7 +26,12 @@ class Agent:
     # id and code do not change for the lifetime
     id: str
     code: str
-    orderlist: OrderList = field(default_factory=OrderList)
+    ##################
+    # agent itself may not need to have orderlist 
+    # orderlist has to be managed in the server side, and agent needs to refer to it real time
+    # develop simpler order manager in agent (notices are come in sequence)
+    ##################
+    # orderlist: OrderList = field(default_factory=OrderList)
 
     # temporary vars for trading stretegy - need review 
     target_return_rate: float = 0.0
@@ -102,14 +107,11 @@ class Agent:
         ######### IMPLEMENT AND TEST THIS ##############
         ######### IMPLEMENT AND TEST THIS ##############
         ######### IMPLEMENT AND TEST THIS ##############
-        ######### IMPLEMENT AND TEST THIS ##############
-        ######### IMPLEMENT AND TEST THIS ##############
 
     def on_dispatch(self, msg):
-        # first classify what is receieved
-        pass
+        # first classify what is receieved (could be msg, trp, trn, etc.)
         # print(f'in call async back {self.code}---------')
-        # print(msg)
+        print(msg)
 
 
 # used in server on AgentCard
@@ -171,16 +173,14 @@ class ConnectedAgents:
                 res.append(i) 
         return res
 
-    def get_target_agents(self, trp: TransactionPrices):
+    def get_target_agents_by_trp(self, trp: TransactionPrices):
         code = trp.trprices['MKSC_SHRN_ISCD'].iat[0]
         return self.code_agent_card_dict.get(code, [])
 
 
-
+# ##############################################################
 # Refine why this is needed and what to do
-# Refine why this is needed and what to do
-# Refine why this is needed and what to do
-# Refine why this is needed and what to do
+# ##############################################################
 @dataclass
 class AgentManager:
     # trade_target: TradeTarget
