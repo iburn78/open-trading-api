@@ -99,7 +99,7 @@ class PersistentClient:
                             continue
                 # handle dispatch message
                 if self.on_dispatch:
-                    self.on_dispatch(msg)
+                    await self.on_dispatch(msg)
                 else:
                     optlog.warning(f"Dispatched but no receiver - {msg}")
 

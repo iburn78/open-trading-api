@@ -66,7 +66,7 @@ class Order:
     def __str__(self):
         return "Order:" + json.dumps(asdict(self), indent=4, default=str)
 
-    # async submit is handled in OrderList
+    # async submit is handled in order_manager in the server side
     def submit(self, trenv):
         if self.completed or self.cancelled:
             log_raise('A completed or cancelled order submitted ---')
@@ -223,90 +223,3 @@ class ReviseCancelOrder(Order):
         
         if self.rc == RCtype.CANCEL: 
             self.cancelled = True
-
-# -----------------------------------------------------------------
-# Below OrderList is expanded to OrderManager class to incorporarte multiple agents' orders
-# NOT TO BE USED ANYMORE
-# -----------------------------------------------------------------
-@dataclass
-class OrderList: # submitted order list
-    # If order size grows, consider making all as a dict for faster lookup O(1)
-    # @dataclass need to define default values with care (e.g., field(...))
-    all: list[Order] = field(default_factory=list) 
-
-    # defaultdict(list) is useful when there is 1 to N relationship, e.g., multiple notices to one order
-    # access to defaultdict would generate key inside with empty list - handle with care
-    _pending_tr_notices: dict[str, list[TransactionNotice]] = field(
-        default_factory=lambda: defaultdict(list)
-    )
-    # the _lock is an instance variable used to protect the 'all' variable and '_pending_tr_notices' variable in each OrderList instance
-    # if and only if the two variables are indenpendent, you may split it to two _locks for performance
-    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
-
-    def __str__(self):
-        if not self.all:
-            return "<no orders>"
-        return "\n".join(str(order) for order in self.all)
-
-    async def process_tr_notice(self, notice: TransactionNotice, trenv):
-        # reroute notice to corresponding order
-        # notice content handling logic should reside in Order class
-        # tr notice could arrive faster than order submit result - should not use order_no
-        # i.e., race condition could occur
-        async with self._lock:
-            order = next((o for o in self.all if o.order_no is not None and o.order_no == notice.oder_no), None)
-            if order is not None:
-                order.update(notice, trenv)
-            else:
-                self._pending_tr_notices[notice.oder_no].append(notice)
-
-    async def try_process_pending_tr_notices(self, order:Order, trenv):
-        # Retry unmatched notices when new orders get order_no
-        async with self._lock:
-            to_process = self._pending_tr_notices.get(order.order_no, [])
-            for notice in to_process:
-                order.update(notice, trenv)
-            self._pending_tr_notices.pop(order.order_no, None)
-
-    async def submit_orders_and_register(self, orders:list, trenv): # only accepts new orders not submitted.
-        if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should have not been submitted ---')
-        # below is sequential submission 
-        for order in orders: 
-            await asyncio.to_thread(order.submit, trenv)
-            async with self._lock:
-                self.all.append(order)
-            await self.try_process_pending_tr_notices(order, trenv) # catch notices that are delivered before registration into order list
-            await asyncio.sleep(trenv.sleep)
-
-    async def cancel_all_outstanding(self, trenv):
-        to_cancel = [o for o in self.all if not o.completed and not o.cancelled]
-        to_cancel_list = []
-        for o in to_cancel:
-            cancel_order = ReviseCancelOrder(o.code, o.side, o.quantity, o.ord_dvsn, o.price, rc=RCtype.CANCEL, all_yn=AllYN.ALL, original_order=o)
-            to_cancel_list.append(cancel_order)
-
-        if not to_cancel_list:
-            optlog.info('No outstanding orders to cancel')
-            return [] 
-
-        optlog.info(f'Cancelling all outstanding {len(to_cancel_list)} orders:')
-        await self.submit_orders_and_register(to_cancel_list, trenv)
-        return to_cancel_list
-
-    async def closing_checker(self, delay=5): 
-        await asyncio.sleep(delay)
-        # 1. check if any order not yet submitted or accepted
-        not_submitted = [o for o in self.all if not o.submitted]
-        not_accepted = [o for o in self.all if not o.accepted]
-        if not_submitted:
-            log_raise(f"Cannot close: {len(not_submitted)} orders not yet submitted ---")
-        if not_accepted:
-            log_raise(f"Cannot close: {len(not_accepted)} orders not yet accepted ---")
-
-        # 2. check if any pending notices remain
-        if self._pending_tr_notices:
-            l = len(self._pending_tr_notices)
-            count = sum(len(v) for v in self._pending_tr_notices.values())
-            log_raise(f"Cannot close: pending notices dict has {l} items, with total {count} pending notices ---")
-
-        optlog.info("[v] closing check successful")

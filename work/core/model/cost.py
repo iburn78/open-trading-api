@@ -5,7 +5,7 @@ from ..common.tools import excel_round_int
 # Transaction cost calculation
 # ----------------------------------------
 class CostCalculator:
-    # All data: percent
+    # all data: percent
     # 한투수수료 (유관기관수수료 포함)
     FEE = {
         'KRX': 0.0140527, 
@@ -26,7 +26,7 @@ class CostCalculator:
         } 
     }  
 
-    # Percent
+    # percent
     TAX = {  
         # On-exchange (장내)
         'KOSPI': {
@@ -46,7 +46,7 @@ class CostCalculator:
         # KONEX, K-OTC ... 
     }
 
-    # Rounding Rule 
+    # rounding rule 
     RD_rule = { 
         # 0: # 1원 미만 rounding
         # -1: # 10원 미만 rounding 

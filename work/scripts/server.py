@@ -8,9 +8,8 @@ from core.common.setup import HOST, PORT
 import core.kis.kis_auth as ka
 from core.kis.domestic_stock_functions_ws import ccnl_notice
 from core.kis.ws_data import get_tr, TransactionNotice, TransactionPrices
-from core.model.order import OrderList
-from core.model.agent import ConnectedAgents, AgentCard
 from app.comm.comm_handler import handle_client, dispatch
+from app.comm.conn_agents import ConnectedAgents
 from app.comm.subs_manager import SubscriptionManager
 from app.comm.order_manager import OrderManager
 
@@ -22,7 +21,7 @@ from app.comm.order_manager import OrderManager
 # - local client의 request handle
 
 # ---------------------------------
-# auth and Set-up
+# auth and set-up
 # ---------------------------------
 svr = 'vps' # prod, auto, vps
 if svr != 'vps':
@@ -33,7 +32,6 @@ if svr != 'vps':
 ka.auth(svr)
 ka.auth_ws(svr)
 trenv = ka.getTREnv()
-# master_orderlist = OrderList() # to keep a record in the server / and to cancel all (breaker) 
 ws_ready = asyncio.Event()
 command_queue = asyncio.Queue() # to process submit and cancel orders
 connected_agents = ConnectedAgents() 
@@ -45,7 +43,6 @@ order_manager = OrderManager()
 # ---------------------------------
 server_data_dict ={
     'trenv' : trenv,
-    # 'master_orderlist' : master_orderlist, 
     'command_queue' : command_queue, 
     'connected_agents' : connected_agents,
     'subs_manager' : subs_manager, 
@@ -58,21 +55,18 @@ async def process_commands():
     await ws_ready.wait()
     while True:
         (writer, request_command, request_data) = await command_queue.get()
-        # only agents can submit commands, and agents should be registered already
+        # Only agents can submit commands, and agents should be registered already.
         port = writer.get_extra_info("peername")[1] 
         agent = connected_agents.get_agent_card_by_port(port)
 
-        if request_command == "CANCEL_orders":  # agent specific cancel per its orderlist
+        if request_command == "CANCEL_orders":  # agent specific cancel
             await order_manager.cancel_all_outstanding(agent, trenv)
             await order_manager.closing_checker(agent)
-            # await master_orderlist.cancel_all_outstanding(trenv)
-            # await master_orderlist.closing_checker()
         
         elif request_command == "submit_orders":
             if request_data: # list [order, order, ... ] (checked in comm_handler)
                 optlog.debug(f"Trading server got: {request_data}")
                 await order_manager.submit_orders_and_register(agent, request_data, trenv)
-                # await master_orderlist.submit_orders_and_register(request_data, trenv)
 
         else:
             log_raise(f"Undefined: {request_command} ---")
@@ -87,11 +81,10 @@ async def async_on_result(ws, tr_id, result, data_info):
 
     if get_tr(trenv, tr_id) == 'TransactionNotice': # Notices to the trade orders
         trn = TransactionNotice.create_object_from_response(result)
-        # at this time, an agent who sent the order should already be initially registered in connected_agents
-        # but agent could already dropped out and removed from connected_agents 
-        # so need to use order_manager, not the connected_agents directly
+        # At this time, an agent who sent the order should already be initially registered in connected_agents.
+        # But agent could already dropped out and removed from connected_agents.
+        # So need to use order_manager, not the connected_agents directly.
         await order_manager.process_tr_notice(trn, connected_agents, trenv)
-        # await master_orderlist.process_tr_notice(trn, trenv) 
         optlog.debug(trn)
         
     elif get_tr(trenv, tr_id) in ('TransactionPrices_KRX',  'TransactionPrices_Total'): # 실시간 체결가
@@ -154,7 +147,6 @@ async def broadcast():
         print(subs_manager.map)
         # print(ka.open_map)
         # print(ka.data_map)
-        # print(master_orderlist)
         print(order_manager)
         print('-----------------')
         await dispatch(connected_agents.get_all_agents(), message)

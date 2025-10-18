@@ -1,4 +1,5 @@
 import json 
+from collections import namedtuple
 import pandas as pd
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -19,6 +20,21 @@ def get_tr(trenv, tr_id):
     return rev_tr_id_dict.get((trenv.env_dv, tr_id))
 
 # ----------------------------------------
+# trenv conversion to/from json
+# ----------------------------------------
+# trenv cannnot be pickled, so conversion needed
+# add more fields if needed ...
+
+def trenv_to_json(trenv):
+    return json.dumps({
+        'my_svr': trenv.my_svr,
+    })
+
+def trenv_from_json(trenv_json):
+    nt1 = namedtuple('TrEnv', ['my_svr',])
+    return nt1(*json.loads(trenv_json))
+
+# ----------------------------------------
 # Common Enum definitions
 # ----------------------------------------
 class ORD_DVSN(str, Enum):
@@ -32,6 +48,10 @@ class RCtype(str, Enum):
 class AllYN(str, Enum):
     ALL = 'Y'
     PARTIAL = 'N'
+
+class SIDE(str, Enum):
+    BUY = 'buy'
+    SELL = 'sell'
 
 @dataclass
 class TransactionNotice: # 국내주식 실시간체결통보

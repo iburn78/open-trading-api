@@ -3,42 +3,37 @@ import asyncio
 
 from .subs_manager import SubscriptionManager
 from core.common.optlog import optlog
-from core.model.order import Order, OrderList
-from core.model.agent import ConnectedAgents, AgentCard
+from core.model.order import Order
+from core.model.agent import AgentCard
 from core.kis.domestic_stock_functions_ws import ccnl_krx, ccnl_total
+from core.kis.ws_data import trenv_to_json
+from app.comm.conn_agents import ConnectedAgents
 
-# ---------------------------------------------------------------------------------
-# Parameters:
-#     - request_data_dict.get("request_data"): from client
-#     - server_data_dict: from server 
-# Generating responses:
-#     - command_queue put(): tuple (request_command: str, request_data: obj)
-#     - return: dict {"response_status": str, "response_data": obj}
-# ---------------------------------------------------------------------------------
+"""
+---------------------------------------------------------------------------------
+Parameters:
+    - request_data_dict.get("request_data"): from client
+    - server_data_dict: from server 
+
+Generating responses:
+    - command_queue put(): tuple (request_command: str, request_data: obj)
+    - return: dict {"response_status": str, "response_data": obj}
+---------------------------------------------------------------------------------
+"""
 
 # ---------------------------------------------------------------------------------
 # server side
 # ---------------------------------------------------------------------------------
-# 현재 server의 trenv를 return
-async def handle_get_trenv(request_command, request_data_dict, writer, **server_data_dict):
-    trenv = server_data_dict.get("trenv")
-    return {"response_status": "trenv info retrieved", "response_data": trenv}
-
-# # master_order_list return
-# async def handle_get_orderlist(request_command, request_data_dict, writer, **server_data_dict):
-#     master_orderlist: OrderList = server_data_dict.get("master_orderlist", None)
-#     return {"response_status": "orders retrieved", "response_data": master_orderlist}
-
 # list[Order]를 받아서 submit
 async def handle_submit_order(request_command, request_data_dict, writer, **server_data_dict):
-    orderlist: list[Order] = request_data_dict.get("request_data") 
-    if not isinstance(orderlist, list):
-        if isinstance(orderlist, Order):
-            orderlist = [orderlist]
+    orders: list[Order] = request_data_dict.get("request_data") 
+    if not isinstance(orders, list):
+        if isinstance(orders, Order):
+            orders = [orders]
         else: 
-            return {"response_status": "invalid orderlist format or not a proper Order object"}
+            return {"response_status": "invalid order-format(list) or not a proper Order object"}
     command_queue: asyncio.Queue = server_data_dict.get("command_queue")
-    command = (writer, request_command, orderlist)
+    command = (writer, request_command, orders)
     await command_queue.put(command)
     return {"response_status": "order queued"}
 
@@ -53,10 +48,11 @@ async def handle_cancel_orders(request_command, request_data_dict, writer, **ser
 async def handle_register_agent_card(request_command, request_data_dict, writer, **server_data_dict):
     agent_card: AgentCard = request_data_dict.get("request_data") 
     connected_agents: ConnectedAgents = server_data_dict.get('connected_agents')
+    trenv_json = trenv_to_json(server_data_dict.get("trenv"))
     agent_card.writer = writer
     agent_card.client_port = writer.get_extra_info("peername")[1] 
     msg, success = await connected_agents.add(agent_card)
-    return {"response_status": msg, "response_success": success}
+    return {"response_status": msg, "response_success": success, "response_data": trenv_json}
 
 # 연결된 Agent를 Remove함 - auto-remove (when disconnect)
 # async def handle_remove_agent_card(request_command, request_data_dict, writer, **server_data_dict):
@@ -91,8 +87,6 @@ async def handle_subscribe_trp_by_agent_card(request_command, request_data_dict,
 
 # Command registry - UNIQUE PLACE TO REGISTER
 COMMAND_HANDLERS = {
-    "get_trenv": handle_get_trenv, 
-    # "get_orderlist": handle_get_orderlist, 
     "submit_orders": handle_submit_order, 
     "CANCEL_orders": handle_cancel_orders, # note the cap letters
     "register_agent_card": handle_register_agent_card, 

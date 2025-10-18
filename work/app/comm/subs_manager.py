@@ -7,6 +7,9 @@ from core.model.agent import AgentCard
 @dataclass
 class SubscriptionManager:
     """
+    Server side application
+    Manage subscriptions from agents for various functions
+    
     map = {
         func: {
             code: [agent_id, agent_id, ...],

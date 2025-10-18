@@ -4,12 +4,13 @@ from datetime import date
 import asyncio
 
 from core.common.optlog import optlog, log_raise
-from core.model.agent import AgentCard, ConnectedAgents
+from core.model.agent import AgentCard
 from core.model.order import Order, ReviseCancelOrder
 from core.kis.ws_data import TransactionNotice, RCtype, AllYN
+from app.comm.conn_agents import ConnectedAgents
 from app.comm.comm_handler import dispatch
 
-# server side 
+# server side application
 # Orders placed by agents are managed here in a comphrehensive way
 # all order records are kept
 # to be saved in disc everyday (to be implemented later)
@@ -27,7 +28,7 @@ class OrderManager:
     - pending trns are due to race condition between order submission and getting the trn (order_no not yet assigned from the server)
     - when new orders are added, need to check if there are any pending trn for the order
     
-    # Communication
+    # Communication with KIS API server 
     - order submitted: order itself send back (with order_no etc filled) 
     - upon order submission, pending trns are checked and send back 
     - trn received: trn is sent back to the corresponding agent right away
@@ -142,15 +143,17 @@ class OrderManager:
                 order.update(notice, trenv)
                 # if order is completed or canceled, move to completed_orders
                 if order.completed or order.cancelled:
-                    # remove from incompleted_orders
-                    incompleted_list = code_map[INCOMPLETED_ORDERS].get(order.agent_id, [])
-                    if order in incompleted_list:
-                        incompleted_list.remove(order)
+                    # remove from incompleted_orders 
+                    try:
+                        code_map[INCOMPLETED_ORDERS].get(order.agent_id).remove(order) 
+                    except:
+                        # let it raise
+                        log_raise(f'order.agent_id {order.agent_id} and notice.order_no {notice.order_no} mismatches ---') 
                     # add to completed_orders
                     code_map[COMPLETED_ORDERS].setdefault(order.agent_id, []).append(order)
 
                 agent = connected_agents.get_agent_card_by_id(order.agent_id)
-                if agent:
+                if agent: # if agent is still connected
                     await dispatch(agent, notice)
 
             else:
