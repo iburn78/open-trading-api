@@ -12,7 +12,7 @@ def excel_round_int(x: int | list[int], ndigits=0):  # excel like rounding / wor
     eps_sign = np.where(x >=0, eps, -eps)
     return (np.round(x + eps_sign, ndigits)+eps_sign).astype(int)
 
-def adj_int(x):   # int() with float issue removed / works for scaler and vector
+def adj_int(x: float | list[float]):   # int() with float issue removed / works for scaler and vector
     x = np.asarray(x)
     eps = 1e-10
     eps_sign = np.where(x >=0, eps, -eps)

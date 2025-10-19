@@ -88,7 +88,7 @@ async def async_on_result(ws, tr_id, result, data_info):
         optlog.debug(trn)
         
     elif get_tr(trenv, tr_id) in ('TransactionPrices_KRX',  'TransactionPrices_Total'): # 실시간 체결가
-        trp = TransactionPrices(trprices=result)
+        trp = TransactionPrices(trprices=result, trenv=trenv)
         await dispatch(connected_agents.get_target_agents_by_trp(trp), trp)
 
     # to add more tr_id ...
@@ -138,17 +138,21 @@ async def start_server():
         await server.serve_forever()
 
 async def broadcast():
+    INTERVAL = 15
     while True:
-        await asyncio.sleep(15)
+        await asyncio.sleep(INTERVAL)
         message = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
         message += ' ping from the server --- '
-        print('==================================================')
-        print(connected_agents)
-        print(subs_manager.map)
-        # print(ka.open_map)
-        # print(ka.data_map)
-        print(order_manager)
-        print('-----------------')
+
+        # for debugging:
+        print(message)
+        # print('==================================================')
+        # print(connected_agents)
+        # print(subs_manager.map)
+        # # print(ka.open_map)
+        # # print(ka.data_map)
+        # print(order_manager)
+        # print('-----------------')
         await dispatch(connected_agents.get_all_agents(), message)
 
 async def server():

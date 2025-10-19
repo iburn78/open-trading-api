@@ -3,6 +3,7 @@ from collections import namedtuple
 import pandas as pd
 from dataclasses import dataclass, asdict
 from enum import Enum
+from datetime import datetime
 
 tr_id_dict = {
     'TransactionNotice': {'demo': 'H0STCNI9', 'real': 'H0STCNI0',},
@@ -117,12 +118,15 @@ class TransactionNotice: # 국내주식 실시간체결통보
         return None if pd.isna(val) or val=="" else {"str": str, "int": int, "float": float}[casttype](val)
 
 
-# WHY DO I NEED THIS? THINK .... 
 @dataclass
 class TransactionPrices: # 국내주식 실시간체결가 (KRX, but should be the same for NXT, total)
     trprices: pd.DataFrame
+    trenv: object = None
 
-    # this doesn't do anything yet... 
+    def __post_init__(self):
+        if set(self.trprices.columns) != set(self._get_columns(self.trenv)):
+            raise Exception("TransactionPrices column names need attention")
+
     def _get_columns(self, trenv):
         if trenv.env_dv == 'demo': # KRX
             CNTG_CLS_CODE = 'CCLD_DVSN'
@@ -177,3 +181,28 @@ class TransactionPrices: # 국내주식 실시간체결가 (KRX, but should be t
             "VI_STND_PRC", # 정적VI발동기준가
         ]
         return _columns
+
+    def get_price_quantity_time(self):
+        """
+        Returns price and quantity and time if there is only one record
+        Returns avg(price), sum(quantity), latest(time) if there are more than one record
+        """
+        if self.trprices.empty:
+            return None, None, None
+
+        ################ CHECK NEEDED DATA FORMAT #################
+        ################ CHECK NEEDED #################
+        ################ CHECK NEEDED #################
+        ################ CHECK NEEDED #################
+        ################ CHECK NEEDED #################
+
+        if len(self.trprices) == 1:
+            record = self.trprices.iloc[0]
+            lt = datetime.strptime(record["BSOP_DATE"] +' '+ record['STCK_CNTG_HOUR'], '%Y%m%d %H%M%S')
+            return record["STCK_PRPR"], record["CNTG_VOL"], lt
+
+        else:
+            qty_sum = self.trprices["CNTG_VOL"].sum()
+            pr_avg = (self.trprices["STCK_PRPR"]*self.trprices["CNTG_VOL"]).sum()/qty_sum # qty_sum should not be a zero value
+            lt_series = pd.to_datetime(self.trprices["BSOP_DATE"]+' '+self.trprices['STCK_CNTG_HOUR'], format='%Y%m%d %H%M%S')
+            return pr_avg, qty_sum, lt_series.max()

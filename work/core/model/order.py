@@ -12,7 +12,8 @@ from ..kis.ws_data import ORD_DVSN, RCtype, AllYN, TransactionNotice
 
 @dataclass
 class Order:
-    agent_id: str 
+    agent_id: str # unique_id defined below
+
     code: str
     side: str # 'buy' or 'sell'
     quantity: int
@@ -33,6 +34,8 @@ class Order:
     accepted: bool = False
     completed: bool = False
     cancelled: bool = False 
+
+    unique_id: str = field(default_factory=lambda: pd.Timestamp.now().strftime('%Y%m%d%H%M%S%f'))
 
     # as the order is fullfilled, cost_occured should refect exact cost up to that moment
     # round only done when the order is fully fullfilled

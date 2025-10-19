@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import pandas as pd
 
 from core.common.optlog import optlog
 from core.model.agent import Agent

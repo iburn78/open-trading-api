@@ -18,6 +18,7 @@ intermediate applications to be used in scripts/
 entry point to run
 - imports core and app
 - run in the root dir (e.g., work/) as a module ```python -m scripts.xxx```
+- for unbuffered terminal output: ```python -u -m scripts.xxx```
 
 ## Notes 
 ### Market knowledge
