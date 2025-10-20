@@ -57,7 +57,7 @@ class Order:
 
         if self.ord_dvsn == ORD_DVSN.LIMIT and self.price == 0:
             log_raise("Limit orders require a price")
-        if self.ord_dvsn == ORD_DVSN.MARKET and self.price != 0:
+        if self.ord_dvsn == ORD_DVSN.MARKET and self.price != 0: # for market orders, price has to be set to 0
             log_raise("Market orders should not have a price ---")
 
         self.market = get_market(self.code)

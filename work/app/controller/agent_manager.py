@@ -7,9 +7,9 @@ from core.model.agent import Agent
 # ##############################################################
 # Refine why this is needed and what to do
 # ##############################################################
+
 @dataclass
 class AgentManager:
-    # trade_target: TradeTarget
     target_df: pd.DataFrame = None
     agent_list: list = field(default_factory=list)
 

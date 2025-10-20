@@ -6,7 +6,6 @@ from core.common.optlog import optlog
 from core.model.order import Order
 from core.model.agent import AgentCard
 from core.kis.domestic_stock_functions_ws import ccnl_krx, ccnl_total
-from core.kis.ws_data import trenv_to_json
 from app.comm.conn_agents import ConnectedAgents
 
 """
@@ -48,11 +47,11 @@ async def handle_cancel_orders(request_command, request_data_dict, writer, **ser
 async def handle_register_agent_card(request_command, request_data_dict, writer, **server_data_dict):
     agent_card: AgentCard = request_data_dict.get("request_data") 
     connected_agents: ConnectedAgents = server_data_dict.get('connected_agents')
-    trenv_json = trenv_to_json(server_data_dict.get("trenv"))
+    trenv = server_data_dict.get("trenv")
     agent_card.writer = writer
     agent_card.client_port = writer.get_extra_info("peername")[1] 
     msg, success = await connected_agents.add(agent_card)
-    return {"response_status": msg, "response_success": success, "response_data": trenv_json}
+    return {"response_status": msg, "response_success": success, "response_data": trenv}
 
 # 연결된 Agent를 Remove함 - auto-remove (when disconnect)
 # async def handle_remove_agent_card(request_command, request_data_dict, writer, **server_data_dict):

@@ -45,6 +45,11 @@ _isPaper = False
 _smartSleep = 0.1 # min 0.05
 _demoSleep = 0.5 # min 0.5
 
+KISEnv = namedtuple(
+    "KISEnv",
+    ["my_app", "my_sec", "my_acct", "my_svr", "my_prod", "my_htsid", "my_token", "my_url", "my_url_ws", "env_dv", "sleep"],
+)
+
 # 기본 헤더값 정의
 _min_headers = {
     "Content-Type": "application/json",
@@ -93,10 +98,10 @@ def _getBaseHeader(svr):
 
 # 가져오기 : 앱키, 앱시크리트, 종합계좌번호(계좌번호 중 숫자8자리), 계좌상품코드(계좌번호 중 숫자2자리), 토큰, 도메인
 def _setTRENV(cfg):
-    nt1 = namedtuple(
-        "KISEnv",
-        ["my_app", "my_sec", "my_acct", "my_svr", "my_prod", "my_htsid", "my_token", "my_url", "my_url_ws", "env_dv", "sleep"],
-    )
+    # nt1 = namedtuple(
+    #     "KISEnv",
+    #     ["my_app", "my_sec", "my_acct", "my_svr", "my_prod", "my_htsid", "my_token", "my_url", "my_url_ws", "env_dv", "sleep"],
+    # )
     d = {
         "my_app": cfg["my_app"],  # 앱키
         "my_sec": cfg["my_sec"],  # 앱시크리트
@@ -111,7 +116,8 @@ def _setTRENV(cfg):
         "sleep": _demoSleep if _isPaper else _smartSleep,
     }  
     global _TRENV
-    _TRENV = nt1(**d)
+    # _TRENV = nt1(**d)
+    _TRENV = KISEnv(**d)
 
 def changeTREnv(token_key, svr):
     cfg = dict()

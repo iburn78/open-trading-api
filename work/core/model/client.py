@@ -113,7 +113,8 @@ class PersistentClient:
             elif not self.listen_task.cancelled(): # if not keyboard-interrupt
                 optlog.warning("Server closed connection")  # actual EOF / disconnect
         except Exception as e:
-            optlog.error(f"Error in listening: {e}")
+            log_raise(f"Error in listening: {e}")
+            # optlog.error(f"Error in listening: {e}")
 
     async def send_command(self, request_command: str, request_data=None, **other_kwargs):
         if not self.is_connected:

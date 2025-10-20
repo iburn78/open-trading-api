@@ -88,7 +88,8 @@ async def async_on_result(ws, tr_id, result, data_info):
         optlog.debug(trn)
         
     elif get_tr(trenv, tr_id) in ('TransactionPrices_KRX',  'TransactionPrices_Total'): # 실시간 체결가
-        trp = TransactionPrices(trprices=result, trenv=trenv)
+        trp = TransactionPrices(trprices=result, trenv_env_dv=trenv.env_dv)
+        print(trp.trprices.to_string())
         await dispatch(connected_agents.get_target_agents_by_trp(trp), trp)
 
     # to add more tr_id ...

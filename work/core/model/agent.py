@@ -6,9 +6,10 @@ from datetime import datetime, timedelta
 
 from .order import Order
 from .client import PersistentClient
+from ..strategy.brute_rand import BruteForceRandStrategy
 from ..common.tools import adj_int
 from ..common.optlog import optlog, log_raise
-from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice, TransactionPrices, trenv_from_json
+from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice, TransactionPrices
 
 @dataclass
 class AgentCard: # an agent's business card (e.g., agents submit their business cards in registration)
@@ -71,6 +72,14 @@ class OrderBook:
             # move new_orders to incompleted_orders
             self.orders_sent_to_server_for_submit.extend(self.new_orders)
             self.new_orders.clear()
+
+    # make this real time holding tracking later 
+    def quantity_holding(self) -> int:
+        # parse completed_orders and incompleted_orders to calculate current holding quantity
+        # or get account info (but it is API bound)
+        total_bought = sum(order.processed for order in self.completed_orders + self.incompleted_orders if order.side == SIDE.BUY)
+        total_sold = sum(order.processed for order in self.completed_orders + self.incompleted_orders if order.side == SIDE.SELL)
+        return total_bought - total_sold
 
 @dataclass
 class PriceRecords:
@@ -169,15 +178,17 @@ class Agent:
     # total_cost_incurred: int = 0
     # ---------------------------------------------------------------------------
 
+    strategy: BruteForceRandStrategy = field(default_factory=BruteForceRandStrategy) 
+
     # for server communication
     card: AgentCard = field(default_factory=lambda: AgentCard(id="", code=""))
     client: PersistentClient = field(default_factory=PersistentClient)
     trenv: object | None = None  # to be assigned later
     _stop_event: asyncio.Event = field(default_factory=asyncio.Event)
-    _ready_event: asyncio.Event = field(default_factory=asyncio.Event)
+    ready_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     # for order control
-    order_book: OrderBook = field(default_factory=lambda: OrderBook())
+    order_book: OrderBook = field(default_factory=OrderBook)
     price_records: PriceRecords = field(default_factory=lambda: PriceRecords(window_size=2))
 
     def __post_init__(self):
@@ -186,6 +197,35 @@ class Agent:
         self.card.code = self.code
 
         self.client.on_dispatch = self.on_dispatch
+
+    # BELOW HAS TO BE IMPROVED with STRATEGY
+    # may move this logic to strategy part
+    async def enact_strategy(self):
+        asyncio.create_task(self.strategy.buy_alert())
+        asyncio.create_task(self.strategy.sell_alert())
+        while True:
+            (command, data) = await self.strategy.signal_queue.get()
+            print('fired', command, data)
+
+            if command == 'buy':
+                self.make_an_order_locally(SIDE.BUY, data, ORD_DVSN.MARKET, 0)
+            elif command == 'sell':
+                ##### GET TO MODIFY THIS #########
+                ##### GET TO MODIFY THIS #########
+                ##### GET TO MODIFY THIS #########
+                ##### GET TO MODIFY THIS #########
+                self.make_an_order_locally(SIDE.SELL, 1, ORD_DVSN.MARKET, 0)
+            else:
+                optlog.error(f"Unknwon strategy command {command}")
+            await self.submit_orders()
+
+            ######
+            # has to keep track whether actually submitted order is completed or not
+            # here it is market order, so just wait for 3 sec now
+            ######
+            await asyncio.sleep(10) 
+            # self.strategy.ready_event.set()
+            # need to update num_holding, purchase_price etc in strategy based on order_book updates
 
     async def run(self, **kwargs):
         """     
@@ -204,13 +244,12 @@ class Agent:
             await self.client.close()
             return 
 
-        # get trenv from server upon registration (only partial data)
-        self.trenv = trenv_from_json(resp.get('response_data'))
+        self.trenv = resp.get('response_data')
 
         resp = await self.client.send_command("subscribe_trp_by_agent_card", request_data=self.card)
         optlog.info(resp.get('response_status'))
 
-        self._ready_event.set()
+        self.ready_event.set()
 
         try:
             await self._stop_event.wait()  # wait until .close() is called
@@ -222,13 +261,13 @@ class Agent:
     def report_performance(self): 
         pass
     
-    # make an order / not sent to server yet
+    # make an order, not sent to server yet
     def make_an_order_locally(self, side: SIDE, quantity, ord_dvsn: ORD_DVSN, price):
         ''' Create an order and add to new_orders (not yet sent to server for submission) '''
         order = Order(self.id, self.code, side, quantity, ord_dvsn, price)
         self.order_book.new_orders.append(order)
 
-    async def submit_orders(self, orders: list[Order] | None):
+    async def submit_orders(self, orders: list[Order] | None = None):
         if orders: 
             if isinstance(orders, Order):
                 orders = [orders]
@@ -241,7 +280,7 @@ class Agent:
         asyncio.create_task(self.client.send_command("CANCEL_orders", request_data=None))
 
     def _check_connected(self, msg: str = ""): 
-        if not self.client.is_connected():
+        if not self.client.is_connected:
             optlog.error(f"Client not connected - cannot ({msg}) orders for agent {self.id} ---")
 
     # msg can be 1) str, 2) Order, 3) TransactionPrices, 4) TransactionNotice
@@ -282,9 +321,21 @@ class Agent:
 
     async def handle_prices(self, trp: TransactionPrices):
         self.price_records.update_from_trp(trp)
-        optlog.debug(self.price_records)
+        # optlog.debug(self.price_records)
+        
+        ### strategy update --------------------------------
+        ### strategy update --------------------------------
+        ### strategy update --------------------------------
+        self.strategy.update(self.price_records.current_price)
 
-    async def handle_notice(self, msg):
-        await self.order_book.process_tr_notice(msg, self.trenv)
-        optlog.info(f"TR Notice: {msg}")
+    async def handle_notice(self, trn: TransactionNotice):
+        await self.order_book.process_tr_notice(trn, self.trenv)
+        optlog.info(f"TR Notice: {trn}")
+
+        ### strategy update --------------------------------
+        ### strategy update --------------------------------
+        ### strategy update --------------------------------
+        hq = self.order_book.quantity_holding()
+        pp = self.price_records.current_price if self.price_records.current_price else 0
+        self.strategy.holding_update(hq, pp)
 

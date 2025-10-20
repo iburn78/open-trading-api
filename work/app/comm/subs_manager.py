@@ -67,8 +67,12 @@ class SubscriptionManager:
             return f"Removed {agent_card.id} from {func.__name__} ({agent_card.code})"
     
     async def remove_agent(self, agent_card: AgentCard):
+        res = []
         for key in list(self.map.keys()): # list is necessary as self.remove modifies the map while iterating
-            await self.remove(key, agent_card)
+            msg = await self.remove(key, agent_card)
+            res.append(msg)
+        return "\n".join(res)
+
 
     def _subscribe(self, func: Callable, code):
         self.kws.subscribe(request=func, data=code)

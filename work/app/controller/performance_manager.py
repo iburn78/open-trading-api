@@ -3,28 +3,28 @@ import pandas as pd
 
 from core.common.optlog import optlog, log_raise
 from core.common.tools import adj_int
-
 from core.model.account import Account
 
-# -----------------------------------------------------------------------------------
-# Top level target setting and stregety definining
-# -----------------------------------------------------------------------------------
-
-# -----------------------------------------------------------------------------------
-# Rule: 
-# - Trade target should set once 
-# - And, should not be chaning in one main.py running
-# -----------------------------------------------------------------------------------
-
 @dataclass
-class TradeTarget:
-    # target has to reflect the current account situation
-    the_account: Account
+class TradePrinciples:
+    """
+    Principles for trading to be defined
+    """
 
     # safety margin on cash_t_2
-    MAX_USAGE_CASH_T_2 = 0.9 
+    MAX_USAGE_CASH_T_2: float = 0.9 
 
-    # may read this from an Excel file (then format checker is required)
+    # trade target return 
+    TARGET_RETURN: float = 0.1
+
+
+
+
+@dataclass
+class PerformanceManager:
+    
+    the_account: Account
+
     target_df: pd.DataFrame = None
     _columns = [
         'code', 'max_exposure', 'cash_t_2', 'quantity', 'avg_price', 'bep_price'
@@ -38,10 +38,6 @@ class TradeTarget:
         # ----------------------------------------------------
         # self._check_cash_t_2_total()  # need to de-comment this...
         # ----------------------------------------------------
-
-    def _temporary_target_code_gen(self):
-        some_codes = ['000660', '001440', '000240', '003230']
-        return some_codes
 
     def _initialize_target_df(self, target_codes: list):
         for code in target_codes:
@@ -71,7 +67,7 @@ class TradeTarget:
             h = holdings_map.get(code)
             if h:
                 return h.quantity, h.avg_price, h.bep_price
-            return 0, 0, 0
+            return 0, 0, 1
 
         # apply to all rows
         self.target_df[['quantity', 'avg_price', 'bep_price']] = self.target_df['code'].apply(
@@ -93,11 +89,3 @@ class TradeTarget:
             # this case needs attention in allocating cash
             log_raise("Total allocated exposure exceeds the available cash ---")
         
-    def get_target_codes(self):
-        return self.target_df['code'].to_list()
-
-
-# Below define strategies
-# - Foreign follower
-# - Value / Volatility tracker
-# - Volume trigger strategy

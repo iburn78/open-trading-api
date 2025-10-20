@@ -64,7 +64,7 @@ class CostCalculator:
         elif account == "vps":
             return cls.FEE, cls.RD_rule['FEE'], cls.RD_rule['TAX']
         else:
-            log_raise("Check ---")
+            log_raise("Check in cost calculation: possibly trenv issue ---")
 
     # 각각의 Order가 중간 체결 될때는 각 Fee 및 Tax를 float로 합산하고, 매 순간 Excel Rounding (int) 진행함
     # 완료되거나 중단될 경우, rounded 값 사용

@@ -2,12 +2,12 @@ from core.common.optlog import set_logger
 set_logger()
 
 import asyncio
+import sys
 
 from core.common.optlog import optlog
 from core.model.agent import Agent
 
-import sys
-async def main(sw=None):
+async def main(sw=None): # switch
     if sw == "1":
         A = Agent(id = 'A1', code = '000660')
         task1 = asyncio.create_task(A.run())  
@@ -15,17 +15,14 @@ async def main(sw=None):
         B = Agent(id = 'B1', code = '001440')
         task2 = asyncio.create_task(B.run())  
 
-        C = Agent(id = 'C1', code = '001440')
-        task2 = asyncio.create_task(C.run())  
+        async def wait_and_run(agent: Agent):
+            await agent.ready_event.wait()
+            await agent.enact_strategy()
 
-        await A._ready_event.wait()  # wait until .close() is called
-        # order = A.make_order()
-        # print(order)
-        # resp = await A.client.send_command("submit_orders", request_data=[order])
-        # optlog.info(resp.get('response_status'))
+        asyncio.create_task(wait_and_run(A))
+        asyncio.create_task(wait_and_run(B))
 
-
-        await asyncio.sleep(100)
+        await asyncio.sleep(1000)
 
         A._stop_event.set()
         B._stop_event.set()

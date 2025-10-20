@@ -5,6 +5,9 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 from datetime import datetime
 
+from ..common.tools import adj_int
+from ..common.optlog import log_raise
+
 tr_id_dict = {
     'TransactionNotice': {'demo': 'H0STCNI9', 'real': 'H0STCNI0',},
     'TransactionPrices_KRX': {'demo': 'H0STCNT0', 'real': 'H0STCNT0',}, # 실시간 체결가 (KRX) 
@@ -19,21 +22,6 @@ def get_tr(trenv, tr_id):
         for env, tr in env_dict.items()
         }
     return rev_tr_id_dict.get((trenv.env_dv, tr_id))
-
-# ----------------------------------------
-# trenv conversion to/from json
-# ----------------------------------------
-# trenv cannnot be pickled, so conversion needed
-# add more fields if needed ...
-
-def trenv_to_json(trenv):
-    return json.dumps({
-        'my_svr': trenv.my_svr,
-    })
-
-def trenv_from_json(trenv_json):
-    nt1 = namedtuple('TrEnv', ['my_svr',])
-    return nt1(*json.loads(trenv_json))
 
 # ----------------------------------------
 # Common Enum definitions
@@ -121,20 +109,25 @@ class TransactionNotice: # 국내주식 실시간체결통보
 @dataclass
 class TransactionPrices: # 국내주식 실시간체결가 (KRX, but should be the same for NXT, total)
     trprices: pd.DataFrame
-    trenv: object = None
+    trenv_env_dv: str = None
 
     def __post_init__(self):
-        if set(self.trprices.columns) != set(self._get_columns(self.trenv)):
+        if set(self.trprices.columns) != set(self._get_columns(self.trenv_env_dv)):
             raise Exception("TransactionPrices column names need attention")
 
-    def _get_columns(self, trenv):
-        if trenv.env_dv == 'demo': # KRX
+    def _check_assign_datatype(self):
+        # check or assign proper datatypes to each column
+        # basically all str
+        pass
+
+    def _get_columns(self, trenv_env_dv):
+        if trenv_env_dv == 'demo': # KRX
             CNTG_CLS_CODE = 'CCLD_DVSN'
         else: 
             CNTG_CLS_CODE = 'CNTG_CLS_CODE' # "CNTG_CLS_CODE" for 'NXT' and 'TOTAL' 
         _columns = [
             "MKSC_SHRN_ISCD", # code
-            "STCK_CNTG_HOUR", # hour
+            "STCK_CNTG_HOUR", # hour (%H%M%S)
             "STCK_PRPR", # 체결가
             "PRDY_VRSS_SIGN", 
             "PRDY_VRSS", 
@@ -166,7 +159,7 @@ class TransactionPrices: # 국내주식 실시간체결가 (KRX, but should be t
             "LWPR_HOUR",
             "LWPR_VRSS_PRPR_SIGN",
             "LWPR_VRSS_PRPR",
-            "BSOP_DATE", # 영업일자
+            "BSOP_DATE", # 영업일자 (%Y%m%d)
             "NEW_MKOP_CLS_CODE", # 20: 장중/보통, 32: 장종료후/종가
             "TRHT_YN", # 거래정지 Y/N
             "ASKP_RSQN1", # 매도호가 잔량1
@@ -190,19 +183,25 @@ class TransactionPrices: # 국내주식 실시간체결가 (KRX, but should be t
         if self.trprices.empty:
             return None, None, None
 
-        ################ CHECK NEEDED DATA FORMAT #################
-        ################ CHECK NEEDED #################
-        ################ CHECK NEEDED #################
-        ################ CHECK NEEDED #################
-        ################ CHECK NEEDED #################
-
         if len(self.trprices) == 1:
             record = self.trprices.iloc[0]
             lt = datetime.strptime(record["BSOP_DATE"] +' '+ record['STCK_CNTG_HOUR'], '%Y%m%d %H%M%S')
-            return record["STCK_PRPR"], record["CNTG_VOL"], lt
+            return int(record["STCK_PRPR"]), int(record["CNTG_VOL"]), lt
 
         else:
-            qty_sum = self.trprices["CNTG_VOL"].sum()
-            pr_avg = (self.trprices["STCK_PRPR"]*self.trprices["CNTG_VOL"]).sum()/qty_sum # qty_sum should not be a zero value
-            lt_series = pd.to_datetime(self.trprices["BSOP_DATE"]+' '+self.trprices['STCK_CNTG_HOUR'], format='%Y%m%d %H%M%S')
-            return pr_avg, qty_sum, lt_series.max()
+            # Convert columns to int safely (in case they're strings)
+            pr = pd.to_numeric(self.trprices["STCK_PRPR"], errors="coerce")
+            qty = pd.to_numeric(self.trprices["CNTG_VOL"], errors="coerce")
+
+            qty_sum = qty.sum()
+            if qty_sum == 0 or pd.isna(qty_sum):
+                log_raise("check required: qty sum is zero or NaN ---")
+
+            pr_avg = adj_int((pr * qty).sum() / qty_sum)
+
+            lt_series = pd.to_datetime(
+                self.trprices["BSOP_DATE"] + " " + self.trprices["STCK_CNTG_HOUR"],
+                format="%Y%m%d %H%M%S",
+                errors="coerce"
+            )
+            return pr_avg, int(qty_sum), lt_series.max()
