@@ -10,6 +10,7 @@ class CashBalance:
     available: int = 0      # 현재 예수금 (T+0)
     t_1: int = 0            # T+1 예수금
     t_2: int = 0            # T+2 예수금
+    safety_margin: float = 0.01   # 안전마진 (예수금의 일부를 거래에 사용하지 않음) 
     cost: int = 0         # 제비용 (금일 발생)
 
     def __str__(self):

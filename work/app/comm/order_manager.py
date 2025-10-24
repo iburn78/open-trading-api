@@ -22,6 +22,7 @@ COMPLETED_ORDERS = 'completed_orders'
 @dataclass
 class OrderManager:
     """
+    # To be used in the server side application 
     # Organize orders from each agent in a structured way
     - keeps only the last `keep_days` worth of data
     - within a day, it keeps increaing and records everything about orders
@@ -171,7 +172,7 @@ class OrderManager:
 
         rc_orders = [] 
         for o in incompleted_orders:
-            cancel_order = ReviseCancelOrder(o.code, o.side, o.quantity, o.ord_dvsn, o.price, rc=RCtype.CANCEL, all_yn=AllYN.ALL, original_order=o)
+            cancel_order = ReviseCancelOrder(agent_id=agent.id, code=o.code, side=o.side, ord_dvsn=o.ord_dvsn, quantity=o.quantity, order_no=o.price, rc=RCtype.CANCEL, all_yn=AllYN.ALL, original_order=o)
             rc_orders.append(cancel_order)
 
         await self.submit_orders_and_register(agent, rc_orders, trenv, date)

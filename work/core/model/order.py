@@ -1,53 +1,55 @@
 import json
 import pandas as pd
-import asyncio
-from collections import defaultdict
 from dataclasses import dataclass, field, asdict
 
 from .cost import CostCalculator
 from ..common.optlog import optlog, log_raise
 from ..common.tools import get_market, excel_round_int 
 from ..kis.domestic_stock_functions import order_cash, order_rvsecncl
-from ..kis.ws_data import ORD_DVSN, RCtype, AllYN, TransactionNotice
+from ..kis.ws_data import SIDE, ORD_DVSN, EXCHANGE, RCtype, AllYN, TransactionNotice
 
 @dataclass
 class Order:
-    agent_id: str # unique_id defined below
+    agent_id: str 
 
     code: str
-    side: str # 'buy' or 'sell'
+    side: SIDE 
+    ord_dvsn: ORD_DVSN 
     quantity: int
-    ord_dvsn: ORD_DVSN # market or limit
     price: int
-    amount: int = 0 # total purchased cumulative amount (sum of quantity x price)
-    avg_price: float = 0.0
-    bep_cost: int = 0
-    bep_price: float = 0.0
-    market: str = None # KOSPI, KOSDAQ, etc
-    exchange: str = "SOR" # Smart Order Routing - KRX, NXT, etc.
+    exchange: EXCHANGE 
 
+    # auto gen
+    unique_id: str = field(default_factory=lambda: pd.Timestamp.now().strftime('%Y%m%d%H%M%S%f'))
+
+    # to be filled by server upon submission
     org_no: str | None = None
     order_no: str | None = None
     submitted_time: str | None = None
 
+    # control flags
     submitted: bool = False
     accepted: bool = False
     completed: bool = False
     cancelled: bool = False 
 
-    unique_id: str = field(default_factory=lambda: pd.Timestamp.now().strftime('%Y%m%d%H%M%S%f'))
+    # for tax and fee calculation
+    amount: int = 0 # total purchased cumulative amount (sum of quantity x price)
+    avg_price: float = 0.0
+    bep_cost: int = 0
+    bep_price: float = 0.0
+    market: str = None # KOSPI, KOSDAQ, etc
 
-    # as the order is fullfilled, cost_occured should refect exact cost up to that moment
-    # round only done when the order is fully fullfilled
+    # - as the order is fullfilled, cost_occured should refect exact cost up to that moment
+    # - round only done when the order is fully fullfilled
     processed: int = 0
     fee_occured: float = 0.0
     tax_occured: float = 0.0
     fee_rounded: int = 0   # if completed or cancelled, this is final 
     tax_rounded: int = 0   # if completed or cancelled, this is final 
 
-    # NEED TO CLARIFY CALCEL LOGIC
-    # IOC, FOK, End of day cancellation etc
-    # even not completed, remainder of order not to be processed
+    # Further develop needs:
+    # - IOC, FOK, handling of end of day cancellation etc
 
     def __post_init__(self):
         if type(self.quantity) != int or type(self.price) != int:
@@ -62,10 +64,12 @@ class Order:
 
         self.market = get_market(self.code)
 
+        if not self.ord_dvsn.is_allowed_in(self.exchange):
+            log_raise(f"Order type {self.ord_dvsn.name} not allowed on exchange {self.exchange} ---")
+
         if self.market not in ['KOSPI', 'KOSDAQ']:
             log_raise("Check the market of the stock: KOSPI or KOSDAQ ---")
         
-    
     def __str__(self):
         return "Order:" + json.dumps(asdict(self), indent=4, default=str)
 
@@ -143,10 +147,10 @@ class Order:
         # no need to define any here
         pass
 
-    def make_revise_cancel_order(self, rc, qty, ord_dvsn, pr, all_yn):   # ord_dvsn could changed, e.g., from limit to market
+    def make_revise_cancel_order(self, rc, ord_dvsn, qty, pr, all_yn): # ord_dvsn could changed, e.g., from limit to market
         if not self.submitted:
             log_raise(f"Order {self.order_no} not submitted yet but revise-cancel tried / instead modify order itself ---")
-        return ReviseCancelOrder(self.code, self.side, qty, ord_dvsn, pr, rc=rc, all_yn=all_yn, original_order=self)
+        return ReviseCancelOrder(agent_id=self.agent_id, code=self.code, side=self.side, ord_dvsn=ord_dvsn, quantity=qty, price=pr, rc=rc, all_yn=all_yn, original_order=self)
 
 @dataclass
 class ReviseCancelOrder(Order):

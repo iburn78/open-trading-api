@@ -17,6 +17,7 @@ class CostCalculator:
     }
 
     # 유관기관수수료
+    # from December 2025, KRX fee changes from 0.0023% to 0.00134% (maker) 0.00182% (taker): need to check
     MIN_FEE = {
         'KRX': 0.0036396, 
         'NXT': {

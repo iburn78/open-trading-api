@@ -1,15 +1,13 @@
-import pandas as pd
 import asyncio
 from dataclasses import dataclass, field
-from collections import deque
-from datetime import datetime, timedelta
 
 from .order import Order
 from .client import PersistentClient
-from ..strategy.brute_rand import BruteForceRandStrategy
-from ..common.tools import adj_int
 from ..common.optlog import optlog, log_raise
-from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice, TransactionPrices
+from ..model.order_book import OrderBook
+from ..model.price import PriceRecords
+from ..strategy.strategy import StrategyBase, StrategyCommand
+from ..kis.ws_data import TransactionPrices, TransactionNotice
 
 @dataclass
 class AgentCard: # an agent's business card (e.g., agents submit their business cards in registration)
@@ -23,145 +21,6 @@ class AgentCard: # an agent's business card (e.g., agents submit their business 
 
     client_port: str | None = None # assigned by the server/OS 
     writer: object | None = None 
-
-@dataclass
-class OrderBook: 
-    """ To be used in Agent class """
-    new_orders: list[Order] = field(default_factory=list) # to be submitted
-    orders_sent_to_server_for_submit: list[Order] = field(default_factory=list) # sent to server repository, just to keep track / once server sent it to KIS API, submitted orders will be sent back via on_dispatch
-    incompleted_orders: list[Order] = field(default_factory=list) # submitted but not yet fully completed or cancelled
-    completed_orders: list[Order] = field(default_factory=list) 
-
-    _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
-
-    def __str__(self):
-        if not self.new_orders and not self.incompleted_orders and not self.completed_orders:
-            return "<no orders>"
-        parts = []
-        if self.new_orders:
-            parts.append("New Orders:\n" + "\n".join(str(order) for order in self.new_orders))  
-        if self.incompleted_orders:
-            parts.append("Incompleted Orders:\n" + "\n".join(str(order) for order in self.incompleted_orders))
-        if self.completed_orders:
-            parts.append("Completed Orders:\n" + "\n".join(str(order) for order in self.completed_orders))
-        return "\n".join(parts)
-
-    async def process_tr_notice(self, notice: TransactionNotice, trenv):
-        # reroute notice to corresponding order
-        # no race condition expected here
-        async with self._lock:
-            order = next((o for o in self.incompleted_orders if o.order_no == notice.oder_no), None)
-            if order: 
-                order.update(notice, trenv)
-                # if order is completed or canceled, move to completed_orders
-                if order.completed or order.cancelled:
-                    self.incompleted_orders.remove(order)
-                    self.completed_orders.append(order)
-            else: 
-                log_raise(f"Order not found in incompleted_orders for notice {notice.oder_no}, notice: {notice} ---")
-    
-    async def submit_new_orders(self, client: PersistentClient):
-        async with self._lock:
-            if not self.new_orders:
-                return 
-            resp = await client.send_command("submit_orders", request_data=self.new_orders)
-            # Just simply 'orders submitted' message expected
-            # Server will send back individual order updates via on_dispatch
-            optlog.info(resp.get('response_status'))
-
-            # move new_orders to incompleted_orders
-            self.orders_sent_to_server_for_submit.extend(self.new_orders)
-            self.new_orders.clear()
-
-    # make this real time holding tracking later 
-    def quantity_holding(self) -> int:
-        # parse completed_orders and incompleted_orders to calculate current holding quantity
-        # or get account info (but it is API bound)
-        total_bought = sum(order.processed for order in self.completed_orders + self.incompleted_orders if order.side == SIDE.BUY)
-        total_sold = sum(order.processed for order in self.completed_orders + self.incompleted_orders if order.side == SIDE.SELL)
-        return total_bought - total_sold
-
-@dataclass
-class PriceRecords:
-    """ 
-    To be used in Agent class 
-    - only keeps essential data 
-    - price notices to be sent to strategy (to be implemented) later
-    """
-    current_price: int | None = None
-    low_price: int | None = None # per window_size
-    high_price: int | None = None # per window_size
-    moving_avg: int | None = None # per window_size
-
-    # volume: 거래량 (quantity: 개별 거래건 수량)
-    cumulative_volume: int | None = None
-    moving_volume: int | None = None # per window_size
-    
-    # amount: 거래대금
-    cumulative_amount: int | None = None 
-    moving_amount: int | None = None # per window_size
-
-    window_size: int = 5 # min
-
-    def __str__(self):
-        if not self.current_price:
-            return "price record not initialized"
-        parts = []
-        parts.append(f"current price: {self.current_price}, low/high: {self.low_price}/{self.high_price}, moving avg: {self.moving_avg}")
-        parts.append(f"moving amount: {adj_int(self.moving_amount/10**6)} M KRW, cumulative amount: {adj_int(self.cumulative_amount/10**6)} M KRW")
-        parts.append(f"measure window: {self.window_size} min")
-        return "\n".join(parts)
-
-    def __post_init__(self):
-        # initialize sliding windows for price, volume, and amount
-        self._price_window = deque()   # (timestamp, price)
-        self._volume_window = deque()  # (timestamp, volume)
-        self._amount_window = deque()  # (timestamp, amount)
-
-        # running sums for O(1) updates
-        self._sum_price = 0.0
-        self._sum_volume = 0
-        self._sum_amount = 0
-
-        # initialize cumulative trackers
-        self.cumulative_volume = 0
-        self.cumulative_amount = 0
-
-    def update_from_trp(self, trp: TransactionPrices):
-        p, q, t = trp.get_price_quantity_time()
-        self.update(p, q, t)
-
-    def update(self, price: int, quantity: int, tr_time: datetime):
-        cutoff = tr_time - timedelta(minutes=self.window_size)
-
-        # remove outdated records
-        for dq, total_attr, field in [
-            (self._price_window, '_sum_price', price),
-            (self._volume_window, '_sum_volume', quantity),
-            (self._amount_window, '_sum_amount', price * quantity)
-        ]:
-            total = getattr(self, total_attr)
-            while dq and dq[0][0] < cutoff:
-                _, old_val = dq.popleft()
-                total -= old_val
-            dq.append((tr_time, field))
-            total += field
-            setattr(self, total_attr, total)
-
-        # update derived metrics
-        self.current_price = price
-        if self._price_window:
-            self.low_price = min(p for _, p in self._price_window)
-            self.high_price = max(p for _, p in self._price_window)
-            self.moving_avg = adj_int(self._sum_price / len(self._price_window))
-        else:
-            self.low_price = self.high_price = self.moving_avg = None
-
-        # update cumulative and moving values
-        self.cumulative_volume += quantity
-        self.cumulative_amount += price * quantity
-        self.moving_volume = self._sum_volume
-        self.moving_amount = self._sum_amount
 
 @dataclass
 class Agent:
@@ -178,54 +37,31 @@ class Agent:
     # total_cost_incurred: int = 0
     # ---------------------------------------------------------------------------
 
-    strategy: BruteForceRandStrategy = field(default_factory=BruteForceRandStrategy) 
-
     # for server communication
     card: AgentCard = field(default_factory=lambda: AgentCard(id="", code=""))
     client: PersistentClient = field(default_factory=PersistentClient)
     trenv: object | None = None  # to be assigned later
-    _stop_event: asyncio.Event = field(default_factory=asyncio.Event)
-    ready_event: asyncio.Event = field(default_factory=asyncio.Event)
+    hardstop_event: asyncio.Event = field(default_factory=asyncio.Event)
 
-    # for order control
+    # data tracking and strategy
     order_book: OrderBook = field(default_factory=OrderBook)
-    price_records: PriceRecords = field(default_factory=lambda: PriceRecords(window_size=2))
+    price_book: PriceRecords = field(default_factory=PriceRecords)
+    strategy: StrategyBase = field(default_factory=StrategyBase) 
 
     def __post_init__(self):
-        # keep AgentCard consistent with Agent's id/code
         self.card.id = self.id
         self.card.code = self.code
-
         self.client.on_dispatch = self.on_dispatch
 
-    # BELOW HAS TO BE IMPROVED with STRATEGY
-    # may move this logic to strategy part
-    async def enact_strategy(self):
-        asyncio.create_task(self.strategy.buy_alert())
-        asyncio.create_task(self.strategy.sell_alert())
-        while True:
-            (command, data) = await self.strategy.signal_queue.get()
-            print('fired', command, data)
+        # setup strategy with order_book and price_book
+        # if needed, may assign previously built order_book and price_book 
+        self.strategy.agent_data_setup(self.order_book, self.price_book)
 
-            if command == 'buy':
-                self.make_an_order_locally(SIDE.BUY, data, ORD_DVSN.MARKET, 0)
-            elif command == 'sell':
-                ##### GET TO MODIFY THIS #########
-                ##### GET TO MODIFY THIS #########
-                ##### GET TO MODIFY THIS #########
-                ##### GET TO MODIFY THIS #########
-                self.make_an_order_locally(SIDE.SELL, 1, ORD_DVSN.MARKET, 0)
-            else:
-                optlog.error(f"Unknwon strategy command {command}")
-            await self.submit_orders()
-
-            ######
-            # has to keep track whether actually submitted order is completed or not
-            # here it is market order, so just wait for 3 sec now
-            ######
-            await asyncio.sleep(10) 
-            # self.strategy.ready_event.set()
-            # need to update num_holding, purchase_price etc in strategy based on order_book updates
+    async def capture_command(self):
+        while not self.hardstop_event.is_set():
+            str_command: StrategyCommand = await self.strategy.signal_queue.get()
+            self.make_an_order_locally(str_command)
+            await self.submit_orders_in_orderbook()
 
     async def run(self, **kwargs):
         """     
@@ -249,12 +85,13 @@ class Agent:
         resp = await self.client.send_command("subscribe_trp_by_agent_card", request_data=self.card)
         optlog.info(resp.get('response_status'))
 
-        self.ready_event.set()
+        asyncio.create_task(self.strategy.logic_run())
+        asyncio.create_task(self.capture_command())
 
         try:
-            await self._stop_event.wait()  # wait until .close() is called
+            await self.hardstop_event.wait() 
         except asyncio.CancelledError:
-            optlog.info(f"Agent {self.id} cancelled")
+            optlog.info(f"Agent {self.id} hardstopped.")
         finally:
             await self.client.close()
 
@@ -262,12 +99,18 @@ class Agent:
         pass
     
     # make an order, not sent to server yet
-    def make_an_order_locally(self, side: SIDE, quantity, ord_dvsn: ORD_DVSN, price):
+    def make_an_order_locally(self, strategy_command: StrategyCommand): # side: SIDE, quantity, ord_dvsn: ORD_DVSN, price, exchange: EXCHANGE = EXCHANGE.SOR):
         ''' Create an order and add to new_orders (not yet sent to server for submission) '''
-        order = Order(self.id, self.code, side, quantity, ord_dvsn, price)
+        side = strategy_command.side
+        ord_dvsn = strategy_command.ord_dvsn
+        quantity = strategy_command.quantity
+        price = strategy_command.price
+        exchange = strategy_command.exchange
+
+        order = Order(agent_id=self.id, code=self.code, side=side, ord_dvsn=ord_dvsn, quantity=quantity, price=price, exchange=exchange)
         self.order_book.new_orders.append(order)
 
-    async def submit_orders(self, orders: list[Order] | None = None):
+    async def submit_orders_in_orderbook(self, orders: list[Order] | None = None):
         if orders: 
             if isinstance(orders, Order):
                 orders = [orders]
@@ -293,7 +136,6 @@ class Agent:
             TransactionPrices: self.handle_prices,
             TransactionNotice: self.handle_notice,
         }
-
         handler = TYPE_HANDLERS.get(type(data))
         if handler:
             await handler(data)
@@ -320,22 +162,12 @@ class Agent:
                 log_raise(f"Received order not found in sent_to_server_for_submit: {order} ---")
 
     async def handle_prices(self, trp: TransactionPrices):
-        self.price_records.update_from_trp(trp)
+        self.price_book.update_from_trp(trp)
+        self.strategy.price_updated()
         # optlog.debug(self.price_records)
         
-        ### strategy update --------------------------------
-        ### strategy update --------------------------------
-        ### strategy update --------------------------------
-        self.strategy.update(self.price_records.current_price)
-
     async def handle_notice(self, trn: TransactionNotice):
         await self.order_book.process_tr_notice(trn, self.trenv)
+        self.strategy.order_updated()
         optlog.info(f"TR Notice: {trn}")
-
-        ### strategy update --------------------------------
-        ### strategy update --------------------------------
-        ### strategy update --------------------------------
-        hq = self.order_book.quantity_holding()
-        pp = self.price_records.current_price if self.price_records.current_price else 0
-        self.strategy.holding_update(hq, pp)
 

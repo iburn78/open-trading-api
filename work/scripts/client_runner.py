@@ -6,36 +6,30 @@ import sys
 
 from core.common.optlog import optlog
 from core.model.agent import Agent
+from core.strategy.brute_rand import BruteForceRandStrategy
 
 async def main(sw=None): # switch
     if sw == "1":
-        A = Agent(id = 'A1', code = '000660')
+        A = Agent(id = 'A1', code = '000660', strategy=BruteForceRandStrategy())
         task1 = asyncio.create_task(A.run())  
 
-        B = Agent(id = 'B1', code = '001440')
+        B = Agent(id = 'B1', code = '001440', strategy=BruteForceRandStrategy())
         task2 = asyncio.create_task(B.run())  
-
-        async def wait_and_run(agent: Agent):
-            await agent.ready_event.wait()
-            await agent.enact_strategy()
-
-        asyncio.create_task(wait_and_run(A))
-        asyncio.create_task(wait_and_run(B))
 
         await asyncio.sleep(1000)
 
-        A._stop_event.set()
-        B._stop_event.set()
+        A.hardstop_event.set()
+        B.hardstop_event.set()
 
         await asyncio.gather(task1, task2)
 
     else: 
-        C = Agent(id = 'C1', code = '006400')
+        C = Agent(id = 'Ci', code = '055490')
         task3 = asyncio.create_task(C.run())  
 
-        await asyncio.sleep(100)
+        await asyncio.sleep(500)
 
-        C._stop_event.set()
+        C.hardstop_event.set()
         await asyncio.gather(task3)
 
 

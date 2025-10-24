@@ -26,9 +26,23 @@ def get_tr(trenv, tr_id):
 # ----------------------------------------
 # Common Enum definitions
 # ----------------------------------------
+class EXCHANGE(str, Enum):
+    SOR = 'SOR'
+    KRX = 'KRX'
+    NXT = 'NXT'
+
 class ORD_DVSN(str, Enum):
-    LIMIT = '00'
-    MARKET = '01'
+    LIMIT = '00' # SOR, KRX, NXT
+    MARKET = '01' # SOR, KRX
+    MIDDLE = '21' # KRX, NXT (중간가)
+
+    def is_allowed_in(self, exchange: EXCHANGE):
+        allowed = {
+            'LIMIT': {'SOR', 'KRX', 'NXT'},
+            'MARKET': {'SOR', 'KRX'},
+            'MIDDLE': {'KRX', 'NXT'},
+        }
+        return exchange.name in allowed[self.name]
 
 class RCtype(str, Enum):
     REVISE = '01'
@@ -41,6 +55,7 @@ class AllYN(str, Enum):
 class SIDE(str, Enum):
     BUY = 'buy'
     SELL = 'sell'
+
 
 @dataclass
 class TransactionNotice: # 국내주식 실시간체결통보
