@@ -37,5 +37,5 @@ if __name__ == "__main__":
     try:
         asyncio.run(main(sys.argv[1]))
     except KeyboardInterrupt:
-        optlog.info("Client stopped by user (Ctrl+C).\n")
+        optlog.info("Clients stopped by user (Ctrl+C).\n")
     

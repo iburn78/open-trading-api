@@ -5,8 +5,11 @@ from datetime import datetime, timedelta
 from ..common.tools import adj_int
 from ..kis.ws_data import TransactionPrices
 
+# market prices for a given code
 @dataclass
-class PriceRecords:
+class MarketPrices:
+    code: str = ""
+
     current_price: int | None = None
     low_price: int | None = None # per window_size
     high_price: int | None = None # per window_size
@@ -26,11 +29,12 @@ class PriceRecords:
     def __str__(self):
         if not self.current_price:
             return "price record not initialized"
-        parts = []
-        parts.append(f"current price: {self.current_price}, low/high: {self.low_price}/{self.high_price}, moving avg: {self.moving_avg}")
-        parts.append(f"moving amount: {adj_int(self.moving_amount/10**6)} M KRW, cumulative amount: {adj_int(self.cumulative_amount/10**6)} M KRW")
-        parts.append(f"measure window: {self.window_size} min")
-        return "\n".join(parts)
+        return (
+            f"MarketPrices {self.code}, current {self.current_price}, "
+            f"l/h {self.low_price}/{self.high_price}, ma {self.moving_avg}, "
+            f"m_amt {adj_int(self.moving_amount/10**6)}M, cum_amt {adj_int(self.cumulative_amount/10**6)}M, "
+            f"window {self.window_size} min"
+        )
 
     def __post_init__(self):
         # initialize sliding windows for price, volume, and amount

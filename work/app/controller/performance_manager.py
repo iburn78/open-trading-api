@@ -5,6 +5,11 @@ from core.common.optlog import optlog, log_raise
 from core.common.tools import adj_int
 from core.model.account import Account
 
+
+##########################
+# NEED TO BE MODIFIED 
+##########################
+
 @dataclass
 class TradePrinciples:
     """
@@ -16,8 +21,6 @@ class TradePrinciples:
 
     # trade target return 
     TARGET_RETURN: float = 0.1
-
-
 
 
 @dataclass
@@ -80,12 +83,12 @@ class PerformanceManager:
         mask = self.target_df['cash_t_2'] < 0
         max_exposure_exceeded = self.target_df.loc[mask, 'code'].tolist() 
         if max_exposure_exceeded:
-            optlog.warning(f"Codes exceed the max exposure: {max_exposure_exceeded}") 
+            optlog.warning(f"Codes exceed the max exposure: {max_exposure_exceeded}", name = XXXX) 
             # these holdings can only be sold...
             # May introduce some follow-up action
 
         cash_t_2_total_allocated = self.target_df.loc[~mask, 'cash_t_2'].sum() 
         if self.the_account.cash.t_2*self.MAX_USAGE_CASH_T_2 <= cash_t_2_total_allocated:
             # this case needs attention in allocating cash
-            log_raise("Total allocated exposure exceeds the available cash ---")
+            log_raise("Total allocated exposure exceeds the available cash ---", name = XXXX)
         

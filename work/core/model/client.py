@@ -10,50 +10,8 @@ from ..common.optlog import optlog, log_raise
 # client side
 # ---------------------------------------------------------------------------------
 # client request format should be:
-# {"request_command": str, "request_data_dict": {'request_data': obj, ... } | None}
+# {"request_id": str, "request_command": str, "request_data_dict": {'request_data': obj, ... } | None}
 # ---------------------------------------------------------------------------------
-
-# one time command request and response receive
-async def send_command(request_command: str, request_data = None, **other_kwargs):
-    reader, writer = await asyncio.open_connection(HOST, PORT) # creates a new socket
-
-    # Build request
-    request_data_dict = {
-        'request_data': request_data,
-        **other_kwargs
-    }
-    client_request = {"request_command": request_command, "request_data_dict": request_data_dict} 
-    req_bytes = pickle.dumps(client_request)
-
-    try:
-        # Send
-        writer.write(len(req_bytes).to_bytes(4, "big"))
-        writer.write(req_bytes)
-        await writer.drain()
-
-        # Receive
-        length_bytes = await reader.read(4)
-        if not length_bytes:
-            raise ConnectionError("No data received (server disconnected).")
-
-        length = int.from_bytes(length_bytes, "big")
-        response_data = await reader.readexactly(length)
-        response = pickle.loads(response_data)
-
-        optlog.info("Response received:")
-        optlog.info(response)
-    except Exception as e:
-        data_preview = (
-            response_data.decode(errors="ignore") 
-            if 'response_data' in locals()
-            else "<no data>"
-        )
-        log_raise(f"Invalid response received: {e}\n" + f"* response_data: {data_preview} ---")
-    finally:
-        writer.close()
-        await writer.wait_closed()
-
-    return response
 
 # client remains connected
 class PersistentClient:
@@ -66,14 +24,23 @@ class PersistentClient:
         self.pending_requests: dict[str, asyncio.Future] = {}
         self.on_dispatch = on_dispatch  # callback for unsolicited server messages
         self._closing = False
+        self.agent_id = None
 
     async def connect(self):
         if self.is_connected:
-            optlog.warning(f"Already connected to {self.host}:{self.port}")
+            optlog.warning(f"Already connected to {self.host}:{self.port}", name=self.agent_id)
             return
-        self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
+        try:
+            self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
+        except ConnectionRefusedError as e:
+            optlog.error(f"Connection refused: {self.host}:{self.port} → {e}", name=self.agent_id)
+            return
+        except Exception as e:
+            optlog.error(f"Unexpected error connecting to {self.host}:{self.port}: {e}", name=self.agent_id)
+            return
+
         self.listen_task = asyncio.create_task(self.listen_server())
-        optlog.info(f"Connected to {self.host}:{self.port}")
+        optlog.info(f"Connected to {self.host}:{self.port}", name=self.agent_id)
 
     async def listen_server(self):
         try:
@@ -95,30 +62,30 @@ class PersistentClient:
                             fut.set_result(msg)
                             continue
                         else:
-                            optlog.warning(f"Received response for already completed request_id {req_id}, received: {msg}")
+                            optlog.warning(f"Received response for already completed request_id {req_id}, received: {msg}", name=self.agent_id)
                             continue
                 # handle dispatch message
                 if self.on_dispatch:
                     await self.on_dispatch(msg)
                 else:
-                    optlog.warning(f"Dispatched but no receiver - {msg}")
+                    optlog.warning(f"Dispatched but no receiver - {msg}", name=self.agent_id)
 
         except asyncio.CancelledError:
-            optlog.info("Listen task cancelled")  # intentional
+            optlog.info("Listen task cancelled", name=self.agent_id)  # intentional
             raise  # usually propagate cancellation
         except asyncio.IncompleteReadError:
             if self._closing:
                 pass
-                # optlog.info("Listen task closed")  
+                # optlog.info("Listen task closed", name=self.agent_id)  
             elif not self.listen_task.cancelled(): # if not keyboard-interrupt
-                optlog.warning("Server closed connection")  # actual EOF / disconnect
+                optlog.warning("Server closed connection", name=self.agent_id)  # actual EOF / disconnect
         except Exception as e:
-            log_raise(f"Error in listening: {e}")
-            # optlog.error(f"Error in listening: {e}")
+            log_raise(f"Error in listening: {e}", name=self.agent_id)
+            # optlog.error(f"Error in listening: {e}", name=self.agent_id)
 
     async def send_command(self, request_command: str, request_data=None, **other_kwargs):
         if not self.is_connected:
-            optlog.error(f"Client is not connected for command {request_command}")
+            optlog.error(f"Client is not connected for command {request_command}", name=self.agent_id)
             return {}  
 
         # create unique request ID
@@ -157,7 +124,7 @@ class PersistentClient:
                 await self.listen_task
             except asyncio.CancelledError as e:
                 pass # expected so no need to log
-        optlog.info("Client connection closed")
+        optlog.info("Client connection closed", name=self.agent_id)
     
     @property
     def is_connected(self) -> bool:

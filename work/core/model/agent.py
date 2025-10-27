@@ -3,9 +3,9 @@ from dataclasses import dataclass, field
 
 from .order import Order
 from .client import PersistentClient
-from ..common.optlog import optlog, log_raise
+from ..common.optlog import optlog
 from ..model.order_book import OrderBook
-from ..model.price import PriceRecords
+from ..model.price import MarketPrices
 from ..strategy.strategy import StrategyBase, StrategyCommand
 from ..kis.ws_data import TransactionPrices, TransactionNotice
 
@@ -45,17 +45,21 @@ class Agent:
 
     # data tracking and strategy
     order_book: OrderBook = field(default_factory=OrderBook)
-    price_book: PriceRecords = field(default_factory=PriceRecords)
+    market_prices: MarketPrices = field(default_factory=MarketPrices)
     strategy: StrategyBase = field(default_factory=StrategyBase) 
 
     def __post_init__(self):
         self.card.id = self.id
         self.card.code = self.code
+        self.order_book.agent_id = self.id
+        self.order_book.code = self.code
+        self.market_prices.code = self.code
+        self.client.agent_id = self.id
         self.client.on_dispatch = self.on_dispatch
 
-        # setup strategy with order_book and price_book
-        # if needed, may assign previously built order_book and price_book 
-        self.strategy.agent_data_setup(self.order_book, self.price_book)
+        # setup strategy with order_book and market_prices
+        # if needed, may assign previously built order_book and market_prices 
+        self.strategy.agent_data_setup(self.id, self.order_book, self.market_prices)
 
     async def capture_command(self):
         while not self.hardstop_event.is_set():
@@ -75,7 +79,7 @@ class Agent:
         await self.client.connect()
 
         resp = await self.client.send_command("register_agent_card", request_data=self.card)
-        optlog.info(resp.get('response_status'))
+        optlog.info(f"Response: {resp.get('response_status')}", name=self.id)
         if not resp.get('response_success'):
             await self.client.close()
             return 
@@ -83,7 +87,7 @@ class Agent:
         self.trenv = resp.get('response_data')
 
         resp = await self.client.send_command("subscribe_trp_by_agent_card", request_data=self.card)
-        optlog.info(resp.get('response_status'))
+        optlog.info(f"Response: {resp.get('response_status')}", name=self.id)
 
         asyncio.create_task(self.strategy.logic_run())
         asyncio.create_task(self.capture_command())
@@ -91,7 +95,7 @@ class Agent:
         try:
             await self.hardstop_event.wait() 
         except asyncio.CancelledError:
-            optlog.info(f"Agent {self.id} hardstopped.")
+            optlog.info(f"Agent {self.id} hardstopped.", name=self.id)
         finally:
             await self.client.close()
 
@@ -108,13 +112,13 @@ class Agent:
         exchange = strategy_command.exchange
 
         order = Order(agent_id=self.id, code=self.code, side=side, ord_dvsn=ord_dvsn, quantity=quantity, price=price, exchange=exchange)
-        self.order_book.new_orders.append(order)
+        self.order_book.append_to_new_orders(order)
 
     async def submit_orders_in_orderbook(self, orders: list[Order] | None = None):
         if orders: 
             if isinstance(orders, Order):
                 orders = [orders]
-            self.order_book.new_orders.extend(orders)
+            self.order_book.append_to_new_orders(orders)
         self._check_connected('submit')
         await self.order_book.submit_new_orders(self.client)
     
@@ -124,7 +128,7 @@ class Agent:
 
     def _check_connected(self, msg: str = ""): 
         if not self.client.is_connected:
-            optlog.error(f"Client not connected - cannot ({msg}) orders for agent {self.id} ---")
+            optlog.error(f"Client not connected - cannot ({msg}) orders for agent {self.id} ---", name=self.id)
 
     # msg can be 1) str, 2) Order, 3) TransactionPrices, 4) TransactionNotice
     # should be careful when datatype is dict (could be response to certain request, and captured before getting here)
@@ -140,34 +144,29 @@ class Agent:
         if handler:
             await handler(data)
         else:
-            print("Unhandled type:", type(data))
+            optlog.error("Unhandled type:", type(data), name=self.id)
 
     # handlers for dispatched msg types ---
     async def handle_str(self, msg):
-        optlog.info(f"Received message: {msg}")
+        optlog.info(f"Received message: {msg}", name=self.id)
 
     # dict should not have 'request_id' key, as it can be confused with a certain response to a specific request
     async def handle_dict(self, data):
-        optlog.info(f"Received a dict: {data}")
+        optlog.info(f"Received dict: {data}", name=self.id)
 
     async def handle_order(self, order: Order):
-        # check if the order is in sent_to_server_for_submit list
+        optlog.info(f"Submit result received: {order}", name=self.id)
         async with self.order_book._lock:
-            processed_order = next((o for o in self.order_book.orders_sent_to_server_for_submit if o.unique_id == order.unique_id), None) 
-            if processed_order:
-                # update the order in sent_to_server_for_submit list
-                self.order_book.orders_sent_to_server_for_submit.remove(processed_order)
-                self.order_book.incompleted_orders.append(order)
-            else: 
-                log_raise(f"Received order not found in sent_to_server_for_submit: {order} ---")
+            self.order_book.remove_from_orders_sent_for_submit(order)
+            self.order_book.append_to_incompleted_orders(order)            
 
     async def handle_prices(self, trp: TransactionPrices):
-        self.price_book.update_from_trp(trp)
-        self.strategy.price_updated()
-        # optlog.debug(self.price_records)
+        self.market_prices.update_from_trp(trp)
+        self.strategy.price_update_event.set()
+        optlog.debug(self.market_prices, name=self.id)
         
     async def handle_notice(self, trn: TransactionNotice):
         await self.order_book.process_tr_notice(trn, self.trenv)
-        self.strategy.order_updated()
-        optlog.info(f"TR Notice: {trn}")
+        self.strategy.order_update_event.set()
+        optlog.info(trn, name=self.id)
 

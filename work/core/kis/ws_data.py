@@ -1,5 +1,3 @@
-import json 
-from collections import namedtuple
 import pandas as pd
 from dataclasses import dataclass, asdict
 from enum import Enum
@@ -42,7 +40,7 @@ class ORD_DVSN(str, Enum):
             'MARKET': {'SOR', 'KRX'},
             'MIDDLE': {'KRX', 'NXT'},
         }
-        return exchange.name in allowed[self.name]
+        return exchange.value in allowed[self.name]
 
 class RCtype(str, Enum):
     REVISE = '01'
@@ -56,13 +54,12 @@ class SIDE(str, Enum):
     BUY = 'buy'
     SELL = 'sell'
 
-
 @dataclass
 class TransactionNotice: # 국내주식 실시간체결통보
     acnt_no: str | None = None # account number
     oder_no: str | None = None # order number
     ooder_no: str | None = None # original order number 
-    seln_byov_cls: str | None = None # 01: sell, 02: buy
+    seln_byov_cls: SIDE | None = None # 01: sell, 02: buy
     rctf_cls: str | None = None # 0:정상, 1:정정, 2:취소
     oder_kind: ORD_DVSN | None = None # 00: limit, 01: market
     oder_cond: str | None = None # 0: None, 1: IOC (Immediate or Cancel), 2: FOK (Fill or Kill)
@@ -80,7 +77,11 @@ class TransactionNotice: # 국내주식 실시간체결통보
     oder_prc: int | None = None # order price    
 
     def __str__(self):
-        return "TransactionNotice:" + json.dumps(asdict(self), indent=4, default=str)
+        return (
+            f"TR notice {self.code}, "
+            f"odno {self.oder_no}, oodno {self.ooder_no}, {self.rfus_yn}{self.cntg_yn}{self.acpt_yn}, odcond {self.oder_cond}, {self.traded_exchange}, "
+            f"{self.seln_byov_cls.name}, {self.oder_kind.name}, processed {self.cntg_qty} at P {self.cntg_unpr}, Q {self.oder_qty}"
+        )
 
     def _set_data(self, res):
         if res.empty:
@@ -90,7 +91,7 @@ class TransactionNotice: # 국내주식 실시간체결통보
         self.oder_no        = self.pd_nan_chker_("str", row["ODER_NO"])
         self.ooder_no       = self.pd_nan_chker_("str", row["OODER_NO"])
         bs                  = self.pd_nan_chker_("str", row["SELN_BYOV_CLS"])
-        self.seln_byov_cls  = None if bs is None else 'sell' if bs == '01' else 'buy' if bs == '02' else bs
+        self.seln_byov_cls  = None if bs is None else SIDE.SELL if bs == '01' else SIDE.BUY if bs == '02' else bs
         self.rctf_cls       = self.pd_nan_chker_("str", row["RCTF_CLS"])
         ok                  = self.pd_nan_chker_("str", row["ODER_KIND"])
         self.oder_kind      = None if ok is None else ORD_DVSN(ok).name
@@ -105,7 +106,7 @@ class TransactionNotice: # 국내주식 실시간체결통보
         self.brnc_no        = self.pd_nan_chker_("str", row["BRNC_NO"])
         self.oder_qty       = self.pd_nan_chker_("int", row["ODER_QTY"])
         self.exg_yn         = self.pd_nan_chker_("str", row["EXG_YN"])
-        self.exchange       = None if self.exg_yn is None else 'KRX' if self.exg_yn[0] in ['1', '3'] else 'NXT' if self.exg_yn[0] in ['2', '4'] else None
+        self.traded_exchange= None if self.exg_yn is None else EXCHANGE.KRX if self.exg_yn[0] in ['1', '3'] else EXCHANGE.NXT if self.exg_yn[0] in ['2', '4'] else None
         self.crdt_cls       = self.pd_nan_chker_("str", row["CRDT_CLS"])
         self.oder_prc       = self.pd_nan_chker_("int", row["ODER_PRC"]) 
 
@@ -122,13 +123,21 @@ class TransactionNotice: # 국내주식 실시간체결통보
 
 
 @dataclass
-class TransactionPrices: # 국내주식 실시간체결가 (KRX, but should be the same for NXT, total)
+class TransactionPrices: # MarketPrices 국내주식 실시간체결가 (KRX, but should be the same for NXT, total)
     trprices: pd.DataFrame
     trenv_env_dv: str = None
 
     def __post_init__(self):
         if set(self.trprices.columns) != set(self._get_columns(self.trenv_env_dv)):
             raise Exception("TransactionPrices column names need attention")
+
+    def __str__(self):
+        code = self.trprices.iloc[0]["MKSC_SHRN_ISCD"] if not self.trprices.empty else "N/A"
+        select_cols = ["STCK_CNTG_HOUR", "STCK_PRPR", "CNTG_VOL"]
+        return (
+            f"TR prices {code}:\n"
+            f"{self.trprices[select_cols].to_string(index=False)}"
+        )
 
     def _check_assign_datatype(self):
         # check or assign proper datatypes to each column
@@ -210,7 +219,8 @@ class TransactionPrices: # 국내주식 실시간체결가 (KRX, but should be t
 
             qty_sum = qty.sum()
             if qty_sum == 0 or pd.isna(qty_sum):
-                log_raise("check required: qty sum is zero or NaN ---")
+                code = self.trprices.iloc[0]["MKSC_SHRN_ISCD"] if not self.trprices.empty else "N/A"
+                log_raise(f"check required: qty sum is zero or NaN ({code})---")
 
             pr_avg = adj_int((pr * qty).sum() / qty_sum)
 

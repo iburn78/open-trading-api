@@ -14,9 +14,9 @@ Parameters:
     - request_data_dict.get("request_data"): from client
     - server_data_dict: from server 
 
-Generating responses:
-    - command_queue put(): tuple (request_command: str, request_data: obj)
-    - return: dict {"response_status": str, "response_data": obj}
+Processing order in server:
+    - command_queue put(): tuple (writer, request_command: str, request_data: obj) # request_data is from request_data_dict.get("request_data") 
+    - return: dict {"response_status": str, "response_data": obj | None}
 ---------------------------------------------------------------------------------
 """
 
@@ -24,7 +24,7 @@ Generating responses:
 # server side
 # ---------------------------------------------------------------------------------
 # list[Order]를 받아서 submit
-async def handle_submit_order(request_command, request_data_dict, writer, **server_data_dict):
+async def handle_submit_orders(request_command, request_data_dict, writer, **server_data_dict):
     orders: list[Order] = request_data_dict.get("request_data") 
     if not isinstance(orders, list):
         if isinstance(orders, Order):
@@ -41,7 +41,7 @@ async def handle_cancel_orders(request_command, request_data_dict, writer, **ser
     command_queue: asyncio.Queue = server_data_dict.get("command_queue")
     command = (writer, request_command, None)
     await command_queue.put(command)
-    return {"response_status": "stop loop and cancel all orders requested"}
+    return {"response_status": "requested stop loop and cancel all orders"}
 
 # 연결된 Agent를 Register함 (AgentCard가 ConnectedAgents에 연결)
 async def handle_register_agent_card(request_command, request_data_dict, writer, **server_data_dict):
@@ -86,7 +86,7 @@ async def handle_subscribe_trp_by_agent_card(request_command, request_data_dict,
 
 # Command registry - UNIQUE PLACE TO REGISTER
 COMMAND_HANDLERS = {
-    "submit_orders": handle_submit_order, 
+    "submit_orders": handle_submit_orders, 
     "CANCEL_orders": handle_cancel_orders, # note the cap letters
     "register_agent_card": handle_register_agent_card, 
     # "remove_agent_card": handle_remove_agent_card, # auto-remove (when disconnect)
@@ -103,7 +103,7 @@ def validate_client_request(client_sent_data: bytes):
     if not isinstance(obj, dict):
         return False, None, "Unpickled object must be a dict"
     if set(obj.keys()) != {"request_id", "request_command", "request_data_dict"}:
-        return False, None, "Command dict must contain exactly 'request_command' and 'request_data_dict' keys"
+        return False, None, "Command dict must contain exactly 'request_id', 'request_command' and 'request_data_dict' keys"
     if obj["request_command"] not in COMMAND_HANDLERS:
         return False, None, "request_command is unknown"
     if obj["request_data_dict"] is not None:
@@ -122,16 +122,35 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         length = int.from_bytes(length_bytes, "big")
         client_bytes = await reader.readexactly(length)
         valid, client_request, err_msg = validate_client_request(client_bytes)
+        port = writer.get_extra_info("peername")[1] 
+        agent = server_data_dict['connected_agents'].get_agent_card_by_port(port)
+        if agent:
+            cid = agent.id # connected client id
+        else: 
+            cid = port
         if valid:
             request_id: str = client_request.get("request_id")
             request_command: str = client_request.get("request_command")
-            request_data_dict: dict = client_request.get("request_data_dict")
-            optlog.info(f"Request received - {request_command} | {request_data_dict}")
+            request_data_dict: dict | None = client_request.get("request_data_dict")
+
+            optlog.info(f"Request received: {request_command}", name=cid) 
+            if request_data_dict is not None:
+                rd = request_data_dict.get("request_data")
+                if isinstance(rd, list): 
+                    if len(rd) > 1:
+                        optlog.info(f"Request data: list of {len(rd)} items", name=cid)
+                        for o in rd: 
+                            optlog.debug(o, name=cid)
+                    else: 
+                        optlog.info(f"Request data: {rd[0]}", name=cid)
+                else:
+                    optlog.info(f"Request data: {rd}", name=cid)
+
             handler = COMMAND_HANDLERS.get(request_command)
             response = await handler(request_command, request_data_dict, writer, **server_data_dict)
             response['request_id'] = request_id
         else: 
-            optlog.warning(f"Invalid request received - {err_msg}")
+            optlog.warning(f"Invalid request received - {err_msg}", name=cid)
             response = {"response_status": "Invalid request: " + err_msg}
 
         # Send response back
@@ -154,7 +173,7 @@ async def dispatch(to: AgentCard | list[AgentCard], message: object):
             agent.writer.write(msg_bytes)
             await agent.writer.drain()  # await ensures exceptions are caught here
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
-            optlog.error(f"Agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed.")
+            optlog.error(f"Agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed.", name=agent.id)
         except Exception as e:
-            optlog.error(f"Unexpected dispatch error: {e}")
+            optlog.error(f"Unexpected dispatch error: {e}", name=agent.id)
 

@@ -65,11 +65,10 @@ async def process_commands():
         
         elif request_command == "submit_orders":
             if request_data: # list [order, order, ... ] (checked in comm_handler)
-                optlog.debug(f"Trading server got: {request_data}")
                 await order_manager.submit_orders_and_register(agent, request_data, trenv)
 
         else:
-            log_raise(f"Undefined: {request_command} ---")
+            log_raise(f"Undefined: {request_command} ---", name=agent.id)
         command_queue.task_done()
 
 # ---------------------------------
@@ -85,11 +84,10 @@ async def async_on_result(ws, tr_id, result, data_info):
         # But agent could already dropped out and removed from connected_agents.
         # So need to use order_manager, not the connected_agents directly.
         await order_manager.process_tr_notice(trn, connected_agents, trenv)
-        optlog.debug(trn)
+        optlog.info(trn) # agent unknown yet
         
     elif get_tr(trenv, tr_id) in ('TransactionPrices_KRX',  'TransactionPrices_Total'): # 실시간 체결가
         trp = TransactionPrices(trprices=result, trenv_env_dv=trenv.env_dv)
-        print(trp.trprices.to_string())
         await dispatch(connected_agents.get_target_agents_by_trp(trp), trp)
 
     # to add more tr_id ...
@@ -125,11 +123,11 @@ async def handler_shell(reader, writer):
         target = connected_agents.get_agent_card_by_port(addr[1])
         # unsusbcribe everything 
         msg = await subs_manager.remove_agent(target)
-        optlog.info(msg)  
+        optlog.info(f"Response: {msg}", name=target.id)  
 
         # remove from connected_agents/clien
         msg = await connected_agents.remove(target)
-        optlog.info(f"Client disconnected {addr} | {msg}")  
+        optlog.info(f"Client disconnected {addr} | {msg}", name=target.id)  
 
 async def start_server():
     await ws_ready.wait()
@@ -145,16 +143,17 @@ async def broadcast():
         message = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
         message += ' ping from the server --- '
 
-        # for debugging:
-        print(message)
-        # print('==================================================')
-        # print(connected_agents)
-        # print(subs_manager.map)
-        # # print(ka.open_map)
-        # # print(ka.data_map)
-        # print(order_manager)
-        # print('-----------------')
+        optlog.info(message)
         await dispatch(connected_agents.get_all_agents(), message)
+        # _status_check()
+
+def _status_check():
+    # status print possible here
+    optlog.debug(connected_agents)
+    optlog.debug(subs_manager.map)
+    optlog.debug(ka.open_map)
+    optlog.debug(ka.data_map)
+    optlog.debug(order_manager)
 
 async def server():
     async with asyncio.TaskGroup() as tg: 

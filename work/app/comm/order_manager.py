@@ -100,12 +100,16 @@ class OrderManager:
         return res
 
     async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order], trenv, date=date.today().isoformat()):
-        if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should have not been submitted ---')
+        if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should have not been submitted ---', name=agent.id)
 
         # below is sequential submission 
         for order in orders: 
-            await asyncio.to_thread(order.submit, trenv)
-            # send back submission result to the agent right away
+            try:
+                await asyncio.to_thread(order.submit, trenv)
+            except Exception as e:
+                optlog.error(f"OrderManager: order submission failed: {e}", name=agent.id)
+
+            # send back submission result (order status updated) to the agent right away
             await dispatch(agent, order)  
 
             async with self._lock:
@@ -149,7 +153,7 @@ class OrderManager:
                         code_map[INCOMPLETED_ORDERS].get(order.agent_id).remove(order) 
                     except:
                         # let it raise
-                        log_raise(f'order.agent_id {order.agent_id} and notice.order_no {notice.order_no} mismatches ---') 
+                        log_raise(f'order.agent_id {order.agent_id} and notice.oder_no {notice.oder_no} mismatches ---', name=order.agent_id) 
                     # add to completed_orders
                     code_map[COMPLETED_ORDERS].setdefault(order.agent_id, []).append(order)
 
@@ -159,7 +163,7 @@ class OrderManager:
 
             else:
                 # otherwise save it to pending_trns
-                code_map[PENDING_TRNS].setdefault(notice.order_no, []).append(notice) 
+                code_map[PENDING_TRNS].setdefault(notice.oder_no, []).append(notice) 
 
     async def cancel_all_outstanding(self, agent: AgentCard, trenv, date=date.today().isoformat()):
         async with self._lock:
@@ -167,7 +171,7 @@ class OrderManager:
             code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
             incompleted_orders = code_map[INCOMPLETED_ORDERS].get(agent.id, [])
             if not incompleted_orders:
-                optlog.info(f"No incompleted orders to cancel for agent {agent.id} ---")
+                optlog.info(f"No incompleted orders to cancel for agent {agent.id} ---", name=agent.id)
                 return 
 
         rc_orders = [] 
@@ -176,18 +180,18 @@ class OrderManager:
             rc_orders.append(cancel_order)
 
         await self.submit_orders_and_register(agent, rc_orders, trenv, date)
-        optlog.info(f'Cancelling all outstanding {len(rc_orders)} orders for agent {agent.id}...')
+        optlog.info(f'Cancelling all outstanding {len(rc_orders)} orders for agent {agent.id}...', name=agent.id)
 
     async def closing_checker(self, agent, delay=5, date=date.today().isoformat()): 
         await asyncio.sleep(delay)
         agent_incomplete_orders = self.map.get(date, {}).get(agent.code, {}).get(INCOMPLETED_ORDERS, {}).get(agent.id, [])
 
         if agent_incomplete_orders:
-            optlog.error(f"[Closing Check]: {len(agent_incomplete_orders)} orders not yet completed for agent {agent.id}:")
+            optlog.error(f"[Closing Check]: {len(agent_incomplete_orders)} orders not yet completed for agent {agent.id}:", name=agent.id)
 
             not_accepted = [o for o in agent_incomplete_orders if not o.accepted]
             if not_accepted:
-                optlog.error(f" --- {len(not_accepted)} orders not yet accepted")
+                optlog.error(f" --- {len(not_accepted)} orders not yet accepted", name=agent.id)
             # may add more checks here ...
 
-        optlog.info("[v] closing check successful")
+        optlog.info("[v] closing check successful", name=agent.id)

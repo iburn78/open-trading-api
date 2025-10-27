@@ -1,5 +1,6 @@
 from ..common.optlog import log_raise 
 from ..common.tools import excel_round_int
+from ..kis.ws_data import SIDE, EXCHANGE
 
 # ----------------------------------------
 # Transaction cost calculation
@@ -71,17 +72,17 @@ class CostCalculator:
     # 완료되거나 중단될 경우, rounded 값 사용
     # 보수적 접근으로 실제 증권사 Logic을 정확히 알 수 없으므로 근사치임 (체결간 시간 간격등 추가 Rule이 있을 수 있음)
     @classmethod
-    def calculate(cls, side, quantity, price, market, svr, exchange=None, maker_taker="taker"): # default to be conservative
-        if exchange is None: 
-            exchange = "KRX"  # default to be conservative
+    def calculate(cls, side: SIDE, quantity, price, market, svr, traded_exchange=None, maker_taker="taker"): # default to be conservative
+        if traded_exchange is None: 
+            traded_exchange = EXCHANGE.KRX # default to be conservative
 
         fee_table, fee_rd_rule, tax_rd_rule = cls.get_fee_table(svr)
-        if exchange == "KRX":
-            fee = fee_table[exchange]
+        if traded_exchange == EXCHANGE.KRX:
+            fee = fee_table[traded_exchange.value]
         else:
-            fee = fee_table[exchange][maker_taker]
+            fee = fee_table[traded_exchange.value][maker_taker]
 
-        if side == 'buy':
+        if side == SIDE.BUY:
             tax = 0
         else: 
             tax = cls.TAX[market]['TransactionTax'] + cls.TAX[market]['RuralDevTax']
