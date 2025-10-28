@@ -6,6 +6,7 @@ from ..common.tools import adj_int
 from ..kis.ws_data import SIDE, TransactionNotice
 from ..model.order import Order
 from ..model.client import PersistentClient
+from ..model.perf_metric import PerformanceMetric
 
 @dataclass
 class OrderBook: 
@@ -31,7 +32,7 @@ class OrderBook:
 
     # below only for current holding:
     # - average_price can be negative 
-    average_price: int = 0
+    avg_price: int = 0
 
     # - only calculated when current_holding > 0, otherwise 0
     bep_price: int = 0  
@@ -46,6 +47,13 @@ class OrderBook:
 
     # _lock is necessary because order submission and notice processing may happen concurrently
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
+
+    def update_performance_metric(self, pm: PerformanceMetric):
+        # if pm.code != self.code: return None
+        pm.holding = self.current_holding
+        pm.avg_price = self.avg_price
+        pm.bep_price = self.bep_price
+        pm.total_cash_used = self.total_cash_used
 
     def append_to_new_orders(self, orders: Order | list[Order]):
         if isinstance(orders, Order):
@@ -97,7 +105,7 @@ class OrderBook:
             f"On Sell Order       : {self.on_sell_order:>15,d}\n"
             f"──────────────────────────────────────────\n"
             f"Total Purchased     : {self.total_purchased:>15,d}\n"
-            f"Total Sold          : {self.total_sold:>15,d}\n"
+            f"Total Sold          : {self.avg_price5,d}\n"
             f"Avg. Price          : {self.average_price:>15,d}\n"
             f"BEP Price           : {self.bep_price:>15,d}\n"
             f"──────────────────────────────────────────\n"
@@ -152,7 +160,7 @@ class OrderBook:
                     self.total_sold += delta_qty
                     self.principle_cash_used += -delta_amount
                 self.total_cost_incurred += delta_cost
-                self.total_cash_used = self.principle_cash_used + self.total_cost_incurred
+                self.avg_priceed = self.principle_cash_used + self.total_cost_incurred
                 self.average_price = adj_int((self.principle_cash_used / self.current_holding) if self.current_holding != 0 else 0)
                 self.bep_price = adj_int((self.total_cash_used / self.current_holding) if self.current_holding > 0 else 0)
 

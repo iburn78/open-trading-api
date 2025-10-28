@@ -4,10 +4,12 @@ from dataclasses import dataclass, field
 from .order import Order
 from .client import PersistentClient
 from ..common.optlog import optlog
+from ..common.setup import TradePrinciples
 from ..model.order_book import OrderBook
 from ..model.price import MarketPrices
 from ..strategy.strategy import StrategyBase, StrategyCommand
 from ..kis.ws_data import TransactionPrices, TransactionNotice
+from ..model.perf_metric import PerformanceMetric
 
 @dataclass
 class AgentCard: # an agent's business card (e.g., agents submit their business cards in registration)
@@ -27,15 +29,7 @@ class Agent:
     # id and code do not change for the lifetime
     id: str  # ID SHOULD BE UNIQUE ACROSS ALL AGENTS (should be managed centrally)
     code: str
-
-    # ---------------------------------------------------------------------------
-    # # temporary vars for trading stretegy - need review 
-    # target_return_rate: float = 0.0
-    # strategy: str | None = None # to be implemented
-    # assigned_cash_t_2: int = 0 # available cash for trading
-    # holding_quantity: int = 0
-    # total_cost_incurred: int = 0
-    # ---------------------------------------------------------------------------
+    total_allocated_cash: int = 0
 
     # for server communication
     card: AgentCard = field(default_factory=lambda: AgentCard(id="", code=""))
@@ -44,9 +38,11 @@ class Agent:
     hardstop_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     # data tracking and strategy
+    trade_principles: TradePrinciples = field (default_factory=TradePrinciples)
     order_book: OrderBook = field(default_factory=OrderBook)
     market_prices: MarketPrices = field(default_factory=MarketPrices)
     strategy: StrategyBase = field(default_factory=StrategyBase) 
+    pm: PerformanceMetric = field(default_factory=PerformanceMetric)
 
     def __post_init__(self):
         self.card.id = self.id
@@ -56,10 +52,19 @@ class Agent:
         self.market_prices.code = self.code
         self.client.agent_id = self.id
         self.client.on_dispatch = self.on_dispatch
+        self.pm.agent_id = self.id
+        self.pm.code = self.code
+        self.pm.total_allocated_cash = self.total_allocated_cash
 
         # setup strategy with order_book and market_prices
         # if needed, may assign previously built order_book and market_prices 
         self.strategy.agent_data_setup(self.id, self.order_book, self.market_prices)
+    
+    def get_performance_metirc(self):
+        self.order_book.update_performance_metric(self.pm)
+        self.market_prices.update_performance_metric(self.pm)
+        self.pm.calc()
+        return self.pm
 
     async def capture_command(self):
         while not self.hardstop_event.is_set():

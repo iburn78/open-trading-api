@@ -7,18 +7,13 @@ from ..kis.domestic_stock_functions import inquire_balance
 
 @dataclass
 class CashBalance:
-    available: int = 0      # 현재 예수금 (T+0)
-    t_1: int = 0            # T+1 예수금
-    t_2: int = 0            # T+2 예수금
-    safety_margin: float = 0.01   # 안전마진 (예수금의 일부를 거래에 사용하지 않음) 
-    cost: int = 0         # 제비용 (금일 발생)
+    cash_t0: int = 0      # 현재 예수금 (T+0)
+    cash_t1: int = 0      # T+1 예수금
+    cash_t2: int = 0      # T+2 예수금
 
     def __str__(self):
         return (
-            f"----------------------------------------------------------------\n"
-            f"CashBalance: {self.available:,} / T+1: {self.t_1:,} / T+2: {self.t_2:,}\n"
-            f"Cost: {self.cost:,}\n"
-            f"----------------------------------------------------------------"
+            f"CashBalance: {self.cash_t0:,} / T+1: {self.cash_t1:,} / T+2: {self.cash_t2:,}\n"
         )
 
 @dataclass 
@@ -34,10 +29,9 @@ class Holding: # Stock Holding
 
     def __str__(self):
         return (
-            f"{self.code} / {self.quantity:,} / {self.name}\n"
-            f"total amount: {self.amount:,}, avg price: {self.avg_price:,}, bep price: {self.bep_price:,}\n"
+            f"({self.code}) {self.name}, Q {self.quantity:,}, P {self.avg_price:,}, "
+            f"bep price {self.bep_price:,}, total amount {self.amount:,}"
         )
-
 
 @dataclass
 class Account:
@@ -67,9 +61,9 @@ class Account:
 
         # 예수금 할당
         self.cash = self.cash or CashBalance()
-        self.cash.available = int(acc["dnca_tot_amt"].iat[0])
-        self.cash.t_1 = int(acc["nxdy_excc_amt"].iat[0])
-        self.cash.t_2 = int(acc["prvs_rcdl_excc_amt"].iat[0])
+        self.cash.cash_t0 = int(acc["dnca_tot_amt"].iat[0])
+        self.cash.cash_t1 = int(acc["nxdy_excc_amt"].iat[0])
+        self.cash.cash_t2 = int(acc["prvs_rcdl_excc_amt"].iat[0])
         self.cash.cost = int(acc["thdt_tlex_amt"].iat[0])
         
         # 보유 종목 Sync

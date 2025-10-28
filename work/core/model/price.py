@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from ..common.tools import adj_int
 from ..kis.ws_data import TransactionPrices
+from ..model.perf_metric import PerformanceMetric
 
 # market prices for a given code
 @dataclass
@@ -11,6 +12,7 @@ class MarketPrices:
     code: str = ""
 
     current_price: int | None = None
+    current_time: datetime | None = None # current price time
     low_price: int | None = None # per window_size
     high_price: int | None = None # per window_size
     moving_avg: int | None = None # per window_size
@@ -69,6 +71,7 @@ class MarketPrices:
         self._trim_and_update_sum(self._amount_window, "_sum_amount", price * quantity, tr_time)
 
         self.current_price = price
+        self.current_time = tr_time
 
         # update derived metrics
         if self._price_window:
@@ -100,3 +103,8 @@ class MarketPrices:
     def update_from_trp(self, trp: TransactionPrices):
         p, q, t = trp.get_price_quantity_time()
         self.update(p, q, t)
+
+    def update_performance_metric(self, pm: PerformanceMetric):
+        # if pm.code != self.code: return None
+        pm.cur_return = self.current_price
+        pm.cur_time = self.current_time

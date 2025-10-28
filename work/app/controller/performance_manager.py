@@ -1,31 +1,12 @@
-from dataclasses import dataclass 
+from dataclasses import dataclass
 import pandas as pd
 
 from core.common.optlog import optlog, log_raise
 from core.common.tools import adj_int
 from core.model.account import Account
 
-
-##########################
-# NEED TO BE MODIFIED 
-##########################
-
-@dataclass
-class TradePrinciples:
-    """
-    Principles for trading to be defined
-    """
-
-    # safety margin on cash_t_2
-    MAX_USAGE_CASH_T_2: float = 0.9 
-
-    # trade target return 
-    TARGET_RETURN: float = 0.1
-
-
 @dataclass
 class PerformanceManager:
-    
     the_account: Account
 
     target_df: pd.DataFrame = None
@@ -88,7 +69,7 @@ class PerformanceManager:
             # May introduce some follow-up action
 
         cash_t_2_total_allocated = self.target_df.loc[~mask, 'cash_t_2'].sum() 
-        if self.the_account.cash.t_2*self.MAX_USAGE_CASH_T_2 <= cash_t_2_total_allocated:
+        if self.the_account.cash.cash_t2*self.MAX_USAGE_CASH_T_2 <= cash_t_2_total_allocated:
             # this case needs attention in allocating cash
             log_raise("Total allocated exposure exceeds the available cash ---", name = XXXX)
         
