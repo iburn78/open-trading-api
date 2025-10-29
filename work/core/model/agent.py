@@ -45,6 +45,7 @@ class Agent:
     pm: PerformanceMetric = field(default_factory=PerformanceMetric)
 
     def __post_init__(self):
+        # initialize
         self.card.id = self.id
         self.card.code = self.code
         self.order_book.agent_id = self.id
@@ -57,7 +58,6 @@ class Agent:
         self.pm.total_allocated_cash = self.total_allocated_cash
 
         # setup strategy with order_book and market_prices
-        # if needed, may assign previously built order_book and market_prices 
         self.strategy.agent_data_setup(self.id, self.order_book, self.market_prices)
     
     def get_performance_metirc(self):
