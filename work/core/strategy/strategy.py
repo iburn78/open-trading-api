@@ -5,6 +5,7 @@ import asyncio
 
 from ..model.order_book import OrderBook
 from ..model.price import MarketPrices
+from ..model.perf_metric import PerformanceMetric
 from ..kis.ws_data import SIDE, ORD_DVSN, EXCHANGE
 
 @dataclass
@@ -21,38 +22,48 @@ class StrategyCommand:
     data: dict = field(default_factory=dict)
 
 class UpdateEvent(Enum):   
+    INITIATE = 'initiate'
     PRICE_UPDATE = 'price_update'
     ORDER_UPDATE = 'order_update'
-    INITIATE = 'initiate'
+    FEEDBACK = 'feedback'
 
 class StrategyBase(ABC):
     """
-    normal subclasses need: 
-        def __init__(self):
-            super().__init__()
+    Subclasses should implement:
 
-    dataclass subclases need: 
-        def __post_init__(self):
-            super().__init__() 
+    def __init__(self): or __post_init__
+        super().__init__()
+        asyncio.create_task(self.initiate_strategy())
+
+    Subclasses should implement in on_update()
+    - logic for each UpdateEvent variables: Price update, Order update, Feedback         
+    - Feedback is received only when the order isn't processed
+
     """
     def __init__(self):
-        self.signal_queue: asyncio.Queue[StrategyCommand] = asyncio.Queue() 
+        self.command_signal_queue: asyncio.Queue[StrategyCommand] = asyncio.Queue() 
+        self.command_feedback_queue: asyncio.Queue[(StrategyCommand, str)] = asyncio.Queue() 
         self.price_update_event: asyncio.Event = asyncio.Event()
         self.order_update_event: asyncio.Event = asyncio.Event()
 
         self.agent_id = None
+        self.code = None
         self.order_book: OrderBook | None = None
         self.market_prices: MarketPrices | None = None
+        self.agent_pm: PerformanceMetric | None = None # through pm, strategy itself can access initial data of the agent
 
-    def agent_data_setup(self, agent_id, order_book: OrderBook, market_prices: MarketPrices):
+    def agent_data_setup(self, agent_id, code, order_book: OrderBook, market_prices: MarketPrices, perf_metric: PerformanceMetric):
         self.agent_id = agent_id
+        self.code = code
         self.order_book = order_book
         self.market_prices = market_prices  
+        self.agent_pm = perf_metric
 
     async def logic_run(self):
         async with asyncio.TaskGroup() as tg:
             tg.create_task(self.on_price_update())
             tg.create_task(self.on_order_update())
+            tg.create_task(self.on_feedback())
 
     async def on_price_update(self):
         while True:
@@ -66,12 +77,17 @@ class StrategyBase(ABC):
             await self.on_update(UpdateEvent.ORDER_UPDATE)
             self.order_update_event.clear()
 
+    async def on_feedback(self):
+        while True:
+            cmd, msg = await self.command_feedback_queue.get()
+            self.command_feedback_queue.task_done()
+            await self.on_update(UpdateEvent.FEEDBACK, feedback_command=cmd, feedback_msg=msg)
+
     async def initiate_strategy(self):
-        # may add this to __init__ if needed
         await self.on_update(UpdateEvent.INITIATE)
 
     @abstractmethod
-    async def on_update(self, update_event: UpdateEvent):
+    async def on_update(self, update_event: UpdateEvent, **kwargs): # kwargs = {'feedback_command': ..., 'feedback_msg': ...}
         pass
 
 

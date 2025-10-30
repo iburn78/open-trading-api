@@ -12,19 +12,16 @@ class BruteForceRandStrategy(StrategyBase):
     """
     def __init__(self):
         super().__init__() 
-        self.target_return: float = 0.00
-
-        # undertake first on_update
         asyncio.create_task(self.initiate_strategy())
     
-    async def on_update(self, update_event: UpdateEvent):  
+    async def on_update(self, update_event: UpdateEvent, **kwargs):  
         q = random.randint(1, 5)
         x = random.randint(0, 1)    
         if x == 0:
             sc = StrategyCommand(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
         else:
             sc = StrategyCommand(side=SIDE.SELL, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
-        await self.signal_queue.put(sc)
+        await self.command_signal_queue.put(sc)
         await asyncio.sleep(random.randint(5, 10))
         optlog.info(self.order_book, name=self.agent_id)
         optlog.debug(self.order_book.get_listings_str(), name=self.agent_id)

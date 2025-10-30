@@ -1,6 +1,6 @@
 import json
 import pandas as pd
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field 
 
 from .cost import CostCalculator
 from ..common.optlog import optlog, log_raise
@@ -160,6 +160,7 @@ class Order:
             log_raise(f"Order {self.order_no} not submitted yet but revise-cancel tried / instead modify order itself ---", name=self.agent_id)
         return ReviseCancelOrder(agent_id=self.agent_id, code=self.code, side=self.side, ord_dvsn=ord_dvsn, quantity=qty, price=pr, rc=rc, all_yn=all_yn, original_order=self)
 
+
 @dataclass
 class ReviseCancelOrder(Order):
     """
@@ -176,9 +177,13 @@ class ReviseCancelOrder(Order):
     -     nothing matters (can be any, at least "0" required)
     - if partial and revise:
     -     check ord_dvsn (market or limit etc)
-    -     check price and quantity
+    -     check price and quantity 
     - if partial and cancel:
     -     check quantity (price can be any, at least "0" required)
+    # Note: 
+    - partial: 주식정정취소가능주문조회 상 정정취소가능수량(psbl_qty)을 Check 하라고 권고
+    - 단, 해당 기능 모의투자 미지원
+    - Race condition could occur (해당 기능 이용해도 역시 발생가능)
     """
     rc: RCtype = None # '01': revise, '02': cancel
     all_yn: AllYN = None # 잔량 전부 주문 - Y:전부, N: 일부 

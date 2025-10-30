@@ -1,20 +1,28 @@
-import core.kis.kis_auth as ka
-from core.model.account import Account, CashBalance, Holding
+# import core.kis.kis_auth as ka
+# from core.model.account import Account, CashBalance, Holding
+# from core.model.order import get_psbl_order
+from core.kis.ws_data import ORD_DVSN
+
+print(ORD_DVSN('0'))
+
+# svr = 'vps' # prod, auto, vps
+# ka.auth(svr)
+# ka.auth_ws(svr)
+# trenv = ka.getTREnv()
+
+# # a = Account()
+# # a.acc_load(trenv)
+# # print(a)
+
+# code = '000660'
+# price = 50000
+
+# ord = ORD_DVSN.LIMIT
+
+# get_psbl_order(trenv, code, ord, price)
 
 
-svr = 'vps' # prod, auto, vps
-ka.auth(svr)
-ka.auth_ws(svr)
-trenv = ka.getTREnv()
 
-a = Account()
-a.acc_load(trenv)
-print(a)
-
-
-# - feedback required for strategy command by strategy.
-# - agent initial status has to be defined (holding, and initial cash)
-# - boundary condition to be set : holding >= 0, t2 cash to be positive (with margin)
-# - safety margin to be XX% of remaining t2 cash
-# - implement checking max order possible (to check possible order amount)
-# - market: -25%, limit: -1.2% etc (may set -30%, -5%)
+# 초당 거래건수 초과시, Graceful handling
+# Look for log... B1> received order without Order No. 
+# this case -> let agent/strategy know (feedback) and handle rewind 2:35

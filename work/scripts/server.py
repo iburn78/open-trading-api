@@ -55,6 +55,7 @@ async def process_commands():
     await ws_ready.wait()
     while True:
         (writer, request_command, request_data) = await command_queue.get()
+        command_queue.task_done()
         # Only agents can submit commands, and agents should be registered already.
         port = writer.get_extra_info("peername")[1] 
         agent = connected_agents.get_agent_card_by_port(port)
@@ -69,7 +70,6 @@ async def process_commands():
 
         else:
             log_raise(f"Undefined: {request_command} ---", name=agent.id)
-        command_queue.task_done()
 
 # ---------------------------------
 # Websocket and response handling logic
@@ -83,8 +83,8 @@ async def async_on_result(ws, tr_id, result, data_info):
         # At this time, an agent who sent the order should already be initially registered in connected_agents.
         # But agent could already dropped out and removed from connected_agents.
         # So need to use order_manager, not the connected_agents directly.
-        await order_manager.process_tr_notice(trn, connected_agents, trenv)
         optlog.info(trn) # agent unknown yet
+        await order_manager.process_tr_notice(trn, connected_agents, trenv)
         
     elif get_tr(trenv, tr_id) in ('TransactionPrices_KRX',  'TransactionPrices_Total'): # 실시간 체결가
         trp = TransactionPrices(trprices=result, trenv_env_dv=trenv.env_dv)

@@ -1,5 +1,5 @@
 import pandas as pd
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime
 
@@ -79,7 +79,7 @@ class TransactionNotice: # 국내주식 실시간체결통보
     def __str__(self):
         return (
             f"TR notice {self.code}, "
-            f"odno {self.oder_no}, oodno {self.ooder_no}, {self.rfus_yn}{self.cntg_yn}{self.acpt_yn}, odcond {self.oder_cond}, {self.traded_exchange}, "
+            f"odno {self.oder_no}, oodno {self.ooder_no}, {self.rfus_yn}{self.cntg_yn}{self.acpt_yn}, cond {self.oder_cond}, {self.traded_exchange}, "
             f"{self.seln_byov_cls.name}, {self.oder_kind.name}, processed {self.cntg_qty} at P {self.cntg_unpr}, Q {self.oder_qty}"
         )
 
@@ -94,7 +94,7 @@ class TransactionNotice: # 국내주식 실시간체결통보
         self.seln_byov_cls  = None if bs is None else SIDE.SELL if bs == '01' else SIDE.BUY if bs == '02' else bs
         self.rctf_cls       = self.pd_nan_chker_("str", row["RCTF_CLS"])
         ok                  = self.pd_nan_chker_("str", row["ODER_KIND"])
-        self.oder_kind      = None if ok is None else ORD_DVSN(ok).name
+        self.oder_kind      = None if ok is None else ORD_DVSN(ok)
         self.oder_cond      = self.pd_nan_chker_("str", row["ODER_COND"])
         self.code           = self.pd_nan_chker_("str", row["STCK_SHRN_ISCD"])
         self.cntg_qty       = self.pd_nan_chker_("int", row["CNTG_QTY"])

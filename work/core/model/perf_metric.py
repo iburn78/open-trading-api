@@ -6,7 +6,11 @@ class PerformanceMetric:
     # agent managed data
     agent_id: str | None = None
     code: str | None = None
+
+    # initial setup data
     total_allocated_cash: int = 0
+    initial_holding: int = 0
+    bep_price_iholding: int = 0 # bep of initial holding: to be conservative, it includes of cost of selling.
 
     # OrderBook managed data
     holding: int = 0

@@ -99,20 +99,20 @@ class OrderBook:
             return "<no orders>"
         return (
             f"Dashboard {(self.code)}, agent {self.agent_id}\n"
-            f"──────────────────────────────────────────\n"
+            f"----------------------------------------------------"
             f"Current Holding     : {self.current_holding:>15,d}\n"
             f"On Buy Order        : {self.on_buy_order:>15,d}\n"
             f"On Sell Order       : {self.on_sell_order:>15,d}\n"
-            f"──────────────────────────────────────────\n"
+            f"----------------------------------------------------"
             f"Total Purchased     : {self.total_purchased:>15,d}\n"
-            f"Total Sold          : {self.avg_price5,d}\n"
+            f"Total Sold          : {self.total_sold:>15,d}\n"
             f"Avg. Price          : {self.average_price:>15,d}\n"
             f"BEP Price           : {self.bep_price:>15,d}\n"
-            f"──────────────────────────────────────────\n"
+            f"----------------------------------------------------"
             f"Principle Cash Used : {self.principle_cash_used:>15,d}\n"
             f"Total Cash Used     : {self.total_cash_used:>15,d}\n"
             f"Total Cost Incurred : {self.total_cost_incurred:>15,d}\n"
-            f"──────────────────────────────────────────\n"
+            f"----------------------------------------------------"
         )
 
     def get_listings_str(self, processing_only: bool = True):
@@ -160,8 +160,8 @@ class OrderBook:
                     self.total_sold += delta_qty
                     self.principle_cash_used += -delta_amount
                 self.total_cost_incurred += delta_cost
-                self.avg_priceed = self.principle_cash_used + self.total_cost_incurred
-                self.average_price = adj_int((self.principle_cash_used / self.current_holding) if self.current_holding != 0 else 0)
+                self.total_cash_used = self.principle_cash_used + self.total_cost_incurred
+                self.avg_price = adj_int((self.principle_cash_used / self.current_holding) if self.current_holding != 0 else 0)
                 self.bep_price = adj_int((self.total_cash_used / self.current_holding) if self.current_holding > 0 else 0)
 
                 # if order is completed or canceled, move to completed_orders
@@ -176,7 +176,7 @@ class OrderBook:
             return 
         async with self._lock:
             resp = await client.send_command("submit_orders", request_data=self._new_orders)
-            # Just simply 'orders submitted' message expected
+            # Just simply 'order queued' message expected
             # Server will send back individual order updates via on_dispatch
             optlog.info(f"Response: {resp.get('response_status')}", name=self.agent_id)
 
