@@ -117,17 +117,22 @@ async def handler_shell(reader, writer):
     try:
         await handle_client(reader, writer, **server_data_dict)
     finally:
-        writer.close() # marks the stream as closed.
-        await writer.wait_closed() # actual close
-        # agent is registered by request (not automatically on connect)
-        target = connected_agents.get_agent_card_by_port(addr[1])
-        # unsusbcribe everything 
-        msg = await subs_manager.remove_agent(target)
-        optlog.info(f"Response: {msg}", name=target.id)  
-
-        # remove from connected_agents/clien
-        msg = await connected_agents.remove(target)
-        optlog.info(f"Client disconnected {addr} | {msg}", name=target.id)  
+        try:
+            # During shutdown, if multiple connections close simultaneously, they might deadlock waiting for locks 
+            # while the websocket loop is also trying to dispatch messages (which needs agent locks).
+            async with asyncio.timeout(5.0):
+                writer.close() # marks the stream as closed.
+                await writer.wait_closed() # actual close
+                # agent is registered by request (not automatically on connect)
+                target = connected_agents.get_agent_card_by_port(addr[1])
+                # unsusbcribe everything 
+                msg = await subs_manager.remove_agent(target)
+                optlog.info(f"Response: {msg}", name=target.id)  
+                # remove from connected_agents/client
+                msg = await connected_agents.remove(target)
+                optlog.info(f"Client disconnected {addr} | {msg}", name=target.id)  
+        except asyncio.TimeoutError:
+            optlog.warning("Cleanup timeout during disconnect")
 
 async def start_server():
     await ws_ready.wait()
@@ -136,36 +141,42 @@ async def start_server():
     async with server:  # ensures graceful shutdown
         await server.serve_forever()
 
-async def broadcast():
+async def broadcast(shutdown_event: asyncio.Event):
     INTERVAL = 15
-    while True:
-        await asyncio.sleep(INTERVAL)
-        message = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
-        message += ' ping from the server --- '
+    while not shutdown_event.is_set():
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=INTERVAL)
+            break
+        except asyncio.TimeoutError:
+            message = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+            message += ' ping from the server --- '
+            optlog.info(message)
+            await dispatch(connected_agents.get_all_agents(), message)
+            _status_check(True)
 
-        optlog.info(message)
-        await dispatch(connected_agents.get_all_agents(), message)
-        _status_check()
+def _status_check(show=False):
+    if show:
+        optlog.debug(connected_agents)
+        optlog.debug(subs_manager.map)
+        optlog.debug(ka.open_map)
+        optlog.debug(ka.data_map)
+        optlog.debug(order_manager)
 
-def _status_check():
-    # status print possible here
-    optlog.debug(connected_agents)
-    optlog.debug(subs_manager.map)
-    optlog.debug(ka.open_map)
-    optlog.debug(ka.data_map)
-    optlog.debug(order_manager)
-
-async def server():
+async def server(shutdown_event: asyncio.Event):
     async with asyncio.TaskGroup() as tg: 
         tg.create_task(websocket_loop())
         tg.create_task(process_commands())
         tg.create_task(start_server())
-        tg.create_task(broadcast())
+        tg.create_task(broadcast(shutdown_event))
+        # later expand this to save other statics too
+        tg.create_task(order_manager.persist_to_disk())
 
 if __name__ == "__main__":
+    shutdown_event = asyncio.Event()
     try:
-        asyncio.run(server())
+        asyncio.run(server(shutdown_event))
     except KeyboardInterrupt:
         optlog.info("Server stopped by user (Ctrl+C).\n")
+        shutdown_event.set()
 
 

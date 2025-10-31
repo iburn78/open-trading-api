@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from collections import deque
 from datetime import datetime, timedelta
 
@@ -40,9 +40,10 @@ class MarketPrices:
 
     def __post_init__(self):
         # initialize sliding windows for price, volume, and amount
-        self._price_window = deque()   # (timestamp, price)
-        self._volume_window = deque()  # (timestamp, volume)
-        self._amount_window = deque()  # (timestamp, amount)
+        l = 10000 # reasonable - might be enough
+        self._price_window = deque(maxlen=l)   # (timestamp, price)
+        self._volume_window = deque(maxlen=l)  # (timestamp, volume)
+        self._amount_window = deque(maxlen=l)  # (timestamp, amount)
 
         # running sums for O(1) updates
         self._sum_price = 0.0
@@ -106,5 +107,6 @@ class MarketPrices:
 
     def update_performance_metric(self, pm: PerformanceMetric):
         # if pm.code != self.code: return None
-        pm.cur_return = self.current_price
+        pm.cur_price = self.current_price
         pm.cur_time = self.current_time
+        

@@ -2,7 +2,10 @@ from dataclasses import dataclass, field
 from collections import defaultdict
 from datetime import date
 import asyncio
+import pickle
+import os
 
+from core.common.setup import data_dir, disk_save_period, order_manager_file_name
 from core.common.optlog import optlog, log_raise
 from core.model.agent import AgentCard
 from core.model.order import Order, ReviseCancelOrder
@@ -103,6 +106,12 @@ class OrderManager:
         if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should have not been submitted ---', name=agent.id)
 
         # below is sequential submission 
+        # may consider to concurrently submit: KIS might not allow this
+        # tasks = []
+        # for o in orders:
+        #     task = asyncio.create_task(...)  
+        #     tasks.append(task)
+        # await asyncio.gather(*tasks, return_exceptions=True)
         for order in orders: 
             try:
                 await asyncio.to_thread(order.submit, trenv)
@@ -176,7 +185,7 @@ class OrderManager:
 
         rc_orders = [] 
         for o in incompleted_orders:
-            cancel_order = ReviseCancelOrder(agent_id=agent.id, code=o.code, side=o.side, ord_dvsn=o.ord_dvsn, quantity=o.quantity, order_no=o.price, rc=RCtype.CANCEL, all_yn=AllYN.ALL, original_order=o)
+            cancel_order = ReviseCancelOrder(agent_id=agent.id, code=o.code, side=o.side, ord_dvsn=o.ord_dvsn, quantity=o.quantity, price=o.price, rc=RCtype.CANCEL, all_yn=AllYN.ALL, original_order=o)
             rc_orders.append(cancel_order)
 
         await self.submit_orders_and_register(agent, rc_orders, trenv, date)
@@ -195,3 +204,10 @@ class OrderManager:
             # may add more checks here ...
 
         optlog.info("[v] closing check successful", name=agent.id)
+    
+    async def persist_to_disk(self):
+        while True:
+            await asyncio.sleep(disk_save_period)  
+            async with self._lock:
+                with open(os.path.join(data_dir, order_manager_file_name), "wb") as f:
+                    pickle.dump(dict(self.map), f)

@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from ..common.optlog import optlog, log_raise
 from ..common.tools import adj_int
-from ..kis.ws_data import SIDE, TransactionNotice
+from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice
 from ..model.order import Order
 from ..model.client import PersistentClient
 from ..model.perf_metric import PerformanceMetric
@@ -31,6 +31,9 @@ class OrderBook:
     # - current_holding can be negative 
     current_holding: int = 0  
     on_buy_order: int = 0 # include from _orders_sent_for_submit and _incompleted_orders (not from _new_orders)
+    on_LIMIT_buy_amount: int = 0 
+    on_MARKET_buy_quantity: int = 0
+
     on_sell_order: int = 0 # include from _orders_sent_for_submit and _incompleted_orders (not from _new_orders)
     total_purchased: int = 0 # cumulative
     total_sold: int = 0 # cumulative
@@ -74,8 +77,13 @@ class OrderBook:
         for order in orders:
             if order.side == SIDE.BUY:
                 self.on_buy_order += order.quantity
+                if order.ord_dvsn == ORD_DVSN.LIMIT:
+                    self.on_LIMIT_buy_amount += order.quantity*order.price # this is amount
+                else: # MARKET or MIDDLE
+                    self.on_MARKET_buy_quantity += order.quantity # this is quantity
             else:
                 self.on_sell_order += order.quantity
+            # note the dashboard has to be reverted if order fails in the server: implemented in handle_order_dispatch() below
         self._orders_sent_for_submit.extend(orders)
     
     def remove_from_orders_sent_for_submit(self, order: Order):
@@ -200,11 +208,23 @@ class OrderBook:
             self.remove_from_orders_sent_for_submit(order)
 
             if order.order_no is None: # server returned with failure 
+                # Revert the dashboard
+                if order.side == SIDE.BUY:
+                    self.on_buy_order -= order.quantity
+                    if order.ord_dvsn == ORD_DVSN.LIMIT:
+                        self.on_LIMIT_buy_amount -= order.quantity*order.price # this is amount
+                    else: # MARKET or MIDDLE
+                        self.on_MARKET_buy_quantity -= order.quantity # this is quantity
+                else:
+                    self.on_sell_order -= order.quantity
                 return False
 
             # note: append delivered order, not from sent_for_submit
             self.append_to_incompleted_orders(order)            
 
             # if race occured, handle here
-            for trn in self._unhandled_trns: 
+            # empty the list, otherwise trns stay
+            unhandled = self._unhandled_trns.copy()
+            self._unhandled_trns.clear()
+            for trn in unhandled:
                 await self.process_tr_notice(trn, self.trenv)

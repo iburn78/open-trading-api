@@ -18,7 +18,7 @@ import websockets
 import yaml
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
-from ..common.setup import _smartSleep_, _demoSleep_
+from ..common.setup import smartSleep_, demoSleep_
 
 clearConsole = lambda: os.system("cls" if os.name in ("nt", "dos") else "clear")
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
@@ -43,8 +43,8 @@ _expire_time_ws = dict()
 _autoReAuth = True   # USAGE: when token file name is static, check token status when _url_fetch called
 _DEBUG = False
 _isPaper = False
-_smartSleep = _smartSleep_ # 0.1 # min 0.05
-_demoSleep = _demoSleep_ # 0.5 # min 0.5
+_smartSleep = smartSleep_ # 0.1 # min 0.05
+_demoSleep = demoSleep_ # 0.5 # min 0.5
 
 KISEnv = namedtuple(
     "KISEnv",

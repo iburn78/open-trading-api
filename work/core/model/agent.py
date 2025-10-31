@@ -66,10 +66,10 @@ class Agent:
         # setup strategy with order_book and market_prices
         self.strategy.agent_data_setup(self.id, self.code, self.order_book, self.market_prices, self.pm)
 
-    def define_initial_state(self, total_allocated_cash = 0, initial_holding = 0, bep_price_iholding = 0):
+    def define_initial_state(self, total_allocated_cash = 0, initial_holding = 0, bep_price_initial_holding = 0):
         self.pm.total_allocated_cash = total_allocated_cash
         self.pm.initial_holding = initial_holding
-        self.pm.bep_price_iholding = bep_price_iholding
+        self.pm.bep_price_initial_holding = bep_price_initial_holding
     
     def get_performance_metirc(self):
         self.order_book.update_performance_metric(self.pm)
@@ -94,7 +94,8 @@ class Agent:
     # [Agent-level checking] internal logic checking before sending strategy command to the API server
     async def validate_strategy_command(self, str_cmd: StrategyCommand):
         # exact status
-        agent_cash = self.pm.total_allocated_cash - self.order_book.total_cash_used
+        # - has to account for pending orders too
+        agent_cash = self.pm.total_allocated_cash - self.order_book.total_cash_used 
         agent_holding = self.pm.initial_holding + self.order_book.current_holding
 
         if str_cmd.side == SIDE.BUY:
@@ -102,6 +103,12 @@ class Agent:
                 # [check 0] if market_prices are not yet initialized, make it return False
                 if self.market_prices.current_price is None:
                     return False, 'Market buy order not processed - market prices not yet initialized'
+
+                # exact status
+                # - has to account for pending orders too
+                on_LIMIT_order_amount = self.order_book.on_LIMIT_buy_amount*(1+TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN)
+                on_MARKET_order_amount = self.order_book.on_MARKET_buy_quantity*self.market_prices.current_price*(1+TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)
+                agent_cash = self.pm.total_allocated_cash - self.order_book.total_cash_used - on_LIMIT_order_amount - on_MARKET_order_amount
 
                 # [check 1] check if agent has enough cash (stricter cond-check)
                 exp_amount = str_cmd.quantity*self.market_prices.current_price
@@ -114,10 +121,11 @@ class Agent:
                     a_, q_, p_ = resp.get("response_data")
 
                     if str_cmd.quantity > q_:
-                        return False, 'Market buy order not processed - exceeding KIS quantity limit'
+                        return False, 'Market buy order not processed - exceeding KIS account quantity limit'
 
                 return True, None
-            else:
+
+            else: # LIMIT
                 ord_amount = str_cmd.quantity*str_cmd.price
                 if ord_amount > adj_int(agent_cash*(1-TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN)):
                     return False, 'Limit buy order not processed - exceeding agent cash (after considering safety margin)'
@@ -125,8 +133,9 @@ class Agent:
                 # practically no need to check the account API for limit orders
                 return True, None
 
-        else: 
-            if str_cmd.quantity > agent_holding:
+        else: # Sell
+            # has to account for pending orders too
+            if str_cmd.quantity > agent_holding - self.order_book.on_sell_order:
                 return False, 'Sell order not processed - exceeding total holding'
             return True, None
 

@@ -95,6 +95,25 @@ async def handle_get_psbl_order(request_command, request_data_dict, writer, **se
 # ------------------------------------------------------------
 # Command registry - UNIQUE PLACE TO REGISTER
 # ------------------------------------------------------------
+### make it ABS 
+'''
+from abc import ABC, abstractmethod
+
+class Command(ABC):
+    @abstractmethod
+    async def execute(self, context: ServerContext) -> CommandResult:
+        pass
+
+class SubmitOrdersCommand(Command):
+    def __init__(self, orders: list[Order]):
+        self.orders = orders
+    
+    async def execute(self, context: ServerContext) -> CommandResult:
+        # Implementation
+        pass
+
+'''
+
 COMMAND_HANDLERS = {
     "submit_orders": handle_submit_orders, 
     "CANCEL_orders": handle_cancel_orders, # note the cap letters

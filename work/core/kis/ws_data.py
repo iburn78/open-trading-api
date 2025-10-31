@@ -32,7 +32,7 @@ class EXCHANGE(str, Enum):
 class ORD_DVSN(str, Enum):
     LIMIT = '00' # SOR, KRX, NXT
     MARKET = '01' # SOR, KRX
-    MIDDLE = '21' # KRX, NXT (중간가)
+    MIDDLE = '21' # KRX, NXT (중간가): works like MARKET 
 
     def is_allowed_in(self, exchange: EXCHANGE):
         allowed = {

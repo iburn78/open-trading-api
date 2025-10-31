@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import pickle
 import asyncio
 import uuid
@@ -6,6 +7,20 @@ from typing import Callable
 from ..common.setup import HOST, PORT
 from ..common.optlog import optlog, log_raise
 
+
+### implement below
+@dataclass
+class ServerResponse:
+    success: bool
+    status: str
+    data: object | None = None
+
+@dataclass
+class ClientRequest:
+    request_id: bool
+    request_command: str
+    request_data_dict: object | None = None
+    
 # ---------------------------------------------------------------------------------
 # client side
 # ---------------------------------------------------------------------------------
