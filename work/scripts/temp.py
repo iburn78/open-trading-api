@@ -23,6 +23,8 @@ print(ORD_DVSN('0'))
 
 
 
-# 초당 거래건수 초과시, Graceful handling
+
+
+# 초당 거래건수 초과시, Graceful handling // retry after.... dont imple sleep after cmd ... 
 # Look for log... B1> received order without Order No. 
 # this case -> let agent/strategy know (feedback) and handle rewind 2:35

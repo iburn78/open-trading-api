@@ -10,14 +10,19 @@ from ..model.perf_metric import PerformanceMetric
 
 @dataclass
 class OrderBook: 
+    """
+    Order record boook used by agents, individually
+    """
     agent_id: str = ""
     code: str = ""
+    trenv: object | None = None  
 
     # private order lists - use setter functions for calculating dashboard info real time
     _new_orders: list[Order] = field(default_factory=list) # to be submitted
     _orders_sent_for_submit: list[Order] = field(default_factory=list) # sent to server repository / once server sent it to KIS API, submitted orders will be sent back via on_dispatch
     _incompleted_orders: list[Order] = field(default_factory=list) # submitted but not yet fully completed or cancelled
     _completed_orders: list[Order] = field(default_factory=list) 
+    _unhandled_trns: list[TransactionNotice] = field(default_factory=list)
 
     # --------------------------------
     # [dashboard info]
@@ -98,17 +103,18 @@ class OrderBook:
         if not self._new_orders and not self._orders_sent_for_submit and not self._incompleted_orders and not self._completed_orders:
             return "<no orders>"
         return (
+            f"\n"
             f"Dashboard {(self.code)}, agent {self.agent_id}\n"
-            f"----------------------------------------------------"
+            f"----------------------------------------------------\n"
             f"Current Holding     : {self.current_holding:>15,d}\n"
             f"On Buy Order        : {self.on_buy_order:>15,d}\n"
             f"On Sell Order       : {self.on_sell_order:>15,d}\n"
-            f"----------------------------------------------------"
+            f"----------------------------------------------------\n"
             f"Total Purchased     : {self.total_purchased:>15,d}\n"
             f"Total Sold          : {self.total_sold:>15,d}\n"
-            f"Avg. Price          : {self.average_price:>15,d}\n"
+            f"Avg. Price          : {self.avg_price:>15,d}\n"
             f"BEP Price           : {self.bep_price:>15,d}\n"
-            f"----------------------------------------------------"
+            f"----------------------------------------------------\n"
             f"Principle Cash Used : {self.principle_cash_used:>15,d}\n"
             f"Total Cash Used     : {self.total_cash_used:>15,d}\n"
             f"Total Cost Incurred : {self.total_cost_incurred:>15,d}\n"
@@ -128,7 +134,8 @@ class OrderBook:
             sections.append(_section("[listings] Incompleted orders", self._incompleted_orders))
         if self._completed_orders and not processing_only:
             sections.append(_section("[listings] Completed orders", self._completed_orders))
-
+        if not sections:
+            return "[listings] No under-processing orders"
         return "\n".join(sections)
 
     async def process_tr_notice(self, notice: TransactionNotice, trenv):
@@ -169,17 +176,35 @@ class OrderBook:
                     self.remove_from_incompleted_orders(order)
                     self.append_to_completed_orders(order)
             else: 
-                log_raise(f"Order not found in incompleted_orders for notice {notice.oder_no}, notice: {notice} ---", name=self.agent_id)
+                # log_raise(f"Order not found in incompleted_orders for notice {notice.oder_no}, notice: {notice} ---", name=self.agent_id)
+                # just in case race condition occurs
+                self.trenv = trenv
+                self._unhandled_trns.append(notice)
     
-    async def submit_new_orders(self, client: PersistentClient):
-        if not self._new_orders:
-            return 
+    async def submit_new_orders(self, client: PersistentClient, orders: list[Order] | None):
         async with self._lock:
+            if orders is not None: 
+                self.append_to_new_orders(orders)
+            if not self._new_orders:
+                return 
             resp = await client.send_command("submit_orders", request_data=self._new_orders)
+
             # Just simply 'order queued' message expected
             # Server will send back individual order updates via on_dispatch
             optlog.info(f"Response: {resp.get('response_status')}", name=self.agent_id)
-
-            # move new_orders to orders_sent_for_submit
             self.append_to_orders_sent_for_submit(self._new_orders)
             self.clear_new_orders()
+
+    async def handle_order_dispatch(self, order: Order): 
+        async with self._lock:
+            self.remove_from_orders_sent_for_submit(order)
+
+            if order.order_no is None: # server returned with failure 
+                return False
+
+            # note: append delivered order, not from sent_for_submit
+            self.append_to_incompleted_orders(order)            
+
+            # if race occured, handle here
+            for trn in self._unhandled_trns: 
+                await self.process_tr_notice(trn, self.trenv)

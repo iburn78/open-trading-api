@@ -11,11 +11,11 @@ from core.strategy.brute_rand import BruteForceRandStrategy
 async def main(sw=None): # switch
     if sw == "1":
         A = Agent(id = 'A1', code = '000660', strategy=BruteForceRandStrategy())
-        A.initial_setup(total_allocated_cash=10000000)
+        A.define_initial_state(total_allocated_cash=10000000)
         task1 = asyncio.create_task(A.run())  
 
         B = Agent(id = 'B1', code = '001440', strategy=BruteForceRandStrategy())
-        B.initial_setup(total_allocated_cash=10000000)
+        B.define_initial_state(total_allocated_cash=10000000)
         task2 = asyncio.create_task(B.run())  
 
         await asyncio.sleep(1000)

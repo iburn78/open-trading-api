@@ -3,6 +3,7 @@ from ..kis.domestic_stock_functions import inquire_psbl_order
 
 # Note: KIS API related func runs should be done in server side
 
+# this takes API usage frequency limit, so use with care
 def get_psbl_order(trenv, code: str, ord_dvsn: ORD_DVSN, price: int):
     if ord_dvsn == ORD_DVSN.MARKET:
         price = 0

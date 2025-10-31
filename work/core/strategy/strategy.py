@@ -21,6 +21,19 @@ class StrategyCommand:
     # additional data
     data: dict = field(default_factory=dict)
 
+class FeedbackKind(Enum):
+    ORDER = 'order'
+    STR_COMMAND = 'str_command'
+
+@dataclass
+class StrategyFeedback:
+    kind: FeedbackKind | None = None # specifies the object type
+    obj: object | None = None
+    message: str | None = None
+
+    # additional data
+    data: dict = field(default_factory=dict)
+
 class UpdateEvent(Enum):   
     INITIATE = 'initiate'
     PRICE_UPDATE = 'price_update'
@@ -42,7 +55,7 @@ class StrategyBase(ABC):
     """
     def __init__(self):
         self.command_signal_queue: asyncio.Queue[StrategyCommand] = asyncio.Queue() 
-        self.command_feedback_queue: asyncio.Queue[(StrategyCommand, str)] = asyncio.Queue() 
+        self.command_feedback_queue: asyncio.Queue[StrategyFeedback] = asyncio.Queue() 
         self.price_update_event: asyncio.Event = asyncio.Event()
         self.order_update_event: asyncio.Event = asyncio.Event()
 
@@ -71,7 +84,7 @@ class StrategyBase(ABC):
             await self.on_update(UpdateEvent.PRICE_UPDATE)
             self.price_update_event.clear()
 
-    async def on_order_update(self):
+    async def on_order_update(self): # order update signal can be lost... only here... 
         while True:
             await self.order_update_event.wait()
             await self.on_update(UpdateEvent.ORDER_UPDATE)
@@ -79,15 +92,15 @@ class StrategyBase(ABC):
 
     async def on_feedback(self):
         while True:
-            cmd, msg = await self.command_feedback_queue.get()
+            str_feedback = await self.command_feedback_queue.get()
             self.command_feedback_queue.task_done()
-            await self.on_update(UpdateEvent.FEEDBACK, feedback_command=cmd, feedback_msg=msg)
+            await self.on_update(UpdateEvent.FEEDBACK, str_feedback=str_feedback)
 
     async def initiate_strategy(self):
         await self.on_update(UpdateEvent.INITIATE)
 
     @abstractmethod
-    async def on_update(self, update_event: UpdateEvent, **kwargs): # kwargs = {'feedback_command': ..., 'feedback_msg': ...}
+    async def on_update(self, update_event: UpdateEvent, str_feedback: StrategyFeedback = None):
         pass
 
 

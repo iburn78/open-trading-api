@@ -6,7 +6,6 @@ from core.common.optlog import optlog
 from core.model.order import Order
 from core.model.agent import AgentCard
 from core.kis.domestic_stock_functions_ws import ccnl_krx, ccnl_total
-from core.kis.ws_data import ORD_DVSN
 from core.kis.api_tools import get_psbl_order
 from app.comm.conn_agents import ConnectedAgents
 
@@ -89,8 +88,8 @@ async def handle_subscribe_trp_by_agent_card(request_command, request_data_dict,
 async def handle_get_psbl_order(request_command, request_data_dict, writer, **server_data_dict):
     trenv = server_data_dict.get("trenv")
     code, ord_dvsn, price = request_data_dict.get('request_data')
-    await asyncio.sleep(trenv.sleep)
     a_, q_, p_ = get_psbl_order(trenv, code, ord_dvsn, price)
+    await asyncio.sleep(trenv.sleep)
     return {"response_status": None, "response_data": (a_, q_, p_)}
 
 # ------------------------------------------------------------

@@ -145,7 +145,7 @@ async def broadcast():
 
         optlog.info(message)
         await dispatch(connected_agents.get_all_agents(), message)
-        # _status_check()
+        _status_check()
 
 def _status_check():
     # status print possible here

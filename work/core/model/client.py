@@ -42,7 +42,7 @@ class PersistentClient:
         self.listen_task = asyncio.create_task(self.listen_server())
         optlog.info(f"Connected to {self.host}:{self.port}", name=self.agent_id)
 
-    async def listen_server(self):
+    async def listen_server(self): # listen to server command responses, and dispatches
         try:
             while True:
                 # read length prefix
@@ -65,8 +65,9 @@ class PersistentClient:
                             optlog.warning(f"Received response for already completed request_id {req_id}, received: {msg}", name=self.agent_id)
                             continue
                 # handle dispatch message
-                if self.on_dispatch:
-                    await self.on_dispatch(msg)
+                if self.on_dispatch:   
+                    # listner should not block listening
+                    asyncio.create_task(self.on_dispatch(msg))
                 else:
                     optlog.warning(f"Dispatched but no receiver - {msg}", name=self.agent_id)
 
@@ -81,7 +82,6 @@ class PersistentClient:
                 optlog.warning("Server closed connection", name=self.agent_id)  # actual EOF / disconnect
         except Exception as e:
             log_raise(f"Error in listening: {e}", name=self.agent_id)
-            # optlog.error(f"Error in listening: {e}", name=self.agent_id)
 
     async def send_command(self, request_command: str, request_data=None, **other_kwargs):
         if not self.is_connected:
@@ -109,7 +109,7 @@ class PersistentClient:
         await self.writer.drain()
 
         # wait for the specific response
-        response = await fut
+        response = await fut  
         return response
 
     # no need to check if already closed

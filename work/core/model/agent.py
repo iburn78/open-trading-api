@@ -8,7 +8,7 @@ from ..common.setup import TradePrinciples
 from ..common.tools import adj_int
 from ..model.order_book import OrderBook
 from ..model.price import MarketPrices
-from ..strategy.strategy import StrategyBase, StrategyCommand
+from ..strategy.strategy import StrategyBase, StrategyCommand, StrategyFeedback, FeedbackKind
 from ..kis.ws_data import TransactionPrices, TransactionNotice, SIDE, ORD_DVSN
 from ..model.perf_metric import PerformanceMetric
 
@@ -44,25 +44,29 @@ class Agent:
     strategy: StrategyBase = field(default_factory=StrategyBase) 
     pm: PerformanceMetric = field(default_factory=PerformanceMetric)
 
-    # Agent_env flag (to be adjusted by Agent Manager - to be developed)
-    strict_API_check_required: bool = True # set to False if agent cash allocation is only a fraction of total account cash, etc
+    # other flags
+    strict_API_check_required: bool = False  
 
     def __post_init__(self):
         # initialize
         self.card.id = self.id
         self.card.code = self.code
+
         self.order_book.agent_id = self.id
         self.order_book.code = self.code
+
         self.market_prices.code = self.code
+
         self.client.agent_id = self.id
         self.client.on_dispatch = self.on_dispatch
+
         self.pm.agent_id = self.id
         self.pm.code = self.code
 
         # setup strategy with order_book and market_prices
         self.strategy.agent_data_setup(self.id, self.code, self.order_book, self.market_prices, self.pm)
 
-    def initial_setup(self, total_allocated_cash = 0, initial_holding = 0, bep_price_iholding = 0):
+    def define_initial_state(self, total_allocated_cash = 0, initial_holding = 0, bep_price_iholding = 0):
         self.pm.total_allocated_cash = total_allocated_cash
         self.pm.initial_holding = initial_holding
         self.pm.bep_price_iholding = bep_price_iholding
@@ -73,16 +77,18 @@ class Agent:
         self.pm.calc()
         return self.pm
 
-    async def capture_command(self):
+    async def capture_command_signals(self):
         while not self.hardstop_event.is_set():
             str_command: StrategyCommand = await self.strategy.command_signal_queue.get()
             self.strategy.command_signal_queue.task_done()
             valid, msg = await self.validate_strategy_command(str_command)
             if valid:
-                self.make_an_order_locally(str_command)
-                await self.submit_orders_in_orderbook()
+                orders = self.process_strategy_command(str_command)
+                self._check_connected('submit')
+                await self.order_book.submit_new_orders(self.client, orders)
             else: 
-                await self.strategy.command_feedback_queue.put((str_command, msg))
+                str_feedback = StrategyFeedback(kind=FeedbackKind.STR_COMMAND, obj=str_command, message=msg)
+                await self.strategy.command_feedback_queue.put(str_feedback)
                 optlog.warning(f'Invalid strategy command received - not processed: {msg}')
 
     # [Agent-level checking] internal logic checking before sending strategy command to the API server
@@ -95,32 +101,33 @@ class Agent:
             if str_cmd.ord_dvsn == ORD_DVSN.MARKET:
                 # [check 0] if market_prices are not yet initialized, make it return False
                 if self.market_prices.current_price is None:
-                    return False, 'Market buy order - market prices not yet initialized'
+                    return False, 'Market buy order not processed - market prices not yet initialized'
 
                 # [check 1] check if agent has enough cash (stricter cond-check)
                 exp_amount = str_cmd.quantity*self.market_prices.current_price
                 if exp_amount > adj_int(agent_cash*(1-TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)):
-                    return False, 'Market buy order - exceeding agent cash (after considering safety margin)'
+                    return False, 'Market buy order not processed - exceeding agent cash (after considering safety margin)'
 
-                # [check 2] check if the account API allows it (may skip for performance)
+                # [check 2] check if the account API allows it 
                 if self.strict_API_check_required:
                     resp = await self.client.send_command(request_command="get_psbl_order", request_data=(self.code, str_cmd.ord_dvsn, str_cmd.price))
                     a_, q_, p_ = resp.get("response_data")
 
-                if str_cmd.quantity > q_:
-                    return False, 'Market buy order - exceeding quantity limit'
+                    if str_cmd.quantity > q_:
+                        return False, 'Market buy order not processed - exceeding KIS quantity limit'
 
                 return True, None
             else:
                 ord_amount = str_cmd.quantity*str_cmd.price
                 if ord_amount > adj_int(agent_cash*(1-TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN)):
-                    return False, 'Limit buy order - exceeding agent cash (after considering safety margin)'
+                    return False, 'Limit buy order not processed - exceeding agent cash (after considering safety margin)'
+
                 # practically no need to check the account API for limit orders
                 return True, None
 
         else: 
             if str_cmd.quantity > agent_holding:
-                return False, 'Sell order - exceeding total holding'
+                return False, 'Sell order not processed - exceeding total holding'
             return True, None
 
     async def run(self, **kwargs):
@@ -146,7 +153,7 @@ class Agent:
         optlog.info(f"Response: {resp.get('response_status')}", name=self.id)
 
         asyncio.create_task(self.strategy.logic_run())
-        asyncio.create_task(self.capture_command())
+        asyncio.create_task(self.capture_command_signals())
 
         try:
             await self.hardstop_event.wait() 
@@ -156,8 +163,9 @@ class Agent:
             await self.client.close()
 
     # make an order, not sent to server yet
-    def make_an_order_locally(self, strategy_command: StrategyCommand): # side: SIDE, quantity, ord_dvsn: ORD_DVSN, price, exchange: EXCHANGE = EXCHANGE.SOR):
+    def process_strategy_command(self, strategy_command: StrategyCommand): # side: SIDE, quantity, ord_dvsn: ORD_DVSN, price, exchange: EXCHANGE = EXCHANGE.SOR):
         ''' Create an order and add to new_orders (not yet sent to server for submission) '''
+        # Single order case
         side = strategy_command.side
         ord_dvsn = strategy_command.ord_dvsn
         quantity = strategy_command.quantity
@@ -165,15 +173,11 @@ class Agent:
         exchange = strategy_command.exchange
 
         order = Order(agent_id=self.id, code=self.code, side=side, ord_dvsn=ord_dvsn, quantity=quantity, price=price, exchange=exchange)
-        self.order_book.append_to_new_orders(order)
 
-    async def submit_orders_in_orderbook(self, orders: list[Order] | None = None):
-        if orders: 
-            if isinstance(orders, Order):
-                orders = [orders]
-            self.order_book.append_to_new_orders(orders)
-        self._check_connected('submit')
-        await self.order_book.submit_new_orders(self.client)
+        # multiple orders case:
+        # ...
+
+        return [order]
     
     def cancel_all_orders(self):
         self._check_connected('cancel')
@@ -208,10 +212,11 @@ class Agent:
         optlog.info(f"Received dict: {data}", name=self.id)
 
     async def handle_order(self, order: Order):
-        optlog.info(f"Submit result received: {order}", name=self.id)
-        async with self.order_book._lock:
-            self.order_book.remove_from_orders_sent_for_submit(order)
-            self.order_book.append_to_incompleted_orders(order)            
+        optlog.info(f"Submit result received: {order}", name=self.id) 
+        order_processed = await self.order_book.handle_order_dispatch(order)
+        if not order_processed:
+            str_feedback = StrategyFeedback(kind=FeedbackKind.ORDER, obj=order, message="server rejected the order")
+            self.strategy.command_feedback_queue.put(str_feedback)
 
     async def handle_prices(self, trp: TransactionPrices):
         self.market_prices.update_from_trp(trp)
@@ -219,7 +224,7 @@ class Agent:
         optlog.debug(self.market_prices, name=self.id)
         
     async def handle_notice(self, trn: TransactionNotice):
-        await self.order_book.process_tr_notice(trn, self.trenv)
+        await self.order_book.process_tr_notice(trn, self.trenv) 
         self.strategy.order_update_event.set()
         optlog.info(trn, name=self.id)
 
