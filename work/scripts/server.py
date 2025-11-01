@@ -5,11 +5,11 @@ import asyncio
 import datetime
 from core.common.optlog import optlog, log_raise
 from core.common.setup import HOST, PORT
+from core.model.agent import dispatch
 import core.kis.kis_auth as ka
 from core.kis.domestic_stock_functions_ws import ccnl_notice
 from core.kis.ws_data import get_tr, TransactionNotice, TransactionPrices
-from core.model.interface import RequestCommand, CommandQueueInput
-from app.comm.comm_handler import handle_client, dispatch
+from app.comm.comm_handler import handle_client
 from app.comm.conn_agents import ConnectedAgents
 from app.comm.subs_manager import SubscriptionManager
 from app.comm.order_manager import OrderManager
@@ -34,39 +34,19 @@ ka.auth(svr)
 ka.auth_ws(svr)
 trenv = ka.getTREnv()
 ws_ready = asyncio.Event()
-command_queue = asyncio.Queue() # to process submit and cancel orders
 connected_agents = ConnectedAgents() 
 subs_manager = SubscriptionManager()
 order_manager = OrderManager()
 
 # ---------------------------------
-# Variables to share with clients
+# Variables to be used in comm_handlers
 # ---------------------------------
 server_data_dict ={
     'trenv' : trenv,
-    'command_queue' : command_queue, 
     'connected_agents' : connected_agents,
     'subs_manager' : subs_manager, 
+    'order_manager' : order_manager,
 }
-
-# ---------------------------------
-# Process orders through the websocket
-# ---------------------------------
-async def process_commands():
-    await ws_ready.wait()
-    while True:
-        command_input: CommandQueueInput = await command_queue.get() 
-        command_queue.task_done()
-        # Only agents can submit commands, and agents should be registered already.
-        port = command_input.writer.get_extra_info("peername")[1] 
-        agent = connected_agents.get_agent_card_by_port(port)
-
-        if command_input.client_request.command == RequestCommand.CANCEL_ORDERS:  # agent specific cancel
-            await order_manager.cancel_all_outstanding(agent, trenv)
-            await order_manager.closing_checker(agent)
-
-        elif command_input.client_request.command == RequestCommand.SUBMIT_ORDERS:  
-            await order_manager.submit_orders_and_register(agent, command_input.client_request.get_request_data(), trenv)
 
 # ---------------------------------
 # Websocket and response handling logic
@@ -139,6 +119,7 @@ async def start_server():
         await server.serve_forever()
 
 async def broadcast(shutdown_event: asyncio.Event):
+    await ws_ready.wait()
     INTERVAL = 15
     while not shutdown_event.is_set():
         try:
@@ -151,20 +132,28 @@ async def broadcast(shutdown_event: asyncio.Event):
             await dispatch(connected_agents.get_all_agents(), message)
             _status_check(True)
 
-def _status_check(show=False):
+def _status_check(show=False, include_ka=True):
     if show:
+        optlog.debug('------------------------------------------------------------')
+        optlog.debug('connected_agents:')
         optlog.debug(connected_agents)
+        optlog.debug('subs_manager.map:')
         optlog.debug(subs_manager.map)
-        optlog.debug(ka.open_map)
-        optlog.debug(ka.data_map)
+        optlog.debug('order_manager:')
         optlog.debug(order_manager)
+        if include_ka:
+            optlog.debug('ka.open_map:')
+            optlog.debug(ka.open_map)
+            optlog.debug('ka.data_map:')
+            optlog.debug(ka.data_map)
+        optlog.debug('------------------------------------------------------------')
 
 async def server(shutdown_event: asyncio.Event):
     async with asyncio.TaskGroup() as tg: 
         tg.create_task(websocket_loop())
-        tg.create_task(process_commands())
         tg.create_task(start_server())
         tg.create_task(broadcast(shutdown_event))
+
         # later expand this to save other statics too
         tg.create_task(order_manager.persist_to_disk())
 

@@ -2,8 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 import uuid
 
-from .agent import AgentCard
-from ..common.optlog import log_raise
+from .optlog import log_raise
 
 class RequestCommand(Enum):
     SUBMIT_ORDERS = auto()
@@ -15,38 +14,33 @@ class RequestCommand(Enum):
 @dataclass
 class ClientRequest:
     command: RequestCommand
-    data: dict = field(default_factory=dict)
-    _request_id: str = ''
+    data_dict: dict = field(default_factory=dict)
+    _request_id: str | None = None
 
     def __post_init__(self):
         self._request_id = str(uuid.uuid4())
-        self.data.setdefault('request_data', None) # must have 'request_data' key
+        self.data_dict.setdefault('request_data', None) # must have 'request_data' key
 
     def __str__(self):
         return self.command.name
 
     def set_request_data(self, request_data: object):
-        self.data['request_data'] = request_data
+        self.data_dict['request_data'] = request_data
 
-        # validation logic for request_data
+        # minimum validation logic for request_data
         if self.command == RequestCommand.SUBMIT_ORDERS:
             if not isinstance(request_data, list): 
-                log_raise('invalid request_data type')
-    
-        elif self.command == RequestCommand.REGISTER_AGENT_CARD or self.command == RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD:
-            if not isinstance(request_data, AgentCard): 
                 log_raise('invalid request_data type')
         
         elif self.command == RequestCommand.GET_PSBL_ORDER: 
             if not isinstance(request_data, tuple): 
                 log_raise('invalid request_data type')
 
-
     def get_request_data(self):
-        return self.data['request_data']
+        return self.data_dict['request_data']
 
     def set_additional_data(self, additional_data: dict):
-        self.data.update(additional_data)  # append dict
+        self.data_dict.update(additional_data)  # append dict
     
     def get_id(self): 
         return self._request_id
@@ -55,15 +49,17 @@ class ClientRequest:
 class ServerResponse:
     success: bool
     status: str
-    data: object = field(default_factory=dict)
+    data_dict: object = field(default_factory=dict)
+    _request_id: str | None = None
 
     def __str__(self):
         if self.success:
-            return 'Success '+ self.status
+            return '[Success] '+ self.status
         else:
-            return 'Fail ' + self.status
+            return '[Fail] ' + self.status
+    
+    def set_id(self, client_request: ClientRequest):
+        self._request_id = client_request.get_id()
 
-@dataclass
-class CommandQueueInput:
-    writer: object
-    client_request: ClientRequest
+    def get_id(self): 
+        return self._request_id

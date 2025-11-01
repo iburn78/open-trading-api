@@ -7,11 +7,10 @@ import os
 
 from core.common.setup import data_dir, disk_save_period, order_manager_file_name
 from core.common.optlog import optlog, log_raise
-from core.model.agent import AgentCard
+from core.model.agent import AgentCard, dispatch
 from core.model.order import Order, ReviseCancelOrder
 from core.kis.ws_data import TransactionNotice, RCtype, AllYN
 from app.comm.conn_agents import ConnectedAgents
-from app.comm.comm_handler import dispatch
 
 # server side application
 # Orders placed by agents are managed here in a comphrehensive way

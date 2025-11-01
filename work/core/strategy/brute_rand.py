@@ -24,7 +24,7 @@ class BruteForceRandStrategy(StrategyBase):
         else:
             sc = StrategyCommand(side=SIDE.SELL, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
         await self.command_signal_queue.put(sc)
-        # await asyncio.sleep(random.randint(0, 1))
+        await asyncio.sleep(random.randint(0, 1))
         optlog.info(self.order_book, name=self.agent_id)
         optlog.debug(self.order_book.get_listings_str(), name=self.agent_id)
         return

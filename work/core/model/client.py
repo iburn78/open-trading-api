@@ -2,7 +2,7 @@ import pickle
 import asyncio
 from typing import Callable
 
-from .interface import ClientRequest
+from ..common.interface import ClientRequest, ServerResponse
 from ..common.setup import HOST, PORT
 from ..common.optlog import optlog, log_raise
 
@@ -45,24 +45,27 @@ class PersistentClient:
                 # read message
                 data = await self.reader.readexactly(length)
                 msg = pickle.loads(data)
-
-                # route to the correct pending request
-                if isinstance(msg, dict):
-                    req_id = msg.get("request_id")
-                    if req_id and req_id in self.pending_requests:
+                # msg can be 1) ServerResponse, 2) TRN, 3) TRP, 4) Order, 5) etc
+                
+                # route to the correct pending client_request
+                if isinstance(msg, ServerResponse):
+                    req_id = msg.get_id()
+                    if req_id is None:
+                        optlog.error(f"server response with no request_id {msg}", name=self.agent_id)
+                    elif req_id in self.pending_requests:
                         fut = self.pending_requests.pop(req_id)
-                        if not fut.done():
-                            fut.set_result(msg)
-                            continue
-                        else:
-                            optlog.warning(f"Received response for already completed request_id {req_id}, received: {msg}", name=self.agent_id)
-                            continue
-                # handle dispatch message
+                        fut.set_result(msg) # if fut.done() == True, then this will throw anyway
+                        continue
+                    else:
+                        optlog.error(f"server response for non exist (or not anymore) request_id {req_id}: {msg}", name=self.agent_id)
+                        continue
+
+                # handle dispatch message for non ServerResponse objects
                 if self.on_dispatch:   
                     # listner should not block listening
                     asyncio.create_task(self.on_dispatch(msg))
                 else:
-                    optlog.warning(f"Dispatched but no receiver - {msg}", name=self.agent_id)
+                    optlog.warning(f"Dispatched but no receiver: {msg}", name=self.agent_id)
 
         except asyncio.CancelledError:
             optlog.info("Listen task cancelled", name=self.agent_id)  # intentional
@@ -78,8 +81,9 @@ class PersistentClient:
 
     async def send_client_request(self, client_request: ClientRequest):
         if not self.is_connected:
-            optlog.error(f"Client is not connected for command {client_request.command.name}", name=self.agent_id)
-            return {}  
+            msg = f"Client not connected: {client_request}"
+            optlog.error(msg, name=self.agent_id)
+            return ServerResponse(success=False, status=msg)  
 
         req_bytes = pickle.dumps(client_request)
         msg = len(req_bytes).to_bytes(4, "big") + req_bytes
@@ -94,7 +98,7 @@ class PersistentClient:
         await self.writer.drain()
 
         # wait for the specific response
-        response = await fut  
+        response: ServerResponse = await fut  
         return response
 
     # no need to check if already closed

@@ -1,11 +1,12 @@
 import asyncio
 from dataclasses import dataclass, field
+import pickle
 
 from .order import Order
 from .client import PersistentClient
 from .order_book import OrderBook
 from .price import MarketPrices
-from .interface import RequestCommand, ClientRequest, ServerResponse
+from ..common.interface import RequestCommand, ClientRequest, ServerResponse
 from .perf_metric import PerformanceMetric
 from ..common.optlog import optlog
 from ..common.setup import TradePrinciples
@@ -101,28 +102,28 @@ class Agent:
 
         if str_cmd.side == SIDE.BUY:
             if str_cmd.ord_dvsn == ORD_DVSN.MARKET:
+                cp = self.market_prices.current_price
                 # [check 0] if market_prices are not yet initialized, make it return False
-                if self.market_prices.current_price is None:
+                if cp is None:
                     return False, 'Market buy order not processed - market prices not yet initialized'
 
                 # exact status
                 # - has to account for pending orders too
                 on_LIMIT_order_amount = self.order_book.on_LIMIT_buy_amount*(1+TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN)
-                on_MARKET_order_amount = self.order_book.on_MARKET_buy_quantity*self.market_prices.current_price*(1+TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)
+                on_MARKET_order_amount = self.order_book.on_MARKET_buy_quantity*cp*(1+TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)
                 agent_cash = self.pm.total_allocated_cash - self.order_book.total_cash_used - on_LIMIT_order_amount - on_MARKET_order_amount
 
                 # [check 1] check if agent has enough cash (stricter cond-check)
-                exp_amount = str_cmd.quantity*self.market_prices.current_price
+                exp_amount = str_cmd.quantity*cp
                 if exp_amount > adj_int(agent_cash*(1-TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)):
                     return False, 'Market buy order not processed - exceeding agent cash (after considering safety margin)'
 
                 # [check 2] check if the account API allows it 
                 if self.strict_API_check_required:
-
-                    client_request = ClientRequest(command=RequestCommand.GET_PSBL_ORDER)
-                    client_request.set_request_data((self.code, str_cmd.ord_dvsn, str_cmd.price)) 
-                    resp = await self.client.send_client_request(client_request)
-                    a_, q_, p_ = resp.get("response_data")
+                    psbl_request = ClientRequest(command=RequestCommand.GET_PSBL_ORDER)
+                    psbl_request.set_request_data((self.code, str_cmd.ord_dvsn, str_cmd.price)) 
+                    psbl_resp: ServerResponse = await self.client.send_client_request(psbl_request)
+                    (a_, q_, p_) = psbl_resp.data_dict['psbl_data'] # tuple should be returned, otherwise let it raise here
 
                     if str_cmd.quantity > q_:
                         return False, 'Market buy order not processed - exceeding KIS account quantity limit'
@@ -156,18 +157,18 @@ class Agent:
 
         register_request = ClientRequest(command=RequestCommand.REGISTER_AGENT_CARD)
         register_request.set_request_data(self.card) 
-        resp = await self.client.send_client_request(register_request)
-        optlog.info(f"Response: {resp.get('response_status')}", name=self.id)
-        if not resp.get('response_success'):
+        register_resp: ServerResponse = await self.client.send_client_request(register_request)
+        optlog.info(f"Response: {register_resp}", name=self.id)
+        if not register_resp.success:
             await self.client.close()
             return 
 
-        self.trenv = resp.get('response_data')
+        self.trenv = register_resp.data_dict['trenv'] # trenv should be in data, otherwise let it raise here
 
         subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD)
         subs_request.set_request_data(self.card) 
-        resp = await self.client.send_client_request(subs_request)
-        optlog.info(f"Response: {resp.get('response_status')}", name=self.id)
+        subs_resp: ServerResponse = await self.client.send_client_request(subs_request)
+        optlog.info(f"Response: {subs_resp}", name=self.id)
 
         asyncio.create_task(self.strategy.logic_run())
         asyncio.create_task(self.capture_command_signals())
@@ -199,6 +200,7 @@ class Agent:
     def cancel_all_orders(self):
         self._check_connected('cancel')
         cancel_request = ClientRequest(command=RequestCommand.CANCEL_ORDERS)
+        # note cancel request does not receive server response - if needed, make this as async cancel_all_orders(self), etc
         asyncio.create_task(self.client.send_client_request(cancel_request))
 
     def _check_connected(self, msg: str = ""): 
@@ -231,15 +233,15 @@ class Agent:
 
     async def handle_order(self, order: Order):
         optlog.info(f"Submit result received: {order}", name=self.id) 
-        order_processed = await self.order_book.handle_order_dispatch(order)
+        await self.order_book.handle_order_dispatch(order)
 
-        ###_if processed, still need to send OK signal to the strategy ....
-        ###_if processed, still need to send OK signal to the strategy ....
-        ###_if processed, still need to send OK signal to the strategy ....
-        ###_if processed, still need to send OK signal to the strategy ....
-        if not order_processed:
-            str_feedback = StrategyFeedback(kind=FeedbackKind.ORDER, obj=order, message="server rejected the order")
-            self.strategy.command_feedback_queue.put(str_feedback)
+        # send back the order to the strategy 
+        if order.order_no is None: 
+            msg = "order rejected"
+        else: 
+            msg = "order accepted"
+        str_feedback = StrategyFeedback(kind=FeedbackKind.ORDER, obj=order, message=msg)
+        await self.strategy.command_feedback_queue.put(str_feedback)
 
     async def handle_prices(self, trp: TransactionPrices):
         self.market_prices.update_from_trp(trp)
@@ -251,3 +253,21 @@ class Agent:
         self.strategy.order_update_event.set()
         optlog.info(trn, name=self.id)
 
+
+async def dispatch(to: AgentCard | list[AgentCard], message: object):
+    if not to:
+        optlog.info(f"No agents to dispatch: {message}")
+
+    if isinstance(to, AgentCard):
+        to = [to]
+
+    data = pickle.dumps(message)
+    msg_bytes = len(data).to_bytes(4, 'big') + data
+    for agent in to:
+        try:
+            agent.writer.write(msg_bytes)
+            await agent.writer.drain()  # await ensures exceptions are caught here
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            optlog.error(f"Agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed.", name=agent.id)
+        except Exception as e:
+            optlog.error(f"Unexpected dispatch error: {e}", name=agent.id, exc_info=True)

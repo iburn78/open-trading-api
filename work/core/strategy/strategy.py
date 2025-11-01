@@ -18,9 +18,6 @@ class StrategyCommand:
     # optional
     exchange: EXCHANGE = EXCHANGE.SOR
     
-    # additional data
-    data: dict = field(default_factory=dict)
-
 class FeedbackKind(Enum):
     ORDER = 'order'
     STR_COMMAND = 'str_command'
@@ -30,9 +27,7 @@ class StrategyFeedback:
     kind: FeedbackKind | None = None # specifies the object type
     obj: object | None = None
     message: str | None = None
-
-    # additional data
-    data: dict = field(default_factory=dict)
+    ###_Develop feedback code (like) to standardize message
 
 class UpdateEvent(Enum):   
     INITIATE = 'initiate'

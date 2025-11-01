@@ -3,10 +3,10 @@ from dataclasses import dataclass, field
 
 from .order import Order
 from .client import PersistentClient
-from .interface import RequestCommand, ClientRequest, ServerResponse
 from .perf_metric import PerformanceMetric
 from ..common.optlog import optlog, log_raise
 from ..common.tools import adj_int
+from ..common.interface import RequestCommand, ClientRequest, ServerResponse
 from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice
 
 @dataclass
@@ -144,7 +144,7 @@ class OrderBook:
         if self._completed_orders and not processing_only:
             sections.append(_section("[listings] Completed orders", self._completed_orders))
         if not sections:
-            return "[listings] No under-processing orders"
+            return "[listings] no orders processing"
         return "\n".join(sections)
 
     async def process_tr_notice(self, notice: TransactionNotice, trenv):
@@ -197,13 +197,13 @@ class OrderBook:
             if not self._new_orders:
                 return 
             
-            client_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
-            client_request.set_request_data(self._new_orders) 
-            resp = await client.send_client_request(client_request)
+            submit_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
+            submit_request.set_request_data(self._new_orders) 
+            resp: ServerResponse = await client.send_client_request(submit_request)
 
             # Just simply 'order queued' message expected
             # Server will send back individual order updates via on_dispatch
-            optlog.info(f"Response: {resp.get('response_status')}", name=self.agent_id)
+            optlog.info(f"Response: {resp}", name=self.agent_id)
             self.append_to_orders_sent_for_submit(self._new_orders)
             self.clear_new_orders()
 
@@ -221,7 +221,6 @@ class OrderBook:
                         self.on_MARKET_buy_quantity -= order.quantity # this is quantity
                 else:
                     self.on_sell_order -= order.quantity
-                return False
 
             # note: append delivered order, not from sent_for_submit
             self.append_to_incompleted_orders(order)            
@@ -232,3 +231,4 @@ class OrderBook:
             self._unhandled_trns.clear()
             for trn in unhandled:
                 await self.process_tr_notice(trn, self.trenv)
+            
