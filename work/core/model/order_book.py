@@ -1,12 +1,13 @@
 import asyncio
 from dataclasses import dataclass, field
 
+from .order import Order
+from .client import PersistentClient
+from .interface import RequestCommand, ClientRequest, ServerResponse
+from .perf_metric import PerformanceMetric
 from ..common.optlog import optlog, log_raise
 from ..common.tools import adj_int
 from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice
-from ..model.order import Order
-from ..model.client import PersistentClient
-from ..model.perf_metric import PerformanceMetric
 
 @dataclass
 class OrderBook: 
@@ -195,7 +196,10 @@ class OrderBook:
                 self.append_to_new_orders(orders)
             if not self._new_orders:
                 return 
-            resp = await client.send_command("submit_orders", request_data=self._new_orders)
+            
+            client_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
+            client_request.set_request_data(self._new_orders) 
+            resp = await client.send_client_request(client_request)
 
             # Just simply 'order queued' message expected
             # Server will send back individual order updates via on_dispatch

@@ -116,7 +116,7 @@ class OrderManager:
             try:
                 await asyncio.to_thread(order.submit, trenv)
             except Exception as e:
-                optlog.error(f"OrderManager: order submission failed: {e}", name=agent.id)
+                optlog.error(f"OrderManager: order submission failed: {e}", name=agent.id, exc_info=True)
 
             # send back submission result (order status updated) to the agent right away
             await dispatch(agent, order)  

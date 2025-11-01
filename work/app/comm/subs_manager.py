@@ -30,9 +30,14 @@ class SubscriptionManager:
                 func_map[agent_card.code] = [agent_card.id]
                 # new entry of (func, code), so subscribe 
                 self._subscribe(func, agent_card.code)
+                return f"agent {agent_card.id} with code {agent_card.code} subscription requested"
             else:
                 if agent_card.id not in agent_list:
                     agent_list.append(agent_card.id)
+                    return f"agent {agent_card.id} subscribed"
+                else:
+                    return f"agent {agent_card.id} already subscribed"
+
 
     async def remove(self, func: Callable, agent_card: AgentCard):
         if not agent_card:

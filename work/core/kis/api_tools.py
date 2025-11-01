@@ -1,5 +1,5 @@
-from ..kis.ws_data import ORD_DVSN
-from ..kis.domestic_stock_functions import inquire_psbl_order
+from .ws_data import ORD_DVSN
+from .domestic_stock_functions import inquire_psbl_order
 
 # Note: KIS API related func runs should be done in server side
 

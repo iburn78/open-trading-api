@@ -1,7 +1,8 @@
-from .optlog import log_raise
 import pandas as pd
 import numpy as np
 import os
+
+from .optlog import log_raise
 
 # ----------------------------------------
 # Float precision adjust

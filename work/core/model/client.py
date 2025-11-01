@@ -1,32 +1,10 @@
-from dataclasses import dataclass
 import pickle
 import asyncio
-import uuid
 from typing import Callable
 
+from .interface import ClientRequest
 from ..common.setup import HOST, PORT
 from ..common.optlog import optlog, log_raise
-
-
-### implement below
-@dataclass
-class ServerResponse:
-    success: bool
-    status: str
-    data: object | None = None
-
-@dataclass
-class ClientRequest:
-    request_id: bool
-    request_command: str
-    request_data_dict: object | None = None
-    
-# ---------------------------------------------------------------------------------
-# client side
-# ---------------------------------------------------------------------------------
-# client request format should be:
-# {"request_id": str, "request_command": str, "request_data_dict": {'request_data': obj, ... } | None}
-# ---------------------------------------------------------------------------------
 
 # client remains connected
 class PersistentClient:
@@ -48,10 +26,10 @@ class PersistentClient:
         try:
             self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
         except ConnectionRefusedError as e:
-            optlog.error(f"Connection refused: {self.host}:{self.port} → {e}", name=self.agent_id)
+            optlog.error(f"Connection refused: {self.host}:{self.port} → {e}", name=self.agent_id, exc_info=True)
             return
         except Exception as e:
-            optlog.error(f"Unexpected error connecting to {self.host}:{self.port}: {e}", name=self.agent_id)
+            optlog.error(f"Unexpected error connecting to {self.host}:{self.port}: {e}", name=self.agent_id, exc_info=True)
             return
 
         self.listen_task = asyncio.create_task(self.listen_server())
@@ -98,26 +76,18 @@ class PersistentClient:
         except Exception as e:
             log_raise(f"Error in listening: {e}", name=self.agent_id)
 
-    async def send_command(self, request_command: str, request_data=None, **other_kwargs):
+    async def send_client_request(self, client_request: ClientRequest):
         if not self.is_connected:
-            optlog.error(f"Client is not connected for command {request_command}", name=self.agent_id)
+            optlog.error(f"Client is not connected for command {client_request.command.name}", name=self.agent_id)
             return {}  
 
-        # create unique request ID
-        request_id = str(uuid.uuid4())
-        payload = {
-            "request_id": request_id,
-            "request_command": request_command,
-            "request_data_dict": {"request_data": request_data, **other_kwargs},
-        }
-
-        req_bytes = pickle.dumps(payload)
+        req_bytes = pickle.dumps(client_request)
         msg = len(req_bytes).to_bytes(4, "big") + req_bytes
 
         # create a future and store it for response matching
         # future: a tool that makes a coroutine wait
         fut = asyncio.get_running_loop().create_future()
-        self.pending_requests[request_id] = fut
+        self.pending_requests[client_request.get_id()] = fut
 
         # send request
         self.writer.write(msg)

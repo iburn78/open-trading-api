@@ -2,9 +2,9 @@ from dataclasses import dataclass
 from collections import deque
 from datetime import datetime, timedelta
 
+from .perf_metric import PerformanceMetric
 from ..common.tools import adj_int
 from ..kis.ws_data import TransactionPrices
-from ..model.perf_metric import PerformanceMetric
 
 # market prices for a given code
 @dataclass

@@ -3,14 +3,15 @@ from dataclasses import dataclass, field
 
 from .order import Order
 from .client import PersistentClient
+from .order_book import OrderBook
+from .price import MarketPrices
+from .interface import RequestCommand, ClientRequest, ServerResponse
+from .perf_metric import PerformanceMetric
 from ..common.optlog import optlog
 from ..common.setup import TradePrinciples
 from ..common.tools import adj_int
-from ..model.order_book import OrderBook
-from ..model.price import MarketPrices
 from ..strategy.strategy import StrategyBase, StrategyCommand, StrategyFeedback, FeedbackKind
 from ..kis.ws_data import TransactionPrices, TransactionNotice, SIDE, ORD_DVSN
-from ..model.perf_metric import PerformanceMetric
 
 @dataclass
 class AgentCard: # an agent's business card (e.g., agents submit their business cards in registration)
@@ -117,7 +118,10 @@ class Agent:
 
                 # [check 2] check if the account API allows it 
                 if self.strict_API_check_required:
-                    resp = await self.client.send_command(request_command="get_psbl_order", request_data=(self.code, str_cmd.ord_dvsn, str_cmd.price))
+
+                    client_request = ClientRequest(command=RequestCommand.GET_PSBL_ORDER)
+                    client_request.set_request_data((self.code, str_cmd.ord_dvsn, str_cmd.price)) 
+                    resp = await self.client.send_client_request(client_request)
                     a_, q_, p_ = resp.get("response_data")
 
                     if str_cmd.quantity > q_:
@@ -150,7 +154,9 @@ class Agent:
         """
         await self.client.connect()
 
-        resp = await self.client.send_command("register_agent_card", request_data=self.card)
+        register_request = ClientRequest(command=RequestCommand.REGISTER_AGENT_CARD)
+        register_request.set_request_data(self.card) 
+        resp = await self.client.send_client_request(register_request)
         optlog.info(f"Response: {resp.get('response_status')}", name=self.id)
         if not resp.get('response_success'):
             await self.client.close()
@@ -158,7 +164,9 @@ class Agent:
 
         self.trenv = resp.get('response_data')
 
-        resp = await self.client.send_command("subscribe_trp_by_agent_card", request_data=self.card)
+        subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD)
+        subs_request.set_request_data(self.card) 
+        resp = await self.client.send_client_request(subs_request)
         optlog.info(f"Response: {resp.get('response_status')}", name=self.id)
 
         asyncio.create_task(self.strategy.logic_run())
@@ -190,7 +198,8 @@ class Agent:
     
     def cancel_all_orders(self):
         self._check_connected('cancel')
-        asyncio.create_task(self.client.send_command("CANCEL_orders", request_data=None))
+        cancel_request = ClientRequest(command=RequestCommand.CANCEL_ORDERS)
+        asyncio.create_task(self.client.send_client_request(cancel_request))
 
     def _check_connected(self, msg: str = ""): 
         if not self.client.is_connected:
@@ -210,7 +219,7 @@ class Agent:
         if handler:
             await handler(data)
         else:
-            optlog.error("Unhandled type:", type(data), name=self.id)
+            optlog.error("Unhandled type:", type(data), name=self.id, exc_info=True)
 
     # handlers for dispatched msg types ---
     async def handle_str(self, msg):
@@ -223,6 +232,11 @@ class Agent:
     async def handle_order(self, order: Order):
         optlog.info(f"Submit result received: {order}", name=self.id) 
         order_processed = await self.order_book.handle_order_dispatch(order)
+
+        ###_if processed, still need to send OK signal to the strategy ....
+        ###_if processed, still need to send OK signal to the strategy ....
+        ###_if processed, still need to send OK signal to the strategy ....
+        ###_if processed, still need to send OK signal to the strategy ....
         if not order_processed:
             str_feedback = StrategyFeedback(kind=FeedbackKind.ORDER, obj=order, message="server rejected the order")
             self.strategy.command_feedback_queue.put(str_feedback)

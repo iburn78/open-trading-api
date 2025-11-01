@@ -8,6 +8,7 @@ from core.common.setup import HOST, PORT
 import core.kis.kis_auth as ka
 from core.kis.domestic_stock_functions_ws import ccnl_notice
 from core.kis.ws_data import get_tr, TransactionNotice, TransactionPrices
+from core.model.interface import RequestCommand, CommandQueueInput
 from app.comm.comm_handler import handle_client, dispatch
 from app.comm.conn_agents import ConnectedAgents
 from app.comm.subs_manager import SubscriptionManager
@@ -54,22 +55,18 @@ server_data_dict ={
 async def process_commands():
     await ws_ready.wait()
     while True:
-        (writer, request_command, request_data) = await command_queue.get()
+        command_input: CommandQueueInput = await command_queue.get() 
         command_queue.task_done()
         # Only agents can submit commands, and agents should be registered already.
-        port = writer.get_extra_info("peername")[1] 
+        port = command_input.writer.get_extra_info("peername")[1] 
         agent = connected_agents.get_agent_card_by_port(port)
 
-        if request_command == "CANCEL_orders":  # agent specific cancel
+        if command_input.client_request.command == RequestCommand.CANCEL_ORDERS:  # agent specific cancel
             await order_manager.cancel_all_outstanding(agent, trenv)
             await order_manager.closing_checker(agent)
-        
-        elif request_command == "submit_orders":
-            if request_data: # list [order, order, ... ] (checked in comm_handler)
-                await order_manager.submit_orders_and_register(agent, request_data, trenv)
 
-        else:
-            log_raise(f"Undefined: {request_command} ---", name=agent.id)
+        elif command_input.client_request.command == RequestCommand.SUBMIT_ORDERS:  
+            await order_manager.submit_orders_and_register(agent, command_input.client_request.get_request_data(), trenv)
 
 # ---------------------------------
 # Websocket and response handling logic

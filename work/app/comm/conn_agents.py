@@ -17,13 +17,13 @@ class ConnectedAgents:
                 log_raise(f'Client port is not assigned for agent {agent_card.id} --- ')
 
             if self.get_agent_card_by_id(agent_card.id):
-                return f'[Warning] agent_card {agent_card.id} already registered --- ', False
+                return False, f'[Warning] agent_card {agent_card.id} already registered --- '
 
             if self.get_agent_card_by_port(agent_card.client_port):
                 log_raise(f'Client port is {agent_card.client_port} is alreay in use --- ')
 
             self.code_agent_card_dict.setdefault(agent_card.code, []).append(agent_card)
-            return f'agent_card {agent_card.id} registered in the server', True
+            return True, f'agent_card {agent_card.id} registered in the server'
 
     async def remove(self, agent_card: AgentCard):
         if not agent_card: 

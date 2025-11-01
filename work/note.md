@@ -32,7 +32,7 @@ entry point to run
 - Each agent is a client (one to one)
 - Agent registration is done by AgentCard
 - A client can send command but the corresponding agent has to be registered already
-- let's use "### " to mark places that need attention / fix / develop
+- let's use "###(underbar_)" to mark places that need attention / fix / develop
 
 ### Python knowledge
 - variables are just references to objects, and everything is passed by reference (i.e., passing variables)
