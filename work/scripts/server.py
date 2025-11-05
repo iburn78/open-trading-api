@@ -93,13 +93,18 @@ async def handler_shell(reader, writer):
     optlog.info(f"Client connected {addr}")
     try:
         await handle_client(reader, writer, **server_data_dict)
+    except Exception as e:
+        optlog.error(f"Handler crashed: {e}", name=addr[1])
     finally:
         try:
             # During shutdown, if multiple connections close simultaneously, they might deadlock waiting for locks 
             # while the websocket loop is also trying to dispatch messages (which needs agent locks).
             async with asyncio.timeout(5.0):
-                writer.close() # marks the stream as closed.
-                await writer.wait_closed() # actual close
+                try:
+                    writer.close() # marks the stream as closed.
+                    await writer.wait_closed() # actual close
+                except Exception:
+                    pass # socket already dead, ignore
                 # agent is registered by request (not automatically on connect)
                 target = connected_agents.get_agent_card_by_port(addr[1])
                 # unsusbcribe everything 
@@ -135,17 +140,15 @@ async def broadcast(shutdown_event: asyncio.Event):
 def _status_check(show=False, include_ka=True):
     if show:
         optlog.debug('------------------------------------------------------------')
-        optlog.debug('connected_agents:')
         optlog.debug(connected_agents)
-        optlog.debug('subs_manager.map:')
-        optlog.debug(subs_manager.map)
-        optlog.debug('order_manager:')
+        optlog.debug(subs_manager)
         optlog.debug(order_manager)
         if include_ka:
             optlog.debug('ka.open_map:')
-            optlog.debug(ka.open_map)
+            for k, d in ka.open_map.items(): 
+                optlog.debug(f"{k}: {d['items']}")
             optlog.debug('ka.data_map:')
-            optlog.debug(ka.data_map)
+            optlog.debug(ka.data_map.keys())
         optlog.debug('------------------------------------------------------------')
 
 async def server(shutdown_event: asyncio.Event):
@@ -154,8 +157,9 @@ async def server(shutdown_event: asyncio.Event):
         tg.create_task(start_server())
         tg.create_task(broadcast(shutdown_event))
 
-        # later expand this to save other statics too
+        # later expand this to save other statics, clean-up, sanity checks, etc
         tg.create_task(order_manager.persist_to_disk())
+        tg.create_task(order_manager.check_pending_trns_timeout())
 
 if __name__ == "__main__":
     shutdown_event = asyncio.Event()

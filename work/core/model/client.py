@@ -1,6 +1,6 @@
 import pickle
 import asyncio
-from typing import Callable
+from typing import Optional, Callable, Awaitable
 
 from ..common.interface import ClientRequest, ServerResponse
 from ..common.setup import HOST, PORT
@@ -8,7 +8,7 @@ from ..common.optlog import optlog, log_raise
 
 # client remains connected
 class PersistentClient:
-    def __init__(self, host=HOST, port=PORT, on_dispatch: Callable=None):
+    def __init__(self, host=HOST, port=PORT, on_dispatch: Optional[Callable[[object], Awaitable[None]]] = None): # rigorous type-hinting, meaning it must be an async function(coroutine)
         self.host = host
         self.port = port
         self.reader: asyncio.StreamReader | None = None
@@ -77,6 +77,8 @@ class PersistentClient:
             elif not self.listen_task.cancelled(): # if not keyboard-interrupt
                 optlog.warning("Server closed connection", name=self.agent_id)  # actual EOF / disconnect
         except Exception as e:
+            # this is a local server-client communication
+            # has to be perfeclty reliable, so no auto reconnection necessary
             log_raise(f"Error in listening: {e}", name=self.agent_id)
 
     async def send_client_request(self, client_request: ClientRequest):

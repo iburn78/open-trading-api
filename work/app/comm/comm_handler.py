@@ -25,10 +25,13 @@ async def handle_submit_orders(client_request: ClientRequest, writer, **server_d
     orders = client_request.get_request_data()
 
     await order_manager.submit_orders_and_register(agent, orders, trenv)
-    return ServerResponse(success=True, status="order queued")
+    # no need to assign any value to ServerResponse as the command is already processed, and return value is meaningless at this moment
+    # however, empty ServerResponse object return required to match request-response 
+    return ServerResponse(success=True, status='order queued')
 
-# 현재 server의 모든 order에 대해 cancel을 submit 
-async def handle_cancel_orders(client_request: ClientRequest, writer, **server_data_dict):
+# 현재 server의 모든 agent-sepcific pending order에 대해 cancel을 submit 
+# below client_request.command is already used to get here
+async def handle_cancel_all_orders_by_agent(client_request: ClientRequest, writer, **server_data_dict):
     order_manager: OrderManager = server_data_dict.get('order_manager')
     connected_agents: ConnectedAgents = server_data_dict.get('connected_agents')
     trenv = server_data_dict.get("trenv")
@@ -36,9 +39,11 @@ async def handle_cancel_orders(client_request: ClientRequest, writer, **server_d
     port = writer.get_extra_info("peername")[1] 
     agent = connected_agents.get_agent_card_by_port(port)
 
-    await order_manager.cancel_all_outstanding(agent, trenv)
+    await order_manager.cancel_all_outstanding_for_agent(agent, trenv)
     await order_manager.closing_checker(agent)
-    return ServerResponse(success=True, status="requested cancel all orders")
+    # no need to assign any value to ServerResponse as the command is already processed, and return value is meaningless at this moment
+    # however, empty ServerResponse object return required to match request-response 
+    return ServerResponse(success=True, status=f'cancel requested for agent {agent.id}')
 
 # 연결된 Agent를 Register함 (AgentCard가 ConnectedAgents에 연결)
 # when disconnected, auto-remove (or use connected_agents.remove(agent_card))
@@ -87,7 +92,7 @@ async def handle_get_psbl_order(client_request: ClientRequest, writer, **server_
 # ------------------------------------------------------------
 COMMAND_HANDLERS = {
     RequestCommand.SUBMIT_ORDERS: handle_submit_orders, 
-    RequestCommand.CANCEL_ORDERS: handle_cancel_orders, 
+    RequestCommand.CANCEL_ALL_ORDERS_BY_AGENT: handle_cancel_all_orders_by_agent, 
     RequestCommand.REGISTER_AGENT_CARD: handle_register_agent_card, 
     RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD: handle_subscribe_trp_by_agent_card, 
     RequestCommand.GET_PSBL_ORDER: handle_get_psbl_order,

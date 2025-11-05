@@ -6,7 +6,7 @@ from .optlog import log_raise
 
 class RequestCommand(Enum):
     SUBMIT_ORDERS = auto()
-    CANCEL_ORDERS = auto() # sepcial kind of submit_orders in fact - no need to provide RC orders instead (logic implemented)
+    CANCEL_ALL_ORDERS_BY_AGENT = auto() # sepcial kind of submit_orders in fact - no need to provide RC orders instead (logic implemented)
     REGISTER_AGENT_CARD = auto()
     SUBSCRIBE_TRP_BY_AGENT_CARD = auto()
     GET_PSBL_ORDER = auto()

@@ -12,7 +12,9 @@ from ..common.optlog import optlog
 from ..common.setup import TradePrinciples
 from ..common.tools import adj_int
 from ..strategy.strategy import StrategyBase, StrategyCommand, StrategyFeedback, FeedbackKind
+from ..kis.kis_auth import KISEnv
 from ..kis.ws_data import TransactionPrices, TransactionNotice, SIDE, ORD_DVSN
+
 
 @dataclass
 class AgentCard: # an agent's business card (e.g., agents submit their business cards in registration)
@@ -36,7 +38,7 @@ class Agent:
     # for server communication
     card: AgentCard = field(default_factory=lambda: AgentCard(id="", code=""))
     client: PersistentClient = field(default_factory=PersistentClient)
-    trenv: object | None = None  # to be assigned later
+    trenv: KISEnv | None = None  # to be assigned later
     hardstop_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     # data tracking and strategy
@@ -82,21 +84,29 @@ class Agent:
     async def capture_command_signals(self):
         while not self.hardstop_event.is_set():
             str_command: StrategyCommand = await self.strategy.command_signal_queue.get()
-            self.strategy.command_signal_queue.task_done()
             valid, msg = await self.validate_strategy_command(str_command)
+            self.strategy.command_signal_queue.task_done()
             if valid:
-                orders = self.process_strategy_command(str_command)
+                order = self.process_strategy_command(str_command)
                 self._check_connected('submit')
-                await self.order_book.submit_new_orders(self.client, orders)
+                await self.order_book.submit_new_order(self.client, order)
             else: 
                 str_feedback = StrategyFeedback(kind=FeedbackKind.STR_COMMAND, obj=str_command, message=msg)
                 await self.strategy.command_feedback_queue.put(str_feedback)
                 optlog.warning(f'Invalid strategy command received - not processed: {msg}')
 
     # [Agent-level checking] internal logic checking before sending strategy command to the API server
-    async def validate_strategy_command(self, str_cmd: StrategyCommand):
+    async def validate_strategy_command(self, str_cmd: StrategyCommand) -> tuple["valid": bool, "error_message": str]:
+        """
+        Validates a strategy command before execution.
+    
+        Checks:
+        - Sufficient cash for buy orders
+        - Sufficient holdings for sell orders  
+        - Market price availability for market orders
+        """
         # exact status
-        # - has to account for pending orders too
+        # - need to account for pending orders too
         agent_cash = self.pm.total_allocated_cash - self.order_book.total_cash_used 
         agent_holding = self.pm.initial_holding + self.order_book.current_holding
 
@@ -180,26 +190,20 @@ class Agent:
         finally:
             await self.client.close()
 
-    # make an order, not sent to server yet
-    def process_strategy_command(self, strategy_command: StrategyCommand): # side: SIDE, quantity, ord_dvsn: ORD_DVSN, price, exchange: EXCHANGE = EXCHANGE.SOR):
-        ''' Create an order and add to new_orders (not yet sent to server for submission) '''
-        # Single order case
+    # makes an order, not sent to server yet
+    def process_strategy_command(self, strategy_command: StrategyCommand): 
+        ''' Create an order and add to new_orders (which is not yet sent to server for submission) '''
         side = strategy_command.side
         ord_dvsn = strategy_command.ord_dvsn
         quantity = strategy_command.quantity
         price = strategy_command.price
         exchange = strategy_command.exchange
 
-        order = Order(agent_id=self.id, code=self.code, side=side, ord_dvsn=ord_dvsn, quantity=quantity, price=price, exchange=exchange)
-
-        # multiple orders case:
-        # ...
-
-        return [order]
+        return Order(agent_id=self.id, code=self.code, side=side, ord_dvsn=ord_dvsn, quantity=quantity, price=price, exchange=exchange)
     
     def cancel_all_orders(self):
         self._check_connected('cancel')
-        cancel_request = ClientRequest(command=RequestCommand.CANCEL_ORDERS)
+        cancel_request = ClientRequest(command=RequestCommand.CANCEL_ALL_ORDERS_BY_AGENT)
         # note cancel request does not receive server response - if needed, make this as async cancel_all_orders(self), etc
         asyncio.create_task(self.client.send_client_request(cancel_request))
 
@@ -221,7 +225,7 @@ class Agent:
         if handler:
             await handler(data)
         else:
-            optlog.error("Unhandled type:", type(data), name=self.id, exc_info=True)
+            optlog.error("Unhandled type:", type(data), name=self.id)
 
     # handlers for dispatched msg types ---
     async def handle_str(self, msg):
@@ -268,6 +272,6 @@ async def dispatch(to: AgentCard | list[AgentCard], message: object):
             agent.writer.write(msg_bytes)
             await agent.writer.drain()  # await ensures exceptions are caught here
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
-            optlog.error(f"Agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed.", name=agent.id)
+            optlog.error(f"Agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed.", name=agent.id, exc_info=True)
         except Exception as e:
             optlog.error(f"Unexpected dispatch error: {e}", name=agent.id, exc_info=True)

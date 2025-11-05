@@ -27,7 +27,7 @@ class StrategyFeedback:
     kind: FeedbackKind | None = None # specifies the object type
     obj: object | None = None
     message: str | None = None
-    ###_Develop feedback code (like) to standardize message
+    # Develop feedback code (like) to standardize message
 
 class UpdateEvent(Enum):   
     INITIATE = 'initiate'
@@ -59,6 +59,7 @@ class StrategyBase(ABC):
         self.order_book: OrderBook | None = None
         self.market_prices: MarketPrices | None = None
         self.agent_pm: PerformanceMetric | None = None # through pm, strategy itself can access initial data of the agent
+        self._on_update_lock: asyncio.Lock = asyncio.Lock()
 
     def agent_data_setup(self, agent_id, code, order_book: OrderBook, market_prices: MarketPrices, perf_metric: PerformanceMetric):
         self.agent_id = agent_id
@@ -76,26 +77,33 @@ class StrategyBase(ABC):
     async def on_price_update(self):
         while True:
             await self.price_update_event.wait()
-            await self.on_update(UpdateEvent.PRICE_UPDATE)
+            await self.on_update_shell(UpdateEvent.PRICE_UPDATE)
             self.price_update_event.clear()
 
     async def on_order_update(self): # order update signal can be lost... only here... 
         while True:
             await self.order_update_event.wait()
-            await self.on_update(UpdateEvent.ORDER_UPDATE)
+            await self.on_update_shell(UpdateEvent.ORDER_UPDATE)
             self.order_update_event.clear()
 
     async def on_feedback(self):
         while True:
             str_feedback = await self.command_feedback_queue.get()
+            await self.on_update_shell(UpdateEvent.FEEDBACK, str_feedback=str_feedback)
             self.command_feedback_queue.task_done()
-            await self.on_update(UpdateEvent.FEEDBACK, str_feedback=str_feedback)
 
     async def initiate_strategy(self):
-        await self.on_update(UpdateEvent.INITIATE)
+        await self.on_update_shell(UpdateEvent.INITIATE)
+
+    async def on_update_shell(self, update_event: UpdateEvent, str_feedback: StrategyFeedback = None):
+        async with self._on_update_lock:
+            await self.on_update(update_event, str_feedback)
 
     @abstractmethod
     async def on_update(self, update_event: UpdateEvent, str_feedback: StrategyFeedback = None):
+        # this runs on events: initiate / price / order / feedback (on order)
+        # 1) has access to market_prices, and order_book info
+        # 2) to create a StrategyCommand obj
+        # 3) to put the StrategyCommand obj into command_singal_queue (then it is submitted, need to await)
+        # 4) to handle feedback on submitted strategy command
         pass
-
-

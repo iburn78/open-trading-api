@@ -22,6 +22,17 @@ class SubscriptionManager:
     kws: object = None
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
+    def __str__(self): 
+        if self.map:
+            parts = [
+                "SubsManager:"
+            ]
+            for f, d in self.map.items():
+                parts.append(f'{f.__name__}: {d}')
+            return '\n'.join(parts)
+        else: 
+            return '(no subscription exists)'
+
     async def add(self, func: Callable, agent_card: AgentCard):
         async with self._lock:
             func_map = self.map.setdefault(func, {})

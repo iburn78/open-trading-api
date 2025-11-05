@@ -91,7 +91,7 @@ class Order:
         res = order_cash(env_dv=trenv.env_dv, ord_dv=self.side, cano=trenv.my_acct, acnt_prdt_cd=trenv.my_prod, pdno=self.code, ord_dvsn=self.ord_dvsn, ord_qty=ord_qty, ord_unpr=ord_unpr, excg_id_dvsn_cd=self.exchange)
 
         if res.empty:
-            log_raise('Order submit response empty ---', name=self.agent_id)
+            optlog.error('Order submit response empty ---', name=self.agent_id)
         else: 
             if pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
                 log_raise("Check submission response ---", name=self.agent_id)

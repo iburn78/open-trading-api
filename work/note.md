@@ -33,6 +33,7 @@ entry point to run
 - Agent registration is done by AgentCard
 - A client can send command but the corresponding agent has to be registered already
 - let's use "###(underbar_)" to mark places that need attention / fix / develop
+- Order submission: Strategy-Agent/Client-OrderBook: single order communication, Client-Server: List[Order] communication, Server-API: single order communication
 
 ### Python knowledge
 - variables are just references to objects, and everything is passed by reference (i.e., passing variables)
@@ -49,9 +50,21 @@ entry point to run
 - asyncio.event:
     - once set(), it could lost subsequent events until clear()
     - use queue accordingly
+- use pickle internal only: efficient, tailored to python objects, but executable
 
 ## To develop
+### [incremental]
 - make it run each agent only once: use local lock file method etc
-- manage agents using AgentManager
-- Excel 관리 (read, etc)
+- manage agents using AgentManager (easy to see like EXCEL)
 
+### [big topics]
+- Risk management and position Limits etc... 
+- Disaster recovery (disconnect from the KIS API server - how to reconnect safely)
+- Save state (to disk) 
+- State reconciliation - sync with account (periodically)
+- Monitoring and alert / overall dashboard on health and status
+- Back-testing framework
+- Configuration management - centralized control/constants/set-up panel
+- Testing (how?)
+- Documentation
+- Performance profiling with cProfile(sync), yappi(async)

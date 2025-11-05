@@ -1,5 +1,4 @@
 import os
-from datetime import date
 
 # ----------------------------------------------------
 # env setup
@@ -16,10 +15,8 @@ demoSleep_ = 0.5 # min 0.5
 # ----------------------------------------------------
 work_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 data_dir = os.path.join(work_dir, 'data')
-os.makedirs(data_dir, exist_ok=True)
 
 disk_save_period = 3600  # sec
-order_manager_file_name = f"order_manager_{date.today().isoformat()}.pkl"
 
 # ----------------------------------------------------
 # key parameters in trading logic setup

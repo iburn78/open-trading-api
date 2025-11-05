@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from .perf_metric import PerformanceMetric
 from ..common.tools import adj_int
+from ..common.optlog import optlog
 from ..kis.ws_data import TransactionPrices
 
 # market prices for a given code
@@ -27,6 +28,8 @@ class MarketPrices:
 
     # to be only modified using set_window_size() after initialization
     window_size: int = 5 # min
+    max_trans_per_sec: int = 10
+    safety_margin: float = 0.1 
 
     def __str__(self):
         if not self.current_price:
@@ -40,10 +43,11 @@ class MarketPrices:
 
     def __post_init__(self):
         # initialize sliding windows for price, volume, and amount
-        l = 10000 # reasonable - might be enough
-        self._price_window = deque(maxlen=l)   # (timestamp, price)
-        self._volume_window = deque(maxlen=l)  # (timestamp, volume)
-        self._amount_window = deque(maxlen=l)  # (timestamp, amount)
+        L = 10000 # reasonable - might be enough
+        self.maxlen = int(min(L, self.window_size*60*self.max_trans_per_sec*(1+self.safety_margin)))
+        self._price_window = deque(maxlen=self.maxlen)   # (timestamp, price)
+        self._volume_window = deque(maxlen=self.maxlen)  # (timestamp, volume)
+        self._amount_window = deque(maxlen=self.maxlen)  # (timestamp, amount)
 
         # running sums for O(1) updates
         self._sum_price = 0.0
@@ -63,6 +67,8 @@ class MarketPrices:
             total -= old_val
         dq.append((tr_time, value))
         total += value
+        if len(dq) > self.maxlen*(1-self.safety_margin):
+            optlog.warning(f"[{self.code}] deque for {total_attr} length exceeds over {(1-self.safety_margin)*100}% of maxlen")
         setattr(self, total_attr, total)
 
     def update(self, price: int, quantity: int, tr_time: datetime, _window_resize: bool = False):

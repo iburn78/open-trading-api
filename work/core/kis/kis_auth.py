@@ -20,6 +20,11 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 from ..common.setup import smartSleep_, demoSleep_
 
+### added ###
+import threading
+_subscription_lock = threading.Lock()
+### ----- ###
+
 clearConsole = lambda: os.system("cls" if os.name in ("nt", "dos") else "clear")
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -402,7 +407,7 @@ def _url_fetch(
             ar.printAll()
         return ar
     else:
-        print("Error Code : " + str(res.status_code) + " | " + res.text)
+        print("[kis_auth] Error Code : " + str(res.status_code) + " | " + res.text)
         return APIRespError(res.status_code, res.text)
 
 
@@ -547,41 +552,42 @@ def add_open_map(
         kwargs: dict = None,
 ):
     # [revised version] -----------------------------------------------------
-    global open_map, to_add_map
+    with _subscription_lock:
+        global open_map, to_add_map
 
-    # normalize to list
-    if isinstance(data, str):
-        data = [data]
+        # normalize to list
+        if isinstance(data, str):
+            data = [data]
 
-    # remove duplicates while keeping order    
-    data = list(dict.fromkeys(data))
+        # remove duplicates while keeping order    
+        data = list(dict.fromkeys(data))
 
-    # initialize to_add_map
-    to_add_map = {}
+        # initialize to_add_map
+        to_add_map = {}
     
-    # initialize open_map entry if missing
-    if name not in open_map:
-        open_map[name] = {
-            "func": request,
-            "items": [],
-            "kwargs": kwargs,
-        }
-
-    # find only new items (avoid duplicates)
-    new_items = [x for x in data if x not in open_map[name]["items"]]
-    subscribed_items = [x for x in data if x in open_map[name]["items"]]
-    if new_items:
-        to_add_map = {
-            name: {
+        # initialize open_map entry if missing
+        if name not in open_map:
+            open_map[name] = {
                 "func": request,
-                "items": new_items,
+                "items": [],
                 "kwargs": kwargs,
             }
-        }
-        open_map[name]["items"].extend(new_items)
+
+        # find only new items (avoid duplicates)
+        new_items = [x for x in data if x not in open_map[name]["items"]]
+        subscribed_items = [x for x in data if x in open_map[name]["items"]]
+        if new_items:
+            to_add_map = {
+                name: {
+                    "func": request,
+                    "items": new_items,
+                    "kwargs": kwargs,
+                }
+            }
+            open_map[name]["items"].extend(new_items)
     
-    if subscribed_items:
-        print(f"[kis_auth] (warning) {name} already subscribed for {subscribed_items}")
+        if subscribed_items:
+            print(f"[kis_auth] (warning) {name} already subscribed for {subscribed_items}")
 
     # [original version] -----------------------------------------------------
     # if open_map.get(name, None) is None:
@@ -602,45 +608,46 @@ def remove_open_map(
         data: str | list[str],
         kwargs: dict = None,
 ):
-    global open_map, to_remove_map
+    with _subscription_lock:
+        global open_map, to_remove_map
 
-    # normalize to list
-    if isinstance(data, str):
-        data = [data]
+        # normalize to list
+        if isinstance(data, str):
+            data = [data]
 
-    # remove duplicates while keeping order    
-    data = list(dict.fromkeys(data))
+        # remove duplicates while keeping order    
+        data = list(dict.fromkeys(data))
 
-    # initialize to_remove_map
-    to_remove_map = {}
+        # initialize to_remove_map
+        to_remove_map = {}
 
-    if name not in open_map:
-        # func (name) not subscribed
-        print(f"[kis_auth] (warning) {name} is not subscribed - nothing to remove")
-        return
+        if name not in open_map:
+            # func (name) not subscribed
+            print(f"[kis_auth] (warning) {name} is not subscribed - nothing to remove")
+            return
 
-    # find only items that actually exist in open_map
-    subscribed_items = open_map[name]["items"]
-    remove_items = [x for x in data if x in subscribed_items]
-    non_exist_items = [x for x in data if x not in subscribed_items]
+        # find only items that actually exist in open_map
+        subscribed_items = open_map[name]["items"]
+        remove_items = [x for x in data if x in subscribed_items]
+        non_exist_items = [x for x in data if x not in subscribed_items]
 
-    if remove_items:
-        to_remove_map = {
-            name: {
-                "func": request,
-                "items": remove_items,
-                "kwargs": kwargs,
+        if remove_items:
+            to_remove_map = {
+                name: {
+                    "func": request,
+                    "items": remove_items,
+                    "kwargs": kwargs,
+                }
             }
-        }
-        # update open_map (remove)
-        open_map[name]["items"] = [x for x in subscribed_items if x not in remove_items]
+            # update open_map (remove)
+            open_map[name]["items"] = [x for x in subscribed_items if x not in remove_items]
 
-        # if no more items, optionally remove the entry entirely
-        if not open_map[name]["items"]:
-            del open_map[name]
+            # if no more items, optionally remove the entry entirely
+            if not open_map[name]["items"]:
+                del open_map[name]
 
-    if non_exist_items:
-        print(f"[kis_auth] (warning) {non_exist_items} not subscribed under {name} - unable to remove")
+        if non_exist_items:
+            print(f"[kis_auth] (warning) {non_exist_items} not subscribed under {name} - unable to remove")
 
 
 data_map: dict = {}

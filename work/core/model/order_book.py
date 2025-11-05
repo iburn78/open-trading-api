@@ -6,7 +6,8 @@ from .client import PersistentClient
 from .perf_metric import PerformanceMetric
 from ..common.optlog import optlog, log_raise
 from ..common.tools import adj_int
-from ..common.interface import RequestCommand, ClientRequest, ServerResponse
+from ..common.interface import RequestCommand, ClientRequest
+from ..kis.kis_auth import KISEnv
 from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice
 
 @dataclass
@@ -16,12 +17,12 @@ class OrderBook:
     """
     agent_id: str = ""
     code: str = ""
-    trenv: object | None = None  
+    trenv: KISEnv | None = None  
+    print_processing_only: bool = True 
 
     # private order lists - use setter functions for calculating dashboard info real time
-    _new_orders: list[Order] = field(default_factory=list) # to be submitted
-    _orders_sent_for_submit: list[Order] = field(default_factory=list) # sent to server repository / once server sent it to KIS API, submitted orders will be sent back via on_dispatch
-    _incompleted_orders: list[Order] = field(default_factory=list) # submitted but not yet fully completed or cancelled
+    _indexed_sent_for_submit: dict["unique_id": str, Order] = field(default_factory=dict) # sent to server repository / once server sent it to KIS API, submitted orders will be sent back via on_dispatch
+    _indexed_incompleted_orders: dict["order_no": str, Order] = field(default_factory=dict)
     _completed_orders: list[Order] = field(default_factory=list) 
     _unhandled_trns: list[TransactionNotice] = field(default_factory=list)
 
@@ -31,11 +32,11 @@ class OrderBook:
     # below only from orders in this order book, not from account info
     # - current_holding can be negative 
     current_holding: int = 0  
-    on_buy_order: int = 0 # include from _orders_sent_for_submit and _incompleted_orders (not from _new_orders)
+    on_buy_order: int = 0 # include from _indexed_sent_for_submit and _indexed_incompleted_orders 
     on_LIMIT_buy_amount: int = 0 
     on_MARKET_buy_quantity: int = 0
 
-    on_sell_order: int = 0 # include from _orders_sent_for_submit and _incompleted_orders (not from _new_orders)
+    on_sell_order: int = 0 # include from _indexed_sent_for_submit and _indexed_incompleted_orders 
     total_purchased: int = 0 # cumulative
     total_sold: int = 0 # cumulative
 
@@ -64,52 +65,8 @@ class OrderBook:
         pm.bep_price = self.bep_price
         pm.total_cash_used = self.total_cash_used
 
-    def append_to_new_orders(self, orders: Order | list[Order]):
-        if isinstance(orders, Order):
-            orders = [orders]
-        self._new_orders.extend(orders)
-
-    def clear_new_orders(self):
-        self._new_orders.clear()
-
-    def append_to_orders_sent_for_submit(self, orders: Order | list[Order]):
-        if isinstance(orders, Order):
-            orders = [orders]
-        for order in orders:
-            if order.side == SIDE.BUY:
-                self.on_buy_order += order.quantity
-                if order.ord_dvsn == ORD_DVSN.LIMIT:
-                    self.on_LIMIT_buy_amount += order.quantity*order.price # this is amount
-                else: # MARKET or MIDDLE
-                    self.on_MARKET_buy_quantity += order.quantity # this is quantity
-            else:
-                self.on_sell_order += order.quantity
-            # note the dashboard has to be reverted if order fails in the server: implemented in handle_order_dispatch() below
-        self._orders_sent_for_submit.extend(orders)
-    
-    def remove_from_orders_sent_for_submit(self, order: Order):
-        processed_order = next((o for o in self._orders_sent_for_submit if o.unique_id == order.unique_id), None) 
-        if processed_order:
-            # caution: not directly removing 'order' because it may be a different object with same unique_id
-            self._orders_sent_for_submit.remove(processed_order)
-        else: 
-            log_raise(f"Received order not found in orders_sent_for_submit: {order} ---", name=self.agent_id)
-
-    def append_to_incompleted_orders(self, orders: Order | list[Order]):
-        if isinstance(orders, Order):
-            orders = [orders]
-        self._incompleted_orders.extend(orders)
-    
-    def remove_from_incompleted_orders(self, order: Order):
-        self._incompleted_orders.remove(order)
-    
-    def append_to_completed_orders(self, orders: Order | list[Order]):
-        if isinstance(orders, Order):
-            orders = [orders]
-        self._completed_orders.extend(orders)   
-
     def __str__(self):
-        if not self._new_orders and not self._orders_sent_for_submit and not self._incompleted_orders and not self._completed_orders:
+        if not self._indexed_sent_for_submit and not self._indexed_incompleted_orders and not self._completed_orders:
             return "<no orders>"
         return (
             f"\n"
@@ -130,19 +87,21 @@ class OrderBook:
             f"----------------------------------------------------"
         )
 
-    def get_listings_str(self, processing_only: bool = True):
-        def _section(title, orders):
-            return f"{title} ({len(orders)} orders)\n" + "\n".join(f"{o}" for o in orders)
+    def get_listings_str(self, processing_only: bool=True):
+        processing_only = self.print_processing_only
+        def _section(title, orders: list, indexed_orders: dict):
+            if orders:  # list 
+                return f"{title} ({len(orders)} orders)\n" + "\n".join(f"{o}" for o in orders)
+            if indexed_orders:  # dict
+                return f"{title} ({len(indexed_orders)} orders)\n" + "\n".join(f"{v}" for k, v in indexed_orders.items())
 
         sections = []
-        if self._new_orders and not processing_only:
-            sections.append(_section("[listings] New orders", self._new_orders))
-        if self._orders_sent_for_submit:
-            sections.append(_section("[listings] Sent for submit", self._orders_sent_for_submit))
-        if self._incompleted_orders:
-            sections.append(_section("[listings] Incompleted orders", self._incompleted_orders))
+        if self._indexed_sent_for_submit:
+            sections.append(_section("[listings] Sent for submit", None, self._indexed_sent_for_submit))
+        if self._indexed_incompleted_orders:
+            sections.append(_section("[listings] Incompleted orders", None, self._indexed_incompleted_orders))
         if self._completed_orders and not processing_only:
-            sections.append(_section("[listings] Completed orders", self._completed_orders))
+            sections.append(_section("[listings] Completed orders", self._completed_orders, None))
         if not sections:
             return "[listings] no orders processing"
         return "\n".join(sections)
@@ -151,7 +110,7 @@ class OrderBook:
         # reroute notice to corresponding order
         # no race condition expected here
         async with self._lock:
-            order = next((o for o in self._incompleted_orders if o.order_no == notice.oder_no), None)
+            order = self._indexed_incompleted_orders.get(notice.oder_no)
             if order: 
                 prev_qty = order.processed 
                 prev_cost = order.fee_rounded + order.tax_rounded
@@ -162,7 +121,6 @@ class OrderBook:
                 delta_qty = order.processed - prev_qty
                 delta_cost = (order.fee_rounded + order.tax_rounded) - prev_cost
                 delta_amount = order.amount - prev_amount
-
                 if order.side == SIDE.BUY:
                     self.on_buy_order += -delta_qty
                     self.current_holding += delta_qty
@@ -182,53 +140,65 @@ class OrderBook:
 
                 # if order is completed or canceled, move to completed_orders
                 if order.completed or order.cancelled:
-                    self.remove_from_incompleted_orders(order)
-                    self.append_to_completed_orders(order)
+                    self._indexed_incompleted_orders.pop(order.order_no)
+                    self._completed_orders.append(order)   
             else: 
                 # log_raise(f"Order not found in incompleted_orders for notice {notice.oder_no}, notice: {notice} ---", name=self.agent_id)
                 # just in case race condition occurs
                 self.trenv = trenv
                 self._unhandled_trns.append(notice)
     
-    async def submit_new_orders(self, client: PersistentClient, orders: list[Order] | None):
+    async def submit_new_order(self, client: PersistentClient, order: Order):
         async with self._lock:
-            if orders is not None: 
-                self.append_to_new_orders(orders)
-            if not self._new_orders:
-                return 
-            
-            submit_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
-            submit_request.set_request_data(self._new_orders) 
-            resp: ServerResponse = await client.send_client_request(submit_request)
+            # note the dashboard has to be reverted if order fails in the server: implemented in handle_order_dispatch()
+            if order.side == SIDE.BUY:
+                self.on_buy_order += order.quantity
+                if order.ord_dvsn == ORD_DVSN.LIMIT:
+                    self.on_LIMIT_buy_amount += order.quantity * order.price
+                else:  # MARKET or MIDDLE
+                    self.on_MARKET_buy_quantity += order.quantity
+            else:
+                self.on_sell_order += order.quantity
 
-            # Just simply 'order queued' message expected
-            # Server will send back individual order updates via on_dispatch
-            optlog.info(f"Response: {resp}", name=self.agent_id)
-            self.append_to_orders_sent_for_submit(self._new_orders)
-            self.clear_new_orders()
+            self._indexed_sent_for_submit[order.unique_id] = order
+
+            submit_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
+            submit_request.set_request_data([order]) # submit as a list (a list required)
+
+            # fire and forget: Server will send back individual order updates via on_dispatch
+            await client.send_client_request(submit_request)
 
     async def handle_order_dispatch(self, order: Order): 
         async with self._lock:
-            self.remove_from_orders_sent_for_submit(order)
+            # caution: order delivered is not the same object in local: match it with unique_id
+            processed_order = self._indexed_sent_for_submit.get(order.unique_id)
+            if not processed_order:
+                log_raise(f"Received order not found in orders_sent_for_submit: {order} ---", name=self.agent_id)
+            self._indexed_sent_for_submit.pop(processed_order.unique_id)
 
-            if order.order_no is None: # server returned with failure 
-                # Revert the dashboard
-                if order.side == SIDE.BUY:
-                    self.on_buy_order -= order.quantity
-                    if order.ord_dvsn == ORD_DVSN.LIMIT:
-                        self.on_LIMIT_buy_amount -= order.quantity*order.price # this is amount
+            # order failure
+            if order.order_no is None: # check with order, but revert with processed order
+                # Revert the dashboard 
+                if processed_order.side == SIDE.BUY:
+                    self.on_buy_order -= processed_order.quantity
+                    if processed_order.ord_dvsn == ORD_DVSN.LIMIT:
+                        self.on_LIMIT_buy_amount -= processed_order.quantity*processed_order.price # this is amount
                     else: # MARKET or MIDDLE
-                        self.on_MARKET_buy_quantity -= order.quantity # this is quantity
+                        self.on_MARKET_buy_quantity -= processed_order.quantity # this is quantity
                 else:
-                    self.on_sell_order -= order.quantity
+                    self.on_sell_order -= processed_order.quantity
+                
+                ###_ LET AGENT or STRATEGY KNOW
 
-            # note: append delivered order, not from sent_for_submit
-            self.append_to_incompleted_orders(order)            
+            # order success
+            else:
+                self._indexed_incompleted_orders[order.order_no] = order
 
-            # if race occured, handle here
-            # empty the list, otherwise trns stay
-            unhandled = self._unhandled_trns.copy()
-            self._unhandled_trns.clear()
-            for trn in unhandled:
-                await self.process_tr_notice(trn, self.trenv)
-            
+                # if race between order and trns occured, handle here
+                # empty the list, otherwise trns stay
+                unhandled = self._unhandled_trns.copy()
+                self._unhandled_trns.clear()
+                for trn in unhandled:
+                    await self.process_tr_notice(trn, self.trenv)
+
+

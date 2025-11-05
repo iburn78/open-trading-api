@@ -37,7 +37,7 @@ def set_logger(fname: str|None = None, flevel = F_LEVEL, slevel= S_LEVEL,
 
     if not optlog.handlers:  # avoid duplicate handlers on re-import
         formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s> %(message)s",
+            "%(asctime)s.%(msecs)03d [%(levelname)s] %(name)s> %(message)s",
             datefmt="%m/%d %H:%M:%S"
         )
         log_file = os.path.join(log_dir, 'log', f'{fname}.log')

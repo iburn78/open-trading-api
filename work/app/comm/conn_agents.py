@@ -11,6 +11,17 @@ class ConnectedAgents:
     code_agent_card_dict: dict[str, list[AgentCard]]= field(default_factory=dict) 
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
+    def __str__(self): 
+        if self.code_agent_card_dict:
+            parts = [
+                "ConnectedAgents:"
+            ]
+            for c, l in self.code_agent_card_dict.items():
+                parts.append(f'{c}: {[(a.id, a.client_port) for a in l]}')
+            return '\n'.join(parts)
+        else: 
+            return '(no connected agents)'
+
     async def add(self, agent_card: AgentCard):
         async with self._lock:
             if not agent_card.client_port:
@@ -34,6 +45,7 @@ class ConnectedAgents:
             if not agent_card_list:
                 return f"[Warning] agent_card {agent_card.id} not found"
 
+            # for a code, there cannot be too many agents; so the following next() efficieny is fine
             target = next((x for x in agent_card_list if x.id == agent_card.id), None)
             if target:
                 agent_card_list.remove(target)

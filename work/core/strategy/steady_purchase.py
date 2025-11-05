@@ -10,6 +10,6 @@ class SteadyPurchase(StrategyBase):
         self.target_quantity: int = 0
         self.interval_sec: int = 60
 
-    async def on_update(self, on_event: UpdateEvent):
+    async def on_update_shell(self, on_event: UpdateEvent):
         while True:
             return

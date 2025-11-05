@@ -36,12 +36,12 @@ class Holding: # Stock Holding / data is filled from the API server (e.g., actua
 
 @dataclass
 class Account:
-    holdings: list[Holding] = field(default_factory=list)
+    holdings: dict["code":str, Holding] = field(default_factory=dict)
     cash: CashBalance = None
 
     def __str__(self):
         parts = [str(self.cash)] if self.cash else []
-        parts.extend(str(h) for h in self.holdings)
+        parts.extend(str(h) for c, h in self.holdings.items())
         return "\n".join(parts)
 
     def acc_load(self, trenv):
@@ -69,10 +69,10 @@ class Account:
         
         # 보유 종목 
         # 있으면 update, 없으면 add
-        new_holdings = [] 
+        new_holdings = {} 
         for _, row in ptf.iterrows():  # DataFrame에서 row 반복
             code = row.pdno
-            holding = next((h for h in self.holdings if h.code == code), None)
+            holding = self.holdings.get(code)
             quantity = int(row.hldg_qty) 
             amount = int(row.pchs_amt)
             avg_price = amount/quantity
@@ -95,6 +95,6 @@ class Account:
                         bep_price = adj_int(bep_price), 
                         market = market,
                 )
-            new_holdings.append(holding)
+            new_holdings[code] = holding
         self.holdings = new_holdings
         return self
