@@ -89,11 +89,12 @@ class Agent:
             if valid:
                 order = self.process_strategy_command(str_command)
                 self._check_connected('submit')
+                optlog.info(f"submitting new order {order}", name=self.id)
                 await self.order_book.submit_new_order(self.client, order)
             else: 
                 str_feedback = StrategyFeedback(kind=FeedbackKind.STR_COMMAND, obj=str_command, message=msg)
                 await self.strategy.command_feedback_queue.put(str_feedback)
-                optlog.warning(f'Invalid strategy command received - not processed: {msg}')
+                optlog.warning(f'Invalid strategy command received - not processed: {msg}', name=self.id)
 
     # [Agent-level checking] internal logic checking before sending strategy command to the API server
     async def validate_strategy_command(self, str_cmd: StrategyCommand) -> tuple["valid": bool, "error_message": str]:
@@ -253,9 +254,9 @@ class Agent:
         optlog.debug(self.market_prices, name=self.id)
         
     async def handle_notice(self, trn: TransactionNotice):
+        optlog.info(trn, name=self.id) # show trn before processing
         await self.order_book.process_tr_notice(trn, self.trenv) 
         self.strategy.order_update_event.set()
-        optlog.info(trn, name=self.id)
 
 
 async def dispatch(to: AgentCard | list[AgentCard], message: object):

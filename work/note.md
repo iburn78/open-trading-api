@@ -47,6 +47,7 @@ entry point to run
 - asyncio._lock: 
     - if a coroutine holds the lock for a long time, all others waiting for the same lock will be blocked.
     - always release (or return) the lock as soon as processing is done to avoid blocking others.
+    - caution: calling a function using _lock inside a function that uses _lock results in a deadlock. (take it out)
 - asyncio.event:
     - once set(), it could lost subsequent events until clear()
     - use queue accordingly

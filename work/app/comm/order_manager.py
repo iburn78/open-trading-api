@@ -114,7 +114,7 @@ class OrderManager:
                 for k, o in orders_dict.items():
                     res = res + f'  - {agent_id}: {o}\n'
             res = res + f'  {COMPLETED_ORDERS}: { {agent_id: len(orders) for agent_id, orders in code_map[COMPLETED_ORDERS].items()} }\n'
-        return res
+        return res.strip()
 
     async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order], trenv, date_=None):
         if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should have not been submitted ---', name=agent.id)

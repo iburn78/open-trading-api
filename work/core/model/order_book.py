@@ -165,8 +165,8 @@ class OrderBook:
             submit_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
             submit_request.set_request_data([order]) # submit as a list (a list required)
 
-            # fire and forget: Server will send back individual order updates via on_dispatch
-            await client.send_client_request(submit_request)
+        # fire and forget: Server will send back individual order updates via on_dispatch
+        await client.send_client_request(submit_request)
 
     async def handle_order_dispatch(self, order: Order): 
         async with self._lock:
@@ -176,7 +176,7 @@ class OrderBook:
                 log_raise(f"Received order not found in orders_sent_for_submit: {order} ---", name=self.agent_id)
             self._indexed_sent_for_submit.pop(processed_order.unique_id)
 
-            # order failure
+            # order failure - revert and return
             if order.order_no is None: # check with order, but revert with processed order
                 # Revert the dashboard 
                 if processed_order.side == SIDE.BUY:
@@ -187,18 +187,23 @@ class OrderBook:
                         self.on_MARKET_buy_quantity -= processed_order.quantity # this is quantity
                 else:
                     self.on_sell_order -= processed_order.quantity
-                
-                ###_ LET AGENT or STRATEGY KNOW
+
+                return
 
             # order success
-            else:
-                self._indexed_incompleted_orders[order.order_no] = order
+            self._indexed_incompleted_orders[order.order_no] = order
+                
+                ###_ LET AGENT or STRATEGY KNOW
+                ###_ LET AGENT or STRATEGY KNOW
+                ###_ LET AGENT or STRATEGY KNOW
+                ###_ LET AGENT or STRATEGY KNOW
 
-                # if race between order and trns occured, handle here
-                # empty the list, otherwise trns stay
-                unhandled = self._unhandled_trns.copy()
-                self._unhandled_trns.clear()
-                for trn in unhandled:
-                    await self.process_tr_notice(trn, self.trenv)
+        # as process_tr_notice requires _lock, take this out from _lock
+        # if race between order and trns occured, handle here
+        # empty the list, otherwise trns stay
+        unhandled = self._unhandled_trns.copy()
+        self._unhandled_trns.clear()
+        for trn in unhandled:
+            await self.process_tr_notice(trn, self.trenv)
 
 
