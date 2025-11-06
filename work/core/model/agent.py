@@ -106,24 +106,20 @@ class Agent:
         - Sufficient holdings for sell orders  
         - Market price availability for market orders
         """
-        # exact status
-        # - need to account for pending orders too
-        agent_cash = self.pm.total_allocated_cash - self.order_book.total_cash_used 
-        agent_holding = self.pm.initial_holding + self.order_book.current_holding
 
         if str_cmd.side == SIDE.BUY:
+            # [check 0] if market_prices are not yet initialized, make it return False
+            cp = self.market_prices.current_price
+            if cp is None:
+                return False, 'Market buy order not processed - market prices not yet initialized'
+
+            # exact status
+            # - need to account for pending orders too
+            on_LIMIT_order_amount = self.order_book.on_LIMIT_buy_amount*(1+TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN)
+            on_MARKET_order_amount = self.order_book.on_MARKET_buy_quantity*cp*(1+TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)
+            agent_cash = self.pm.total_allocated_cash - self.order_book.total_cash_used - on_LIMIT_order_amount - on_MARKET_order_amount
+
             if str_cmd.ord_dvsn == ORD_DVSN.MARKET:
-                cp = self.market_prices.current_price
-                # [check 0] if market_prices are not yet initialized, make it return False
-                if cp is None:
-                    return False, 'Market buy order not processed - market prices not yet initialized'
-
-                # exact status
-                # - has to account for pending orders too
-                on_LIMIT_order_amount = self.order_book.on_LIMIT_buy_amount*(1+TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN)
-                on_MARKET_order_amount = self.order_book.on_MARKET_buy_quantity*cp*(1+TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)
-                agent_cash = self.pm.total_allocated_cash - self.order_book.total_cash_used - on_LIMIT_order_amount - on_MARKET_order_amount
-
                 # [check 1] check if agent has enough cash (stricter cond-check)
                 exp_amount = str_cmd.quantity*cp
                 if exp_amount > adj_int(agent_cash*(1-TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)):
@@ -150,6 +146,7 @@ class Agent:
                 return True, None
 
         else: # Sell
+            agent_holding = self.pm.initial_holding + self.order_book.current_holding
             # has to account for pending orders too
             if str_cmd.quantity > agent_holding - self.order_book.on_sell_order:
                 return False, 'Sell order not processed - exceeding total holding'

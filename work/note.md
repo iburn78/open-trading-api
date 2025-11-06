@@ -52,6 +52,7 @@ entry point to run
     - once set(), it could lost subsequent events until clear()
     - use queue accordingly
 - use pickle internal only: efficient, tailored to python objects, but executable
+- use in cmd: set PYTHONASYNCIODEBUG=1 (async performance measure)
 
 ## To develop
 ### [incremental]

@@ -74,6 +74,8 @@ class OrderBook:
             f"----------------------------------------------------\n"
             f"Current Holding     : {self.current_holding:>15,d}\n"
             f"On Buy Order        : {self.on_buy_order:>15,d}\n"
+            f"- Limit (Amount)    : {self.on_LIMIT_buy_amount :>15,d}\n"
+            f"- Market (Quantity) : {self.on_MARKET_buy_quantity :>15,d}\n"
             f"On Sell Order       : {self.on_sell_order:>15,d}\n"
             f"----------------------------------------------------\n"
             f"Total Purchased     : {self.total_purchased:>15,d}\n"
@@ -123,6 +125,10 @@ class OrderBook:
                 delta_amount = order.amount - prev_amount
                 if order.side == SIDE.BUY:
                     self.on_buy_order += -delta_qty
+                    if order.ord_dvsn == ORD_DVSN.LIMIT:
+                        self.on_LIMIT_buy_amount += -delta_amount
+                    else:  # MARKET or MIDDLE
+                        self.on_MARKET_buy_quantity += -delta_qty
                     self.current_holding += delta_qty
                     self.total_purchased += delta_qty
                     self.principle_cash_used += delta_amount
