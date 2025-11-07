@@ -138,7 +138,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             optlog.error(response, name=cid, exc_info=True)
 
         except Exception as e:
-            response = ServerResponse(success=False, status=f"invalid client request {e}")
+            response = ServerResponse(success=False, status=f"invalid client request (or unknown error) {e}")
             optlog.error(response, name=cid, exc_info=True)
 
         # Send response back

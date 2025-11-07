@@ -88,6 +88,12 @@ async def websocket_loop():
 # ---------------------------------
 # Local comm handlers, server 
 # ---------------------------------
+CLEANUP_TIMEOUTS = {
+    'unsubscribe': 5,          # just WS unsubscribe
+    'agent_removal': 5,        # dict operations
+    'writer_close': 2,         # network close
+}
+
 async def handler_shell(reader, writer):
     addr = writer.get_extra_info("peername") # peername: network term / unique in a session
     optlog.info(f"Client connected {addr}")
@@ -96,25 +102,47 @@ async def handler_shell(reader, writer):
     except Exception as e:
         optlog.error(f"Handler crashed: {e}", name=addr[1])
     finally:
-        try:
-            # During shutdown, if multiple connections close simultaneously, they might deadlock waiting for locks 
-            # while the websocket loop is also trying to dispatch messages (which needs agent locks).
-            async with asyncio.timeout(5.0):
-                try:
-                    writer.close() # marks the stream as closed.
-                    await writer.wait_closed() # actual close
-                except Exception:
-                    pass # socket already dead, ignore
-                # agent is registered by request (not automatically on connect)
-                target = connected_agents.get_agent_card_by_port(addr[1])
-                # unsusbcribe everything 
-                msg = await subs_manager.remove_agent(target)
-                optlog.info(f"Response: {msg}", name=target.id)  
-                # remove from connected_agents/client
-                msg = await connected_agents.remove(target)
-                optlog.info(f"Client disconnected {addr} | {msg}", name=target.id)  
-        except asyncio.TimeoutError:
-            optlog.warning("Cleanup timeout during disconnect")
+        await client_disconnect_clean_up(addr, writer)
+
+
+async def client_disconnect_clean_up(addr, writer):
+    port = addr[1]
+    agent = connected_agents.get_agent_card_by_port(port)
+
+    if agent:
+        optlog.info(f"Starting cleanup for {agent.id}", name=agent.id)
+        await _safe_run("Unsubscription", subs_manager.remove_agent(agent), "unsubscribe", agent.id)
+        await _safe_run("Agent removal", connected_agents.remove(agent), "agent_removal", agent.id)
+        await _safe_close_writer(writer, agent.id)
+    else:     
+        optlog.warning(f"No agent found (not registered) for port {port} during cleanup")
+        await _safe_close_writer(writer)
+
+async def _safe_run(desc, coro, timeout_key, agent_id=None):
+    """Run a coroutine safely with timeout and structured logging."""
+    try:
+        async with asyncio.timeout(CLEANUP_TIMEOUTS[timeout_key]):
+            msg = await coro
+            optlog.info(f"{desc}: {msg}", name=agent_id)
+    except asyncio.TimeoutError:
+        optlog.error(f"{desc} timeout", name=agent_id)
+    except Exception as e:
+        optlog.error(f"{desc} failed: {e}", name=agent_id, exc_info=True)
+
+
+async def _safe_close_writer(writer, agent_id=None):
+    """Safely close an asyncio StreamWriter with timeout and log suppression."""
+    try:
+        writer.close()
+        await asyncio.wait_for(writer.wait_closed(), timeout=CLEANUP_TIMEOUTS["writer_close"])
+    except asyncio.TimeoutError:
+        if agent_id:
+            optlog.warning("Writer close timeout", name=agent_id)
+    except Exception:
+        pass
+    finally:
+        if not writer.is_closing():
+            writer.close()
 
 async def start_server():
     await ws_ready.wait()
@@ -162,11 +190,13 @@ async def server(shutdown_event: asyncio.Event):
         tg.create_task(order_manager.check_pending_trns_timeout())
 
 if __name__ == "__main__":
+    sep = "\n======================================================================================"
+    optlog.info("Server initiated..."+sep)
     shutdown_event = asyncio.Event()
     try:
         asyncio.run(server(shutdown_event))
     except KeyboardInterrupt:
-        optlog.info("Server stopped by user (Ctrl+C).\n")
+        optlog.info("Server stopped by user (Ctrl+C)"+sep)
         shutdown_event.set()
 
 

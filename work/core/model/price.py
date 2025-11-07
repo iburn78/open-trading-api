@@ -31,6 +31,9 @@ class MarketPrices:
     max_trans_per_sec: int = 10
     safety_margin: float = 0.1 
 
+    # internal control
+    _deque_warning_shown: bool = False
+
     def __str__(self):
         if not self.current_price:
             return "price record not initialized"
@@ -67,8 +70,13 @@ class MarketPrices:
             total -= old_val
         dq.append((tr_time, value))
         total += value
-        if len(dq) > self.maxlen*(1-self.safety_margin):
-            optlog.warning(f"[{self.code}] deque for {total_attr} length exceeds over {(1-self.safety_margin)*100}% of maxlen")
+        if not self._deque_warning_shown and len(dq) > self.maxlen*(1-self.safety_margin):
+            # this is one time warning, and once warning occurs, need to adjust settings:
+            optlog.warning(f"-----------------------------------------------------------")
+            optlog.warning(f"[{self.code}] deque for {total_attr} length exceeds over {(1-self.safety_margin)*100}% of maxlen - need attention")
+            optlog.warning(f"-----------------------------------------------------------")
+            self._deque_warning_shown = True
+
         setattr(self, total_attr, total)
 
     def update(self, price: int, quantity: int, tr_time: datetime, _window_resize: bool = False):

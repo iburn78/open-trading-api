@@ -135,8 +135,8 @@ class Order:
                     svr = trenv.my_svr,
                     traded_exchange = notice.traded_exchange
                 )
-                self.fee_occured += fee_float
-                self.tax_occured += tax_float
+                self.fee_occured += fee_float # accumulation of float errors: fine 1) no need to be float-exact, 2) will zero-out away, 3) later converted to adj_int
+                self.tax_occured += tax_float 
                 self.fee_rounded = excel_round_int(self.fee_occured, fee_rd)
                 self.tax_rounded = excel_round_int(self.tax_occured, tax_rd)
 

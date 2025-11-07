@@ -70,9 +70,10 @@ class Agent:
         # setup strategy with order_book and market_prices
         self.strategy.agent_data_setup(self.id, self.code, self.order_book, self.market_prices, self.pm)
 
-    def define_initial_state(self, total_allocated_cash = 0, initial_holding = 0, bep_price_initial_holding = 0):
+    def define_initial_state(self, total_allocated_cash = 0, initial_holding = 0, avg_price_initial_holding = 0, bep_price_initial_holding = 0):
         self.pm.total_allocated_cash = total_allocated_cash
         self.pm.initial_holding = initial_holding
+        self.pm.avg_price_initial_holding = avg_price_initial_holding
         self.pm.bep_price_initial_holding = bep_price_initial_holding
     
     def get_performance_metirc(self):
@@ -121,7 +122,7 @@ class Agent:
 
             if str_cmd.ord_dvsn == ORD_DVSN.MARKET:
                 # [check 1] check if agent has enough cash (stricter cond-check)
-                exp_amount = str_cmd.quantity*cp
+                exp_amount = str_cmd.quantity*cp # best guess with current price, and approach conservatively with margin
                 if exp_amount > adj_int(agent_cash*(1-TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)):
                     return False, 'Market buy order not processed - exceeding agent cash (after considering safety margin)'
 
@@ -237,12 +238,8 @@ class Agent:
         optlog.info(f"Submit result received: {order}", name=self.id) 
         await self.order_book.handle_order_dispatch(order)
 
-        # send back the order to the strategy 
-        if order.order_no is None: 
-            msg = "order rejected"
-        else: 
-            msg = "order accepted"
-        str_feedback = StrategyFeedback(kind=FeedbackKind.ORDER, obj=order, message=msg)
+        # send back the order to the strategy as is
+        str_feedback = StrategyFeedback(kind=FeedbackKind.ORDER, obj=order)
         await self.strategy.command_feedback_queue.put(str_feedback)
 
     async def handle_prices(self, trp: TransactionPrices):

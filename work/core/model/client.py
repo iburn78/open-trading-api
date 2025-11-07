@@ -33,7 +33,8 @@ class PersistentClient:
             return
 
         self.listen_task = asyncio.create_task(self.listen_server())
-        optlog.info(f"Connected to {self.host}:{self.port}", name=self.agent_id)
+        sep = "\n======================================================================================"
+        optlog.info(f"Connected to {self.host}:{self.port}"+sep, name=self.agent_id)
 
     async def listen_server(self): # listen to server command responses, and dispatches
         try:
@@ -67,7 +68,7 @@ class PersistentClient:
                 else:
                     optlog.warning(f"Dispatched but no receiver: {msg}", name=self.agent_id)
 
-        except asyncio.CancelledError:
+        except asyncio.CancelledError: # client-cancelled situation (cancelld by the event loop in the client side)
             optlog.info("Listen task cancelled", name=self.agent_id)  # intentional
             raise  # usually propagate cancellation
         except asyncio.IncompleteReadError:
@@ -110,12 +111,13 @@ class PersistentClient:
             self.writer.close()
             await self.writer.wait_closed()
         if self.listen_task:
-            self.listen_task.cancel()
             try:
+                self.listen_task.cancel()
                 await self.listen_task
             except asyncio.CancelledError as e:
                 pass # expected so no need to log
-        optlog.info("Client connection closed", name=self.agent_id)
+        sep = "\n======================================================================================"
+        optlog.info("Client connection closed"+sep, name=self.agent_id)
     
     @property
     def is_connected(self) -> bool:

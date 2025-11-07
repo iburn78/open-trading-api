@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 import asyncio
 import pickle
 import os
@@ -130,29 +130,31 @@ class OrderManager:
         for order in orders: 
             try:
                 await asyncio.to_thread(order.submit, trenv)
-                if order.order_no:
-                    async with self._locks[order.code]:
-                        date_map = self.map.setdefault(date_, {})
-                        code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
-                        code_map[INCOMPLETED_ORDERS].setdefault(agent.id, {})[order.order_no] = order
-
-                        # catch notices that are delivered before order submission is completed
-                        to_process = code_map[PENDING_TRNS].get(order.order_no, None)
-                        if to_process:
-                            for notice in to_process:
-                                order.update(notice, trenv)
-                                # send back notice to the agent right away
-                                await dispatch(agent, notice)  
-
-                            code_map[PENDING_TRNS].pop(order.order_no) 
-                else:
-                    optlog.error(f"OrderManager: order submission failed: {order.unique_id}", name=agent.id) 
             except Exception as e:
-                    optlog.error(f"Error in order submission {order.unique_id}: {e}", name=agent.id, exc_info=True) 
+                optlog.error(f"Error in order submission {order.unique_id}: {e}", name=agent.id, exc_info=True) 
             finally: 
                 # send back submission result (order status updated) to the agent right away
+                # less likely that order object itself will be corrupt after .submit
                 await dispatch(agent, order)  
-                await asyncio.sleep(trenv.sleep)
+            
+            if order.order_no:
+                async with self._locks[order.code]:
+                    date_map = self.map.setdefault(date_, {})
+                    code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
+                    code_map[INCOMPLETED_ORDERS].setdefault(agent.id, {})[order.order_no] = order
+
+                    # catch notices that are delivered before order submission is completed
+                    to_process = code_map[PENDING_TRNS].get(order.order_no, None)
+                    if to_process:
+                        for notice in to_process:
+                            order.update(notice, trenv)
+                            # send back notice to the agent right away
+                            await dispatch(agent, notice)  
+
+                        code_map[PENDING_TRNS].pop(order.order_no) 
+            else:
+                optlog.error(f"OrderManager: order submission failed: {order.unique_id}", name=agent.id) 
+            await asyncio.sleep(trenv.sleep)
 
     async def process_tr_notice(self, notice: TransactionNotice, connected_agents: ConnectedAgents, trenv, date_=None):
         # reroute notice to the corresponding order
@@ -249,6 +251,7 @@ class OrderManager:
 
     async def persist_to_disk(self):
         while True:
+            # save only today's record
             await asyncio.sleep(disk_save_period)
             os.makedirs(data_dir, exist_ok=True)
             date_ = date.today().isoformat()
@@ -265,3 +268,9 @@ class OrderManager:
                 # Release all locks
                 for lock in locks:
                     lock.release()
+
+            # clean up old dates
+            cutoff = (date.today() - timedelta(days=OM_KEEP_DAYS)).isoformat()
+            dates_to_remove = [d for d in self.map.keys() if d < cutoff]
+            for d in dates_to_remove:
+                del self.map[d] 

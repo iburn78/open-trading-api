@@ -40,20 +40,22 @@ class OrderBook:
     total_purchased: int = 0 # cumulative
     total_sold: int = 0 # cumulative
 
-    # below only for current holding:
-    # - average_price can be negative 
+    # below only for current holding / snapshot
+    # - only calculated when current_holding > 0, otherwise 0
     avg_price: int = 0
 
     # - only calculated when current_holding > 0, otherwise 0
-    bep_price: int = 0  
+    bep_price: int = 0 # bep cost only considers tax and fee for that order (not all cumulative costs)
 
     # - only calculated when buy, otherwise 0
     low_price: int = 0 
     high_price: int = 0
 
-    principle_cash_used: int = 0 # (purchased - sold) excluding fee and tax
-    total_cash_used: int = 0 # principle + fee and tax 
+    # - history reflected overall data
+    # - on buy/sell order amounts not accounted
+    principle_cash_used: int = 0 # (purchased - sold) excluding fee and tax: so negative possible (e.g., profit or sold from initial holding)
     total_cost_incurred: int = 0 # cumulative tax and fee
+    total_cash_used: int = 0 # principle + total_cost: likewise 
 
     # _lock is necessary because order submission and notice processing may happen concurrently
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
@@ -63,6 +65,8 @@ class OrderBook:
         pm.holding = self.current_holding
         pm.avg_price = self.avg_price
         pm.bep_price = self.bep_price
+        pm.principle_cash_used = self.principle_cash_used
+        pm.total_cost_incurred = self.total_cost_incurred
         pm.total_cash_used = self.total_cash_used
 
     def __str__(self):
@@ -84,8 +88,8 @@ class OrderBook:
             f"BEP Price           : {self.bep_price:>15,d}\n"
             f"----------------------------------------------------\n"
             f"Principle Cash Used : {self.principle_cash_used:>15,d}\n"
-            f"Total Cash Used     : {self.total_cash_used:>15,d}\n"
             f"Total Cost Incurred : {self.total_cost_incurred:>15,d}\n"
+            f"Total Cash Used     : {self.total_cash_used:>15,d}\n"
             f"----------------------------------------------------"
         )
 
@@ -121,28 +125,39 @@ class OrderBook:
                 order.update(notice, trenv)
 
                 delta_qty = order.processed - prev_qty
+                if delta_qty < 0: 
+                    optlog.error(f'trn processed quantity negative: {notice}', name=self.agent_id)
                 delta_cost = (order.fee_rounded + order.tax_rounded) - prev_cost
                 delta_amount = order.amount - prev_amount
                 if order.side == SIDE.BUY:
+                    # adjust on orders(to feedback in available cash for new orders)
                     self.on_buy_order += -delta_qty
                     if order.ord_dvsn == ORD_DVSN.LIMIT:
                         self.on_LIMIT_buy_amount += -delta_amount
                     else:  # MARKET or MIDDLE
                         self.on_MARKET_buy_quantity += -delta_qty
+                    
+                    # update stats
+                    self.avg_price = adj_int((self.current_holding*self.avg_price + delta_amount)/(self.current_holding+delta_qty) if delta_qty > 0 else self.avg_price)
+                    self.bep_price = adj_int((self.current_holding*self.bep_price + delta_amount + delta_cost)/(self.current_holding+delta_qty) if delta_qty > 0 else self.bep_price)
+
                     self.current_holding += delta_qty
                     self.total_purchased += delta_qty
                     self.principle_cash_used += delta_amount
                     self.high_price = max(self.high_price, notice.cntg_unpr)
                     self.low_price = min(self.low_price, notice.cntg_unpr) if self.low_price != 0 else notice.cntg_unpr
+
                 else:
+                    # adjust on orders
                     self.on_sell_order += -delta_qty
+
+                    # update stats
                     self.current_holding += -delta_qty
                     self.total_sold += delta_qty
                     self.principle_cash_used += -delta_amount
+
                 self.total_cost_incurred += delta_cost
                 self.total_cash_used = self.principle_cash_used + self.total_cost_incurred
-                self.avg_price = adj_int((self.principle_cash_used / self.current_holding) if self.current_holding != 0 else 0)
-                self.bep_price = adj_int((self.total_cash_used / self.current_holding) if self.current_holding > 0 else 0)
 
                 # if order is completed or canceled, move to completed_orders
                 if order.completed or order.cancelled:
@@ -174,41 +189,36 @@ class OrderBook:
         # fire and forget: Server will send back individual order updates via on_dispatch
         await client.send_client_request(submit_request)
 
-    async def handle_order_dispatch(self, order: Order): 
+    async def handle_order_dispatch(self, dispatched_order: Order): 
         async with self._lock:
-            # caution: order delivered is not the same object in local: match it with unique_id
-            processed_order = self._indexed_sent_for_submit.get(order.unique_id)
-            if not processed_order:
-                log_raise(f"Received order not found in orders_sent_for_submit: {order} ---", name=self.agent_id)
-            self._indexed_sent_for_submit.pop(processed_order.unique_id)
+            # caution: dispatched order is not the same object in local: match it with unique_id
+            matched_order = self._indexed_sent_for_submit.get(dispatched_order.unique_id)
+            if not matched_order:
+                log_raise(f"Dispatched order not found in orders_sent_for_submit: {dispatched_order} ---", name=self.agent_id)
+            self._indexed_sent_for_submit.pop(matched_order.unique_id)
 
-            # order failure - revert and return
-            if order.order_no is None: # check with order, but revert with processed order
+            # order submission failure - revert and return
+            if dispatched_order.order_no is None: # this has to be checking with dispatched_order, but revert with matched_order
                 # Revert the dashboard 
-                if processed_order.side == SIDE.BUY:
-                    self.on_buy_order -= processed_order.quantity
-                    if processed_order.ord_dvsn == ORD_DVSN.LIMIT:
-                        self.on_LIMIT_buy_amount -= processed_order.quantity*processed_order.price # this is amount
+                if matched_order.side == SIDE.BUY:
+                    self.on_buy_order -= matched_order.quantity
+                    if matched_order.ord_dvsn == ORD_DVSN.LIMIT:
+                        self.on_LIMIT_buy_amount -= matched_order.quantity*matched_order.price # this is amount
                     else: # MARKET or MIDDLE
-                        self.on_MARKET_buy_quantity -= processed_order.quantity # this is quantity
+                        self.on_MARKET_buy_quantity -= matched_order.quantity # this is quantity
                 else:
-                    self.on_sell_order -= processed_order.quantity
-
+                    self.on_sell_order -= matched_order.quantity
                 return
 
             # order success
-            self._indexed_incompleted_orders[order.order_no] = order
-                
-                ###_ LET AGENT or STRATEGY KNOW
-                ###_ LET AGENT or STRATEGY KNOW
-                ###_ LET AGENT or STRATEGY KNOW
-                ###_ LET AGENT or STRATEGY KNOW
+            self._indexed_incompleted_orders[dispatched_order.order_no] = dispatched_order
+
+            # processing unhandled trns here
+            # empty the list, otherwise trns stay (still unmatched trns will be add back to the list)
+            unhandled = self._unhandled_trns.copy()
+            self._unhandled_trns.clear()
 
         # as process_tr_notice requires _lock, take this out from _lock
-        # if race between order and trns occured, handle here
-        # empty the list, otherwise trns stay
-        unhandled = self._unhandled_trns.copy()
-        self._unhandled_trns.clear()
         for trn in unhandled:
             await self.process_tr_notice(trn, self.trenv)
 
