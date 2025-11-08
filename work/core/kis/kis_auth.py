@@ -4,7 +4,7 @@
 import asyncio
 import copy
 import json
-import logging
+# import logging
 import os
 import time
 from base64 import b64decode
@@ -19,6 +19,7 @@ import yaml
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 from ..common.setup import smartSleep_, demoSleep_
+from ..common.optlog import optlog, ModuleLogger
 
 ### added ###
 import threading
@@ -26,8 +27,9 @@ _subscription_lock = threading.Lock()
 ### ----- ###
 
 clearConsole = lambda: os.system("cls" if os.name in ("nt", "dos") else "clear")
-logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
+# logger = logging.getLogger(__name__)
+logger = ModuleLogger(optlog, default_name="kis_auth")
 
 key_bytes = 32
 reauth_safety_seconds = 300
@@ -91,7 +93,7 @@ def read_token(token_file):
         if tkg_tmp['valid-date'] > datetime.now() + timedelta(seconds=reauth_safety_seconds): # if at least xxx seconds left until exp
             return tkg_tmp["token"], tkg_tmp["valid-date"]
         else:
-            # print('Need new token: ', tkg_tmp['valid-date'])
+            # logger.warning(f"Need new token: {tkg_tmp['valid-date']}")
             return None, None
     except Exception as e:
         return None, None
@@ -164,7 +166,7 @@ def getTREnv():
 
 def smart_sleep():
     if _DEBUG:
-        print(f"[RateLimit] Sleeping {_smartSleep}s ")
+        logger.info(f"[RateLimit] Sleeping {_smartSleep}s")
     if _isPaper:
         time.sleep(_demoSleep)
     else: 
@@ -207,9 +209,9 @@ def auth(svr):
             save_token(my_token, valid_date, token_file)  # 새로 발급 받은 토큰 저장
             _expire_time[svr] = valid_date
             if _DEBUG:
-                print(f"[{_expire_time[svr]}] => get AUTH Key completed!")
+                logger.info(f"[{_expire_time[svr]}] => get AUTH Key completed!")
         else:
-            print("Get Authentification token fail!\nYou have to restart your app!!!")
+            logger.error("Get Authentification token fail! - You may have to restart your app!!!")
             return
     else:
         my_token = saved_token  # 기존 발급 토큰 확인되어 기존 토큰 사용
@@ -240,7 +242,7 @@ def set_order_hash_key(h, p):
     if rescode == 200:
         h["hashkey"] = _getResultObject(res.json()).HASH
     else:
-        print("Error:", rescode)
+        logger.error(f"Error: {rescode}")
 
 # API 호출 응답에 필요한 처리 공통 함수
 class APIResp:
@@ -294,29 +296,20 @@ class APIResp:
         return self._err_message
 
     def printAll(self):
-        print("<Header>")
+        logger.info("<Header>")
         for x in self.getHeader()._fields:
-            print(f"\t-{x}: {getattr(self.getHeader(), x)}")
-        print("<Body>")
+            logger.info(f"\t-{x}: {getattr(self.getHeader(), x)}")
+        logger.info("<Body>")
         for x in self.getBody()._fields:
-            print(f"\t-{x}: {getattr(self.getBody(), x)}")
+            logger.info(f"\t-{x}: {getattr(self.getBody(), x)}")
 
     def printError(self, url):
-        print(
-            "-------------------------------\nError in response: ",
-            self.getResCode(),
-            " url=",
-            url,
+        logger.error( 
+            f"\n-------------------------------\n" 
+            f"Error in response: {self.getResCode()} url={url}\n" 
+            f"rt_cd: {self.getBody().rt_cd} / msg_cd: {self.getErrorCode()} / msg1: {self.getErrorMessage()}" 
+            "-------------------------------"
         )
-        print(
-            "rt_cd : ",
-            self.getBody().rt_cd,
-            "/ msg_cd : ",
-            self.getErrorCode(),
-            "/ msg1 : ",
-            self.getErrorMessage(),
-        )
-        print("-------------------------------")
 
     # end of class APIResp
 
@@ -356,15 +349,17 @@ class APIRespError(APIResp):
         return EmptyHeader()
 
     def printAll(self):
-        print(f"=== ERROR RESPONSE ===")
-        print(f"Status Code: {self.status_code}")
-        print(f"Error Message: {self.error_text}")
-        print(f"======================")
+        logger.error(
+            f"\n=== ERROR RESPONSE ===\n"
+            f"Status Code: {self.status_code}\n"
+            f"Error Message: {self.error_text}\n"
+            f"======================"
+        )
 
     def printError(self, url=""):
-        print(f"Error Code : {self.status_code} | {self.error_text}")
+        logger.error(f"Error Code : {self.status_code} | {self.error_text}")
         if url:
-            print(f"URL: {url}")
+            logger.error(f"URL: {url}")
 
 ########### API call wrapping : API 호출 공통
 def _url_fetch(
@@ -390,10 +385,12 @@ def _url_fetch(
                 headers[x] = appendHeaders.get(x)
 
     if _DEBUG:
-        print("< Sending Info >")
-        print(f"URL: {url}, TR: {tr_id}")
-        print(f"<header>\n{headers}")
-        print(f"<body>\n{params}")
+        logger.debug(
+            "< Sending Info >\n"
+            f"URL: {url}, TR: {tr_id}\n"
+            f"<header>\n{headers}\n"
+            f"<body>\n{params}"
+        )
 
     if postFlag:
         # if (hashFlag): set_order_hash_key(headers, params)
@@ -407,7 +404,7 @@ def _url_fetch(
             ar.printAll()
         return ar
     else:
-        print("[kis_auth] Error Code : " + str(res.status_code) + " | " + res.text)
+        logger.error(f"Error Code : {res.status_code} | {res.text}")
         return APIRespError(res.status_code, res.text)
 
 
@@ -438,7 +435,7 @@ def auth_ws(svr):
     if rescode == 200:  # 토큰 정상 발급
         approval_key = _getResultObject(res.json()).approval_key
     else:
-        print("Get Approval token fail!\nYou have to restart your app!!!")
+        logger.error("Get Approval token fail! - You may have to restart your app!!!")
         return
 
     _base_headers_ws["approval_key"] = approval_key
@@ -447,7 +444,7 @@ def auth_ws(svr):
     _expire_time_ws[svr] = datetime.now() + timedelta(hours = 24)
 
     if _DEBUG:
-        print(f"[{_expire_time_ws[svr]}] => get AUTH Key completed!")
+        logger.info(f"[{_expire_time_ws[svr]}] => get AUTH Key completed!")
 
 def reAuth_ws(svr):
     if datetime.now() + timedelta(seconds=reauth_safety_seconds) > _expire_time_ws[svr]:
@@ -465,9 +462,11 @@ def data_fetch(tr_id, tr_type, params, appendHeaders=None) -> dict:
                 headers[x] = appendHeaders.get(x)
 
     if _DEBUG:
-        print("< Sending Info >")
-        print(f"TR: {tr_id}")
-        print(f"<header>\n{headers}")
+        logger.debug(
+            "< Sending Info >\n"
+            f"TR: {tr_id}\n"
+            f"<header>\n{headers}"
+        )
 
     inp = {
         "tr_id": tr_id,
@@ -587,7 +586,7 @@ def add_open_map(
             open_map[name]["items"].extend(new_items)
     
         if subscribed_items:
-            print(f"[kis_auth] (warning) {name} already subscribed for {subscribed_items}")
+            logger.warning(f"{name} already subscribed for {subscribed_items}")
 
     # [original version] -----------------------------------------------------
     # if open_map.get(name, None) is None:
@@ -623,7 +622,7 @@ def remove_open_map(
 
         if name not in open_map:
             # func (name) not subscribed
-            print(f"[kis_auth] (warning) {name} is not subscribed - nothing to remove")
+            logger.warning(f"{name} is not subscribed - nothing to remove")
             return
 
         # find only items that actually exist in open_map
@@ -647,7 +646,7 @@ def remove_open_map(
                 del open_map[name]
 
         if non_exist_items:
-            print(f"[kis_auth] (warning) {non_exist_items} not subscribed under {name} - unable to remove")
+            logger.warning(f"{non_exist_items} not subscribed under {name} - unable to remove")
 
 
 data_map: dict = {}
@@ -729,7 +728,7 @@ class KISWebSocket:
                 # Safety check
                 if len(parts) != n_rows * n_cols:
                     raise ValueError(
-                        f"[kis_auth] (error) Data length ({len(parts)}) does not match n_rows × n_cols ({n_rows * n_cols})"
+                        f"(error) Data length ({len(parts)}) does not match n_rows × n_cols ({n_rows * n_cols})"
                     )
 
                 rows = [parts[i * n_cols : (i + 1) * n_cols] for i in range(n_rows)]
@@ -747,11 +746,11 @@ class KISWebSocket:
                 )
                 raw_data = json.loads(raw)
                 if rsp.isPingPong:
-                    # print(f"### RECV [PINGPONG] [{raw}]")
+                    # logger.info(f"### RECV [PINGPONG] [{raw}]")
                     await ws.pong(raw)
-                    # print(f"### SEND [PINGPONG] [{raw}]")
+                    # logger.info(f"### SEND [PINGPONG] [{raw}]")
                     # ------------
-                    # print(f"# pingpong ---- {raw_data['header']['datetime'][-6:]}")
+                    # logger.info(f"# pingpong ---- {raw_data['header']['datetime'][-6:]}")
                     # ------------
                 if self.result_all_data:
                     show_result = True
@@ -772,21 +771,21 @@ class KISWebSocket:
                         await self.send_multiple(
                             ws, obj["func"], "1", obj["items"], obj["kwargs"]
                         )
-                        print(f'[kis_auth] (info) {name} for {obj["items"]} subscribed')
+                        logger.info(f'{name} for {obj["items"]} subscribed')
                 elif action == "unsubscribe":
                     for name, obj in to_remove_map.items():
                         await self.send_multiple(
                             ws, obj["func"], "2", obj["items"], obj["kwargs"]
                         )
-                        print(f'[kis_auth] (info) {name} for {obj["items"]} unsubscribed')
+                        logger.info(f'{name} for {obj["items"]} unsubscribed')
 
             except Exception as e:
-                print(f"[kis_auth] (error) {action} action failed for: {e}")
+                logger.error(f"{action} action failed for: {e}")
             self.queue.task_done()
 
     async def __runner(self):
         if len(open_map.keys()) > 40:
-            raise ValueError("[kis_auth] (error) Subscription's max is 40 - as defined in kis_auth.py")
+            raise ValueError("(error) Subscription's max is 40 - as defined in kis_auth.py")
 
         url = f"{getTREnv().my_url_ws}{self.api_url}"
 
@@ -811,7 +810,7 @@ class KISWebSocket:
                         self.__subscriber(ws),
                     )
             except Exception as e:
-                print("[kis_auth] (error) Connection exception >> ", e)
+                logger.error(f"Connection exception >> {e}")
                 self.retry_count += 1
                 await asyncio.sleep(1)
 
@@ -848,7 +847,7 @@ class KISWebSocket:
             for d in data:
                 await self.send(ws, request, tr_type, d, kwargs)
         else:
-            raise ValueError("[kis_auth] (error) data must be str or list")
+            raise ValueError("(error) data must be str or list")
 
     # [modified version: subs and unsubs] -----------------------------------------------------
     def subscribe(
@@ -900,7 +899,7 @@ class KISWebSocket:
         try:
             asyncio.run(self.__runner())
         except KeyboardInterrupt:
-            print("[kis_auth] (error) Closing by cancel (e.g., by task-group cancel or keyboard)")
+            logger.error("Closing by cancel (e.g., by task-group cancel or keyboard)")
 
     # [modified version as async] -----------------------------------------------------
     async def start_async(
@@ -915,5 +914,5 @@ class KISWebSocket:
         try:
             await self.__runner()
         except asyncio.CancelledError:
-            print("[kis_auth] (info) Closing by cancel (e.g., by task-group cancel or keyboard)")
+            logger.info("Closing by cancel (e.g., by task-group cancel or keyboard)")
             raise  # re-raise for proper TaskGroup shutdown

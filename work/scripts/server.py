@@ -60,10 +60,12 @@ async def async_on_result(ws, tr_id, result, data_info):
         # At this time, an agent who sent the order should already be initially registered in connected_agents.
         # But agent could already dropped out and removed from connected_agents.
         # So need to use order_manager, not the connected_agents directly.
-        optlog.info(trn) # agent unknown yet
+        optlog.info(trn) # agent unknown yet (e.g., race condition)
+        # order_manager will dispatch trn to the relevant agent
         await order_manager.process_tr_notice(trn, connected_agents, trenv)
         
     elif get_tr(trenv, tr_id) in ('TransactionPrices_KRX',  'TransactionPrices_Total'): # 실시간 체결가
+        # directly send to agents
         trp = TransactionPrices(trprices=result, trenv_env_dv=trenv.env_dv)
         await dispatch(connected_agents.get_target_agents_by_trp(trp), trp)
 
@@ -96,11 +98,11 @@ CLEANUP_TIMEOUTS = {
 
 async def handler_shell(reader, writer):
     addr = writer.get_extra_info("peername") # peername: network term / unique in a session
-    optlog.info(f"Client connected {addr}")
+    optlog.info(f"[Server] client connected {addr}")
     try:
         await handle_client(reader, writer, **server_data_dict)
     except Exception as e:
-        optlog.error(f"Handler crashed: {e}", name=addr[1])
+        optlog.error(f"[Server] handler crashed: {e}", name=addr[1])
     finally:
         await client_disconnect_clean_up(addr, writer)
 
@@ -110,12 +112,12 @@ async def client_disconnect_clean_up(addr, writer):
     agent = connected_agents.get_agent_card_by_port(port)
 
     if agent:
-        optlog.info(f"Starting cleanup for {agent.id}", name=agent.id)
-        await _safe_run("Unsubscription", subs_manager.remove_agent(agent), "unsubscribe", agent.id)
-        await _safe_run("Agent removal", connected_agents.remove(agent), "agent_removal", agent.id)
+        optlog.info(f"[Server] starting cleanup for {agent.id}", name=agent.id)
+        await _safe_run("unsubscription", subs_manager.remove_agent(agent), "unsubscribe", agent.id)
+        await _safe_run("agent removal", connected_agents.remove(agent), "agent_removal", agent.id)
         await _safe_close_writer(writer, agent.id)
     else:     
-        optlog.warning(f"No agent found (not registered) for port {port} during cleanup")
+        optlog.warning(f"[Server] no agent found (not registered) for port {port} during cleanup")
         await _safe_close_writer(writer)
 
 async def _safe_run(desc, coro, timeout_key, agent_id=None):
@@ -123,11 +125,11 @@ async def _safe_run(desc, coro, timeout_key, agent_id=None):
     try:
         async with asyncio.timeout(CLEANUP_TIMEOUTS[timeout_key]):
             msg = await coro
-            optlog.info(f"{desc}: {msg}", name=agent_id)
+            optlog.info(f"    {desc}: {msg}", name=agent_id)
     except asyncio.TimeoutError:
-        optlog.error(f"{desc} timeout", name=agent_id)
+        optlog.error(f"    {desc} timeout", name=agent_id)
     except Exception as e:
-        optlog.error(f"{desc} failed: {e}", name=agent_id, exc_info=True)
+        optlog.error(f"    {desc} failed: {e}", name=agent_id, exc_info=True)
 
 
 async def _safe_close_writer(writer, agent_id=None):
@@ -137,7 +139,7 @@ async def _safe_close_writer(writer, agent_id=None):
         await asyncio.wait_for(writer.wait_closed(), timeout=CLEANUP_TIMEOUTS["writer_close"])
     except asyncio.TimeoutError:
         if agent_id:
-            optlog.warning("Writer close timeout", name=agent_id)
+            optlog.warning("    writer close timeout", name=agent_id)
     except Exception:
         pass
     finally:
@@ -147,7 +149,7 @@ async def _safe_close_writer(writer, agent_id=None):
 async def start_server():
     await ws_ready.wait()
     server = await asyncio.start_server(handler_shell, HOST, PORT)  
-    optlog.info(f"Server listening on {HOST}:{PORT}")
+    optlog.info(f"[Server] listening on {HOST}:{PORT}")
     async with server:  # ensures graceful shutdown
         await server.serve_forever()
 
@@ -172,11 +174,12 @@ def _status_check(show=False, include_ka=True):
         optlog.debug(subs_manager)
         optlog.debug(order_manager)
         if include_ka:
-            optlog.debug('ka.open_map:')
+            logmsg = '[ka.open_map]'
             for k, d in ka.open_map.items(): 
-                optlog.debug(f"{k}: {d['items']}")
-            optlog.debug('ka.data_map:')
-            optlog.debug(ka.data_map.keys())
+                logmsg += f"\n    {k}: {d['items']}"
+            optlog.debug(logmsg)
+            logmsg = f'[ka.data_map]: {list(ka.data_map.keys())}'
+            optlog.debug(logmsg)
         optlog.debug('------------------------------------------------------------')
 
 async def server(shutdown_event: asyncio.Event):
@@ -191,12 +194,12 @@ async def server(shutdown_event: asyncio.Event):
 
 if __name__ == "__main__":
     sep = "\n======================================================================================"
-    optlog.info("Server initiated..."+sep)
+    optlog.info("[Server] server initiated..."+sep)
     shutdown_event = asyncio.Event()
     try:
         asyncio.run(server(shutdown_event))
     except KeyboardInterrupt:
-        optlog.info("Server stopped by user (Ctrl+C)"+sep)
+        optlog.info("[Server] server stopped by user (Ctrl+C)"+sep)
         shutdown_event.set()
 
 

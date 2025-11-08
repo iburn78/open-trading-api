@@ -117,15 +117,16 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
         try:
             client_request: ClientRequest = pickle.loads(client_bytes)
-            optlog.info(f"Request received: {client_request}", name=cid) 
+            logmsg = f"[request received] {client_request}\n"
 
             rd = client_request.get_request_data()
             if rd and isinstance(rd, list): 
-                optlog.info(f"Request data: list ({len(rd)} items)", name=cid)
+                logmsg += f"    request data: list ({len(rd)} items)"
                 for o in rd: 
-                    optlog.debug(o, name=cid)
+                    logmsg += f"\n        {o}"
             elif rd:
-                optlog.info(f"Request data: {rd}", name=cid)
+                logmsg += f"    request data: {rd}"
+            optlog.info(logmsg, name=cid)
 
             handler = COMMAND_HANDLERS.get(client_request.command)
             response: ServerResponse = await handler(client_request, writer, **server_data_dict)
@@ -135,11 +136,11 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         except (pickle.UnpicklingError, EOFError, AttributeError,
             ValueError, ImportError, IndexError) as e:
             response = ServerResponse(success=False, status=f"client request pickle load error {e}")
-            optlog.error(response, name=cid, exc_info=True)
+            optlog.error(f"[HandleClient] {response}", name=cid, exc_info=True)
 
         except Exception as e:
             response = ServerResponse(success=False, status=f"invalid client request (or unknown error) {e}")
-            optlog.error(response, name=cid, exc_info=True)
+            optlog.error(f"[HandleClient] {response}", name=cid, exc_info=True)
 
         # Send response back
         resp_bytes = pickle.dumps(response)

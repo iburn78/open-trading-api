@@ -104,16 +104,16 @@ class OrderManager:
         if not self.map:
             return "(no map initialized)"
         date_ = max(self.map.keys())
-        res = 'OrderManager:\n'
-        res = res + f'codes: {list(self.map[date_].keys())}\n'
+        res = '[OrderManager]\n'
+        res = res + f'    codes: {list(self.map[date_].keys())}\n'
         for code, code_map in self.map[date_].items():
-            res = res + f'- {code}\n'
-            res = res + f'  {PENDING_TRNS}: {list(code_map[PENDING_TRNS].keys())}\n'
-            res = res + f'  {INCOMPLETED_ORDERS}: { {agent_id: len(orders_dict) for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items()} }\n'
+            res = res + f'    - {code}\n'
+            res = res + f'      {PENDING_TRNS}: {list(code_map[PENDING_TRNS].keys())}\n'
+            res = res + f'      {INCOMPLETED_ORDERS}: { {agent_id: len(orders_dict) for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items()} }\n'
             for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items():
                 for k, o in orders_dict.items():
-                    res = res + f'  - {agent_id}: {o}\n'
-            res = res + f'  {COMPLETED_ORDERS}: { {agent_id: len(orders) for agent_id, orders in code_map[COMPLETED_ORDERS].items()} }\n'
+                    res = res + f'      - {agent_id}: {o}\n'
+            res = res + f'      {COMPLETED_ORDERS}: { {agent_id: len(orders) for agent_id, orders in code_map[COMPLETED_ORDERS].items()} }\n'
         return res.strip()
 
     async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order], trenv, date_=None):
@@ -128,15 +128,17 @@ class OrderManager:
         #     tasks.append(task)
         # await asyncio.gather(*tasks, return_exceptions=True)
         for order in orders: 
+            # submit part
             try:
                 await asyncio.to_thread(order.submit, trenv)
             except Exception as e:
-                optlog.error(f"Error in order submission {order.unique_id}: {e}", name=agent.id, exc_info=True) 
+                optlog.error(f"[OrderManager] error in order submission {order.unique_id}: {e}", name=agent.id, exc_info=True) 
             finally: 
                 # send back submission result (order status updated) to the agent right away
                 # less likely that order object itself will be corrupt after .submit
                 await dispatch(agent, order)  
-            
+
+            # registration
             if order.order_no:
                 async with self._locks[order.code]:
                     date_map = self.map.setdefault(date_, {})
@@ -152,8 +154,10 @@ class OrderManager:
                             await dispatch(agent, notice)  
 
                         code_map[PENDING_TRNS].pop(order.order_no) 
+            
+            # no registration
             else:
-                optlog.error(f"OrderManager: order submission failed: {order.unique_id}", name=agent.id) 
+                optlog.error(f"[OrderManager] order submission failed: {order.unique_id}", name=agent.id) 
             await asyncio.sleep(trenv.sleep)
 
     async def process_tr_notice(self, notice: TransactionNotice, connected_agents: ConnectedAgents, trenv, date_=None):
@@ -201,7 +205,7 @@ class OrderManager:
             code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
             incompleted_orders: dict = code_map[INCOMPLETED_ORDERS].get(agent.id, {})
             if not incompleted_orders:
-                optlog.info(f"No incompleted orders to cancel for agent {agent.id} ---", name=agent.id)
+                optlog.info(f"[OrderManager] no incompleted orders to cancel for agent {agent.id} ---", name=agent.id)
                 return 
 
             rc_orders = [] 
@@ -210,7 +214,7 @@ class OrderManager:
                 rc_orders.append(cancel_order)
 
             await self.submit_orders_and_register(agent, rc_orders, trenv, date_)
-            optlog.info(f'Cancelling all outstanding {len(rc_orders)} orders for agent {agent.id}...', name=agent.id)
+            optlog.info(f'[OrderManager] cancelling all outstanding {len(rc_orders)} orders for agent {agent.id}...', name=agent.id)
 
     async def closing_checker(self, agent, delay=5, date_=None):
         await asyncio.sleep(delay)
@@ -218,16 +222,18 @@ class OrderManager:
         agent_incomplete_orders: dict = self.map.get(date_, {}).get(agent.code, {}).get(INCOMPLETED_ORDERS, {}).get(agent.id, {})
 
         if agent_incomplete_orders:
-            optlog.error(f"[Closing Check]: {len(agent_incomplete_orders)} orders not yet completed for agent {agent.id}:", name=agent.id)
+            optlog.error(f"[OrderManager-ClosingCheck] {len(agent_incomplete_orders)} orders not yet completed for agent {agent.id}:", name=agent.id)
 
             not_accepted = [o for k, o in agent_incomplete_orders.items() if not o.accepted]
             if not_accepted:
-                optlog.error(f" --- {len(not_accepted)} orders not yet accepted", name=agent.id)
+                optlog.error(f"[OrderManager-ClosingCheck] ---- {len(not_accepted)} orders not yet accepted", name=agent.id)
 
             # may add more checks here ...
 
-        optlog.info("[v] closing check done", name=agent.id)
+        optlog.info("[OrderManager-ClosingCheck] closing check done", name=agent.id)
 
+    # checks if pending trns persist for a specific code
+    # runs as an independent coroutine on the server
     async def check_pending_trns_timeout(self, max_age=300, interval=120):
         while True:
             await asyncio.sleep(interval)
@@ -247,7 +253,7 @@ class OrderManager:
                             first_trn_time = getattr(items[0], "stck_cntg_ts", None) or "000000"
                             if (now_sec - self.sec(first_trn_time)) % 86400 >= max_age:  # wrapping around the midnight
                                 # don't break, but the error msg will repeat
-                                optlog.error(f'Pending TRNs EXPIRED - timeout {max_age} sec: order_no {order_no}')
+                                optlog.error(f'[OrderManager] pending TRNs EXPIRED - timeout {max_age} sec: order_no {order_no}')
 
     async def persist_to_disk(self):
         while True:

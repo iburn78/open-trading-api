@@ -9,6 +9,7 @@ class SubscriptionManager:
     """
     Server side application
     Manage subscriptions from agents for various functions
+    note: receiving TR notices (ccnl_notice) is subscripted separately
     
     map = {
         func: {
@@ -25,13 +26,13 @@ class SubscriptionManager:
     def __str__(self): 
         if self.map:
             parts = [
-                "SubsManager:"
+                "[SubsManager]"
             ]
             for f, d in self.map.items():
-                parts.append(f'{f.__name__}: {d}')
+                parts.append(f'    {f.__name__}: {d}')
             return '\n'.join(parts)
         else: 
-            return '(no subscription exists)'
+            return '[SubsManager] no agent-specific subscriptions'
 
     async def add(self, func: Callable, agent_card: AgentCard):
         async with self._lock:
@@ -57,15 +58,15 @@ class SubscriptionManager:
         async with self._lock:
             # if this func or code not in map, nothing to do
             if func not in self.map:
-                return f"[Warning] {func.__name__} not found in subscription map"
+                return f"[SubsManager-warning] {func.__name__} not found in subscription map"
 
             func_map = self.map[func]
             if agent_card.code not in func_map:
-                return f"[Warning] {agent_card.code} not found under {func.__name__}"
+                return f"[SubsManager-warning] {agent_card.code} not found under {func.__name__}"
 
             agent_list = func_map[agent_card.code]
             if agent_card.id not in agent_list:
-                return f"[Warning] {agent_card.id} not subscribed to {agent_card.code}"
+                return f"[SubsManager-warning] {agent_card.id} not subscribed to {agent_card.code}"
 
             # remove id
             agent_list.remove(agent_card.id)

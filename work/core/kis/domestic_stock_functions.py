@@ -1,4 +1,4 @@
-import logging
+# import logging
 # import sys
 from typing import Optional, Tuple
 
@@ -6,11 +6,12 @@ import pandas as pd
 
 # sys.path.extend(['..', '.'])
 from . import kis_auth as ka
+from ..common.optlog import optlog, ModuleLogger
 
 # 로깅 설정
-logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
+# logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
+# logger = logging.getLogger(__name__)
+logger = ModuleLogger(optlog, default_name="domestic_stock_functions")
 
 ##############################################################################################
 # [국내주식] 기본시세 > 국내주식 시간외잔량 순위[v1_국내주식-093]
@@ -72,7 +73,7 @@ def after_hour_balance(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_cond_mrkt_div_code:
@@ -229,7 +230,7 @@ def bulk_trans_num(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_cond_mrkt_div_code:
@@ -546,7 +547,7 @@ def comp_interest(
         >>> print(df2)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_cond_mrkt_div_code:
@@ -934,7 +935,7 @@ def credit_by_company(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_rank_sort_cls_code:
@@ -1927,7 +1928,7 @@ def exp_total_index(
         >>> print(df2)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_mrkt_cls_code:
@@ -2077,7 +2078,7 @@ def exp_trans_updown(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_rank_sort_cls_code:
@@ -2209,7 +2210,7 @@ def finance_balance_sheet(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_div_cls_code:
@@ -2312,7 +2313,7 @@ def finance_financial_ratio(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_div_cls_code:
@@ -2414,7 +2415,7 @@ def finance_growth_ratio(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_input_iscd:
@@ -2714,7 +2715,7 @@ def finance_profit_ratio(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_input_iscd:
@@ -2909,7 +2910,7 @@ def finance_ratio(
         tr_cont = res.getHeader().tr_cont
 
         if tr_cont == "M":
-            print("Call Next")
+            logger.info("Call Next")
             ka.smart_sleep()
             return finance_ratio(
                 fid_trgt_cls_code,
@@ -2928,7 +2929,7 @@ def finance_ratio(
                 "N", dataframe
             )
         else:
-            print("The End")
+            logger.info("The End")
             return dataframe
     else:
         # 오류 처리
@@ -3130,7 +3131,7 @@ def fluctuation(
         tr_cont = res.getHeader().tr_cont
 
         if tr_cont == "M":  # 다음 페이지 존재
-            print("Call Next")
+            logger.info("Call Next")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return fluctuation(
                 fid_rsfl_rate2, fid_cond_mrkt_div_code, fid_cond_scr_div_code,
@@ -3140,7 +3141,7 @@ def fluctuation(
                 fid_div_cls_code, fid_rsfl_rate1, "N", dataframe
             )
         else:
-            print("The End")
+            logger.info("The End")
             return dataframe
     else:
         res.printError(api_url)
@@ -3533,7 +3534,7 @@ def hts_top_view(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 최대 재귀 깊이 체크
     if depth >= max_depth:
@@ -4849,7 +4850,7 @@ def inquire_elw_price(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_cond_mrkt_div_code:
@@ -4976,7 +4977,7 @@ def inquire_index_category_price(
         >>> print(df2)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_cond_mrkt_div_code:
@@ -5211,7 +5212,7 @@ def inquire_index_price(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_cond_mrkt_div_code:
@@ -6597,7 +6598,7 @@ def inquire_time_indexchartprice(
         >>> print(df2)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_cond_mrkt_div_code:
@@ -6990,7 +6991,7 @@ def inquire_vi_status(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증 (첨부된 사진 기준, 비어있으면 빼고 체크)
     if not fid_cond_scr_div_code:
@@ -7633,7 +7634,7 @@ def invest_opbysec(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_cond_mrkt_div_code:
@@ -7768,7 +7769,7 @@ def invest_opinion(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not fid_cond_mrkt_div_code:
@@ -7981,7 +7982,7 @@ def ksdinfo_bonus_issue(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not f_dt:
@@ -8083,7 +8084,7 @@ def ksdinfo_cap_dcrs(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not f_dt:
@@ -8189,7 +8190,7 @@ def ksdinfo_dividend(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not gb1:
@@ -8301,7 +8302,7 @@ def ksdinfo_forfeit(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not t_dt:
@@ -8403,7 +8404,7 @@ def ksdinfo_list_info(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not t_dt:
@@ -8510,7 +8511,7 @@ def ksdinfo_mand_deposit(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not t_dt:
@@ -8621,7 +8622,7 @@ def ksdinfo_merger_split(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not f_dt:
@@ -8726,7 +8727,7 @@ def ksdinfo_paidin_capin(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not gb1:
@@ -8930,7 +8931,7 @@ def ksdinfo_purreq(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not t_dt:
@@ -9036,7 +9037,7 @@ def ksdinfo_rev_split(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not f_dt:
@@ -9144,7 +9145,7 @@ def ksdinfo_sharehld_meet(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not f_dt:
@@ -9250,7 +9251,7 @@ def lendable_by_company(
         >>> print(df2)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not excg_dvsn_cd:
@@ -9446,7 +9447,7 @@ def market_cap(
         # 연속 거래 여부 확인
         tr_cont = res.getHeader().tr_cont
         if tr_cont == "M":
-            print("Call Next")
+            logger.info("Call Next")
             ka.smart_sleep()
             return market_cap(
                 fid_input_price_2,
@@ -9461,7 +9462,7 @@ def market_cap(
                 "N", dataframe
             )
         else:
-            print("The End")
+            logger.info("The End")
             return dataframe
     else:
         # 오류 출력
@@ -9626,7 +9627,7 @@ def market_value(
         tr_cont = res.getHeader().tr_cont
 
         if tr_cont == "M":
-            print("Call Next")
+            logger.info("Call Next")
             ka.smart_sleep()
             return market_value(
                 fid_trgt_cls_code,
@@ -9645,7 +9646,7 @@ def market_value(
                 "N", dataframe
             )
         else:
-            print("The End")
+            logger.info("The End")
             return dataframe
     else:
         # 오류 처리
@@ -9815,7 +9816,7 @@ def near_new_highlow(
         tr_cont = res.getHeader().tr_cont
 
         if tr_cont == "M":
-            print("Call Next")
+            logger.info("Call Next")
             ka.smart_sleep()
             return near_new_highlow(
                 fid_aply_rang_vol,
@@ -9833,7 +9834,7 @@ def near_new_highlow(
                 "N", dataframe
             )
         else:
-            print("The End")
+            logger.info("The End")
             return dataframe
     else:
         # 오류 발생 시 처리
@@ -12034,7 +12035,7 @@ def profit_asset_index(
         tr_cont = res.getHeader().tr_cont
 
         if tr_cont == "M":
-            print("Call Next")
+            logger.info("Call Next")
             ka.smart_sleep()
             return profit_asset_index(
                 fid_cond_mrkt_div_code,
@@ -12053,7 +12054,7 @@ def profit_asset_index(
                 "N", dataframe
             )
         else:
-            print("The End")
+            logger.info("The End")
             return dataframe
     else:
         # 오류 처리
@@ -12384,7 +12385,7 @@ def quote_balance(
         tr_cont = res.getHeader().tr_cont
 
         if tr_cont == "M":
-            print("Call Next")
+            logger.info("Call Next")
             ka.smart_sleep()
             return quote_balance(
                 fid_vol_cnt,
@@ -12400,7 +12401,7 @@ def quote_balance(
                 "N", dataframe
             )
         else:
-            print("The End")
+            logger.info("The End")
             return dataframe
     else:
         # 오류 출력
@@ -12441,7 +12442,7 @@ def search_info(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not pdno:
@@ -12542,7 +12543,7 @@ def search_stock_info(
         >>> print(df)
     """
     # 로깅 설정
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
 
     # 필수 파라미터 검증
     if not prdt_type_cd:
@@ -13350,7 +13351,7 @@ def volume_rank(
         tr_cont = res.getHeader().tr_cont
 
         if tr_cont == "M":  # 다음 페이지 존재
-            print("Call Next")
+            logger.info("Call Next")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return volume_rank(
                 fid_cond_mrkt_div_code, fid_cond_scr_div_code, fid_input_iscd,
@@ -13359,7 +13360,7 @@ def volume_rank(
                 fid_vol_cnt, fid_input_date_1, "N", dataframe
             )
         else:
-            print("The End")
+            logger.info("The End")
             return dataframe
     else:
         res.printError(api_url)

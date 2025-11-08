@@ -64,7 +64,7 @@ class PerformanceManager:
         mask = self.target_df['cash_t_2'] < 0
         max_exposure_exceeded = self.target_df.loc[mask, 'code'].tolist() 
         if max_exposure_exceeded:
-            optlog.warning(f"Codes exceed the max exposure: {max_exposure_exceeded}", name = XXXX) 
+            optlog.warning(f"[PerfManager] codes exceed the max exposure: {max_exposure_exceeded}", name = XXXX) 
             # these holdings can only be sold...
             # May introduce some follow-up action
 

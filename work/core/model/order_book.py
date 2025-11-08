@@ -71,45 +71,44 @@ class OrderBook:
 
     def __str__(self):
         if not self._indexed_sent_for_submit and not self._indexed_incompleted_orders and not self._completed_orders:
-            return "<no orders>"
+            return "[OrderBook] no records"
         return (
-            f"\n"
-            f"Dashboard {(self.code)}, agent {self.agent_id}\n"
-            f"----------------------------------------------------\n"
-            f"Current Holding     : {self.current_holding:>15,d}\n"
-            f"On Buy Order        : {self.on_buy_order:>15,d}\n"
-            f"- Limit (Amount)    : {self.on_LIMIT_buy_amount :>15,d}\n"
-            f"- Market (Quantity) : {self.on_MARKET_buy_quantity :>15,d}\n"
-            f"On Sell Order       : {self.on_sell_order:>15,d}\n"
-            f"----------------------------------------------------\n"
-            f"Total Purchased     : {self.total_purchased:>15,d}\n"
-            f"Total Sold          : {self.total_sold:>15,d}\n"
-            f"Avg. Price          : {self.avg_price:>15,d}\n"
-            f"BEP Price           : {self.bep_price:>15,d}\n"
-            f"----------------------------------------------------\n"
-            f"Principle Cash Used : {self.principle_cash_used:>15,d}\n"
-            f"Total Cost Incurred : {self.total_cost_incurred:>15,d}\n"
-            f"Total Cash Used     : {self.total_cash_used:>15,d}\n"
-            f"----------------------------------------------------"
+            f"[OrderBook] dashboard {(self.code)}, agent {self.agent_id}\n"
+            f"    ----------------------------------------------------\n"
+            f"    Current Holding     : {self.current_holding:>15,d}\n"
+            f"    On Buy Order        : {self.on_buy_order:>15,d}\n"
+            f"    - Limit (Amount)    : {self.on_LIMIT_buy_amount :>15,d}\n"
+            f"    - Market (Quantity) : {self.on_MARKET_buy_quantity :>15,d}\n"
+            f"    On Sell Order       : {self.on_sell_order:>15,d}\n"
+            f"    ----------------------------------------------------\n"
+            f"    Total Purchased     : {self.total_purchased:>15,d}\n"
+            f"    Total Sold          : {self.total_sold:>15,d}\n"
+            f"    Avg. Price          : {self.avg_price:>15,d}\n"
+            f"    BEP Price           : {self.bep_price:>15,d}\n"
+            f"    ----------------------------------------------------\n"
+            f"    Principle Cash Used : {self.principle_cash_used:>15,d}\n"
+            f"    Total Cost Incurred : {self.total_cost_incurred:>15,d}\n"
+            f"    Total Cash Used     : {self.total_cash_used:>15,d}\n"
+            f"    ----------------------------------------------------"
         )
+    def _section(self, title, orders: list, indexed_orders: dict):
+        if orders:  # list 
+            return f"{title} ({len(orders)} orders)\n" + "\n".join(f"    {o}" for o in orders)
+        if indexed_orders:  # dict
+            return f"{title} ({len(indexed_orders)} orders)\n" + "\n".join(f"    {v}" for k, v in indexed_orders.items())
 
     def get_listings_str(self, processing_only: bool=True):
         processing_only = self.print_processing_only
-        def _section(title, orders: list, indexed_orders: dict):
-            if orders:  # list 
-                return f"{title} ({len(orders)} orders)\n" + "\n".join(f"{o}" for o in orders)
-            if indexed_orders:  # dict
-                return f"{title} ({len(indexed_orders)} orders)\n" + "\n".join(f"{v}" for k, v in indexed_orders.items())
 
         sections = []
         if self._indexed_sent_for_submit:
-            sections.append(_section("[listings] Sent for submit", None, self._indexed_sent_for_submit))
+            sections.append(self._section("[OrderBook] sent for submit", None, self._indexed_sent_for_submit))
         if self._indexed_incompleted_orders:
-            sections.append(_section("[listings] Incompleted orders", None, self._indexed_incompleted_orders))
+            sections.append(self._section("[OrderBook] incompleted orders", None, self._indexed_incompleted_orders))
         if self._completed_orders and not processing_only:
-            sections.append(_section("[listings] Completed orders", self._completed_orders, None))
+            sections.append(self._section("[OrderBook] completed orders", self._completed_orders, None))
         if not sections:
-            return "[listings] no orders processing"
+            return "[OrderBook] no orders under processing"
         return "\n".join(sections)
 
     async def process_tr_notice(self, notice: TransactionNotice, trenv):
@@ -126,7 +125,7 @@ class OrderBook:
 
                 delta_qty = order.processed - prev_qty
                 if delta_qty < 0: 
-                    optlog.error(f'trn processed quantity negative: {notice}', name=self.agent_id)
+                    optlog.error(f'[OrderBook] trn processed quantity negative: {notice}', name=self.agent_id)
                 delta_cost = (order.fee_rounded + order.tax_rounded) - prev_cost
                 delta_amount = order.amount - prev_amount
                 if order.side == SIDE.BUY:

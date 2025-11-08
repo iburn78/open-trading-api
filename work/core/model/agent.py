@@ -90,12 +90,12 @@ class Agent:
             if valid:
                 order = self.process_strategy_command(str_command)
                 self._check_connected('submit')
-                optlog.info(f"submitting new order {order}", name=self.id)
+                optlog.info(f"[submitting new order] {order}", name=self.id)
                 await self.order_book.submit_new_order(self.client, order)
             else: 
                 str_feedback = StrategyFeedback(kind=FeedbackKind.STR_COMMAND, obj=str_command, message=msg)
                 await self.strategy.command_feedback_queue.put(str_feedback)
-                optlog.warning(f'Invalid strategy command received - not processed: {msg}', name=self.id)
+                optlog.warning(f'[Agent] invalid strategy command received - not processed: {msg}', name=self.id)
 
     # [Agent-level checking] internal logic checking before sending strategy command to the API server
     async def validate_strategy_command(self, str_cmd: StrategyCommand) -> tuple["valid": bool, "error_message": str]:
@@ -167,7 +167,7 @@ class Agent:
         register_request = ClientRequest(command=RequestCommand.REGISTER_AGENT_CARD)
         register_request.set_request_data(self.card) 
         register_resp: ServerResponse = await self.client.send_client_request(register_request)
-        optlog.info(f"Response: {register_resp}", name=self.id)
+        optlog.info(f"[ServerResponse] {register_resp}", name=self.id)
         if not register_resp.success:
             await self.client.close()
             return 
@@ -177,7 +177,7 @@ class Agent:
         subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD)
         subs_request.set_request_data(self.card) 
         subs_resp: ServerResponse = await self.client.send_client_request(subs_request)
-        optlog.info(f"Response: {subs_resp}", name=self.id)
+        optlog.info(f"[ServerResponse] {subs_resp}", name=self.id)
 
         asyncio.create_task(self.strategy.logic_run())
         asyncio.create_task(self.capture_command_signals())
@@ -185,7 +185,7 @@ class Agent:
         try:
             await self.hardstop_event.wait() 
         except asyncio.CancelledError:
-            optlog.info(f"Agent {self.id} hardstopped.", name=self.id)
+            optlog.info(f"[Agent] agent {self.id} hardstopped.", name=self.id)
         finally:
             await self.client.close()
 
@@ -208,7 +208,7 @@ class Agent:
 
     def _check_connected(self, msg: str = ""): 
         if not self.client.is_connected:
-            optlog.error(f"Client not connected - cannot ({msg}) orders for agent {self.id} ---", name=self.id)
+            optlog.error(f"[Agent] client not connected - cannot ({msg}) orders for agent {self.id} ---", name=self.id)
 
     # msg can be 1) str, 2) Order, 3) TransactionPrices, 4) TransactionNotice
     # should be careful when datatype is dict (could be response to certain request, and captured before getting here)
@@ -224,18 +224,18 @@ class Agent:
         if handler:
             await handler(data)
         else:
-            optlog.error("Unhandled type:", type(data), name=self.id)
+            optlog.error("[Agent] unhandled dispatch type:", type(data), name=self.id)
 
     # handlers for dispatched msg types ---
     async def handle_str(self, msg):
-        optlog.info(f"Received message: {msg}", name=self.id)
+        optlog.info(f"[Agent] dispatched message: {msg}", name=self.id)
 
     # dict should not have 'request_id' key, as it can be confused with a certain response to a specific request
     async def handle_dict(self, data):
-        optlog.info(f"Received dict: {data}", name=self.id)
+        optlog.info(f"[Agent] dispatched dict: {data}", name=self.id)
 
     async def handle_order(self, order: Order):
-        optlog.info(f"Submit result received: {order}", name=self.id) 
+        optlog.info(f"[submit result received] {order}", name=self.id) 
         await self.order_book.handle_order_dispatch(order)
 
         # send back the order to the strategy as is
@@ -253,9 +253,10 @@ class Agent:
         self.strategy.order_update_event.set()
 
 
+# this function is used in the server side, so the logging is also on the server side
 async def dispatch(to: AgentCard | list[AgentCard], message: object):
     if not to:
-        optlog.info(f"No agents to dispatch: {message}")
+        optlog.info(f"[Agent] no agents to dispatch: {message}")
 
     if isinstance(to, AgentCard):
         to = [to]
@@ -267,6 +268,6 @@ async def dispatch(to: AgentCard | list[AgentCard], message: object):
             agent.writer.write(msg_bytes)
             await agent.writer.drain()  # await ensures exceptions are caught here
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
-            optlog.error(f"Agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed.", name=agent.id, exc_info=True)
+            optlog.error(f"[Agent] agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed.", name=agent.id, exc_info=True)
         except Exception as e:
-            optlog.error(f"Unexpected dispatch error: {e}", name=agent.id, exc_info=True)
+            optlog.error(f"[Agent] unexpected dispatch error: {e}", name=agent.id, exc_info=True)

@@ -72,16 +72,17 @@ class Order:
         
     def __str__(self):
         return (
-            f"Order {self.code}, agent {self.agent_id}, odno: {self.order_no}, "
+            f"[Order] {self.code}, agent {self.agent_id}, odno: {self.order_no}, "
             f"{self.side.name}, {self.ord_dvsn.name}, {self.exchange.name}, "
             f"Q {self.quantity}, P {self.price}, processed {self.processed}, "
             f"{'submitted' if self.submitted else 'not_submitted'}, "
             f"{'accepted' if self.accepted else 'not_accepted'}, "
             f"{'completed' if self.completed else 'not_completed'}, "
             f"{'cancelled' if self.cancelled else 'not_cancelled'}"
+            f"uid {self.unique_id[-12:]}"
         )
 
-    # async submit is handled in order_manager in the server side
+    # async submit is handled in order_manager in the server side (so logging is in the server side)
     def submit(self, trenv):
         if self.completed or self.cancelled:
             log_raise('A completed or cancelled order submitted ---', name=self.agent_id)
@@ -91,7 +92,7 @@ class Order:
         res = order_cash(env_dv=trenv.env_dv, ord_dv=self.side, cano=trenv.my_acct, acnt_prdt_cd=trenv.my_prod, pdno=self.code, ord_dvsn=self.ord_dvsn, ord_qty=ord_qty, ord_unpr=ord_unpr, excg_id_dvsn_cd=self.exchange)
 
         if res.empty:
-            optlog.error('Order submit response empty ---', name=self.agent_id)
+            optlog.error('[Order] order submit response empty', name=self.agent_id)
         else: 
             if pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
                 log_raise("Check submission response ---", name=self.agent_id)
@@ -99,7 +100,7 @@ class Order:
             self.submitted_time = res.ORD_TMD.iloc[0]
             self.org_no = res.KRX_FWDG_ORD_ORGNO.iloc[0]
             self.submitted = True
-            optlog.info(f"Order {self.order_no} submitted", name=self.agent_id)
+            optlog.info(f"[Order] order {self.order_no} submitted", name=self.agent_id)
 
     # internal update logic 
     def update(self, notice: TransactionNotice, trenv):
@@ -146,7 +147,7 @@ class Order:
                     log_raise('Check order processed quantity ---', name=self.agent_id)
                 if self.processed == self.quantity:
                     self.completed = True
-                    optlog.info(f"Order {self.order_no} completed", name=self.agent_id)
+                    optlog.info(f"[Order] order {self.order_no} completed", name=self.agent_id)
             else: 
                 log_raise("Check logic ---", name=self.agent_id)
 
@@ -221,9 +222,9 @@ class ReviseCancelOrder(Order):
             self.submitted = True
 
             if self.rc == RCtype.REVISE:
-                optlog.info(f"Order {self.original_order.order_no}'s revise order {self.order_no} submitted", name=self.agent_id)
+                optlog.info(f"[Order] order {self.original_order.order_no}'s revise order {self.order_no} submitted", name=self.agent_id)
             else: # cancel
-                optlog.info(f"Order {self.original_order.order_no}'s {'full' if self.all_yn == AllYN.ALL else 'partial'} cancellation order {self.order_no} submitted", name=self.agent_id)
+                optlog.info(f"[Order] order {self.original_order.order_no}'s {'full' if self.all_yn == AllYN.ALL else 'partial'} cancellation order {self.order_no} submitted", name=self.agent_id)
 
     # internal update logic for revise-cancel order
     def update_rc_specific(self):

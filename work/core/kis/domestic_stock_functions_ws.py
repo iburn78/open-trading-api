@@ -1,12 +1,12 @@
-import logging
+# import logging
 # import sys
 
 # sys.path.extend(['..', '.'])
 from . import kis_auth as ka
 
 # 로깅 설정
-logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
+# logger = logging.getLogger(__name__)
 
 ##############################################################################################
 # [국내주식] 실시간시세 > 국내주식 실시간호가 (KRX) [실시간-004]

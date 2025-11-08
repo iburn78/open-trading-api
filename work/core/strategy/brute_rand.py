@@ -16,7 +16,7 @@ class BruteForceRandStrategy(StrategyBase):
     
     async def on_update(self, update_event: UpdateEvent, str_feedback: StrategyFeedback = None):
         if str_feedback:
-            print(str_feedback)
+            optlog.debug(str_feedback) 
         q = random.randint(1, 5)
         x = random.randint(0, 1)    
         if x == 0:

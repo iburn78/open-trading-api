@@ -38,7 +38,7 @@ class MarketPrices:
         if not self.current_price:
             return "price record not initialized"
         return (
-            f"MarketPrices {self.code}, current {self.current_price}, "
+            f"[MarketPrices] {self.code}, current {self.current_price}, "
             f"l/h {self.low_price}/{self.high_price}, ma {self.moving_avg}, "
             f"m_amt {adj_int(self.moving_amount/10**6)}M, cum_amt {adj_int(self.cumulative_amount/10**6)}M, "
             f"window {self.window_size} min"
@@ -73,7 +73,7 @@ class MarketPrices:
         if not self._deque_warning_shown and len(dq) > self.maxlen*(1-self.safety_margin):
             # this is one time warning, and once warning occurs, need to adjust settings:
             optlog.warning(f"-----------------------------------------------------------")
-            optlog.warning(f"[{self.code}] deque for {total_attr} length exceeds over {(1-self.safety_margin)*100}% of maxlen - need attention")
+            optlog.warning(f"[MarketPrices-{self.code}] deque for {total_attr} length exceeds over {(1-self.safety_margin)*100}% of maxlen - need attention")
             optlog.warning(f"-----------------------------------------------------------")
             self._deque_warning_shown = True
 

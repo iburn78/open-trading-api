@@ -30,7 +30,7 @@ class StrategyFeedback:
     # Develop feedback code (like) to standardize message
 
     def __str__(self):
-        return f"{self.kind.name}: {self.obj} {f', msg: {self.message}' if self.message else ''}"
+        return f"[StrFeedback] {self.kind.name}: {self.obj} {f', msg: {self.message}' if self.message else ''}"
 
 class UpdateEvent(Enum):   
     INITIATE = 'initiate'

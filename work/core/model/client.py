@@ -21,20 +21,20 @@ class PersistentClient:
 
     async def connect(self):
         if self.is_connected:
-            optlog.warning(f"Already connected to {self.host}:{self.port}", name=self.agent_id)
+            optlog.warning(f"[Client] already connected to {self.host}:{self.port}", name=self.agent_id)
             return
         try:
             self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
         except ConnectionRefusedError as e:
-            optlog.error(f"Connection refused: {self.host}:{self.port} → {e}", name=self.agent_id, exc_info=True)
+            optlog.error(f"[Client] connection refused: {self.host}:{self.port} → {e}", name=self.agent_id, exc_info=True)
             return
         except Exception as e:
-            optlog.error(f"Unexpected error connecting to {self.host}:{self.port}: {e}", name=self.agent_id, exc_info=True)
+            optlog.error(f"[Client] unexpected error in connecting to {self.host}:{self.port}: {e}", name=self.agent_id, exc_info=True)
             return
 
         self.listen_task = asyncio.create_task(self.listen_server())
         sep = "\n======================================================================================"
-        optlog.info(f"Connected to {self.host}:{self.port}"+sep, name=self.agent_id)
+        optlog.info(f"[Client] connected to {self.host}:{self.port}"+sep, name=self.agent_id)
 
     async def listen_server(self): # listen to server command responses, and dispatches
         try:
@@ -52,13 +52,13 @@ class PersistentClient:
                 if isinstance(msg, ServerResponse):
                     req_id = msg.get_id()
                     if req_id is None:
-                        optlog.error(f"server response with no request_id {msg}", name=self.agent_id)
+                        optlog.error(f"[Client] server response received with no request_id {msg}", name=self.agent_id)
                     elif req_id in self.pending_requests:
                         fut = self.pending_requests.pop(req_id)
                         fut.set_result(msg) # if fut.done() == True, then this will throw anyway
                         continue
                     else:
-                        optlog.error(f"server response for non exist (or not anymore) request_id {req_id}: {msg}", name=self.agent_id)
+                        optlog.error(f"[Client] server response received for non exist (or not anymore) request_id {req_id}: {msg}", name=self.agent_id)
                         continue
 
                 # handle dispatch message for non ServerResponse objects
@@ -66,17 +66,16 @@ class PersistentClient:
                     # listner should not block listening
                     asyncio.create_task(self.on_dispatch(msg))
                 else:
-                    optlog.warning(f"Dispatched but no receiver: {msg}", name=self.agent_id)
+                    optlog.error(f"[Client] dispatched msg received but no receiver: {msg}", name=self.agent_id)
 
         except asyncio.CancelledError: # client-cancelled situation (cancelld by the event loop in the client side)
-            optlog.info("Listen task cancelled", name=self.agent_id)  # intentional
+            optlog.info("[Client] listen task cancelled", name=self.agent_id)  # intentional
             raise  # usually propagate cancellation
         except asyncio.IncompleteReadError:
             if self._closing:
                 pass
-                # optlog.info("Listen task closed", name=self.agent_id)  
             elif not self.listen_task.cancelled(): # if not keyboard-interrupt
-                optlog.warning("Server closed connection", name=self.agent_id)  # actual EOF / disconnect
+                optlog.warning("[Client] server closed connection", name=self.agent_id)  # actual EOF / disconnect
         except Exception as e:
             # this is a local server-client communication
             # has to be perfeclty reliable, so no auto reconnection necessary
@@ -84,7 +83,7 @@ class PersistentClient:
 
     async def send_client_request(self, client_request: ClientRequest):
         if not self.is_connected:
-            msg = f"Client not connected: {client_request}"
+            msg = f"[Client] client not connected: {client_request}"
             optlog.error(msg, name=self.agent_id)
             return ServerResponse(success=False, status=msg)  
 
@@ -117,7 +116,7 @@ class PersistentClient:
             except asyncio.CancelledError as e:
                 pass # expected so no need to log
         sep = "\n======================================================================================"
-        optlog.info("Client connection closed"+sep, name=self.agent_id)
+        optlog.info("[Client] server connection closed"+sep, name=self.agent_id)
     
     @property
     def is_connected(self) -> bool:

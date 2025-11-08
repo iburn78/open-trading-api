@@ -14,13 +14,13 @@ class ConnectedAgents:
     def __str__(self): 
         if self.code_agent_card_dict:
             parts = [
-                "ConnectedAgents:"
+                "[ConnectedAgents]"
             ]
             for c, l in self.code_agent_card_dict.items():
-                parts.append(f'{c}: {[(a.id, a.client_port) for a in l]}')
+                parts.append(f'    {c}: {[(a.id, a.client_port) for a in l]}')
             return '\n'.join(parts)
         else: 
-            return '(no connected agents)'
+            return '[ConnectedAgents] no agents connected'
 
     async def add(self, agent_card: AgentCard):
         async with self._lock:
@@ -28,7 +28,7 @@ class ConnectedAgents:
                 log_raise(f'Client port is not assigned for agent {agent_card.id} --- ')
 
             if self.get_agent_card_by_id(agent_card.id):
-                return False, f'[Warning] agent_card {agent_card.id} already registered --- '
+                return False, f'[ConnectedAgents-warning] agent_card {agent_card.id} already registered --- '
 
             if self.get_agent_card_by_port(agent_card.client_port):
                 log_raise(f'Client port is {agent_card.client_port} is alreay in use --- ')
@@ -43,7 +43,7 @@ class ConnectedAgents:
         async with self._lock:
             agent_card_list = self.code_agent_card_dict.get(agent_card.code)
             if not agent_card_list:
-                return f"[Warning] agent_card {agent_card.id} not found"
+                return f"[ConnectedAgents-warning] agent_card {agent_card.id} not found"
 
             # for a code, there cannot be too many agents; so the following next() efficieny is fine
             target = next((x for x in agent_card_list if x.id == agent_card.id), None)
@@ -53,7 +53,7 @@ class ConnectedAgents:
                 if not agent_card_list:
                     del self.code_agent_card_dict[agent_card.code]
                 return f"agent_card {agent_card.id} removed from the server"
-            return f"[Warning] agent_card {agent_card.id} not found"
+            return f"[ConnectedAgents-warning] agent_card {agent_card.id} not found"
 
     def get_agent_card_by_port(self, port):
         for code, list in self.code_agent_card_dict.items():

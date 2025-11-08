@@ -79,7 +79,7 @@ class TransactionNotice: # 국내주식 실시간체결통보
     # note: oder_kind seems set to '00'(LIMIT) in 체결확인(022) reponses even when the order is otherwise 
     def __str__(self):
         return (
-            f"TR notice {self.code}, "
+            f"[TR notice] {self.code}, "
             f"odno {self.oder_no}, oodno {self.ooder_no}, {self.rfus_yn}{self.cntg_yn}{self.acpt_yn}, cond {self.oder_cond}, {self.traded_exchange}, "
             f"{self.seln_byov_cls.name}, {self.oder_kind.name}, processed {self.cntg_qty} at P {self.cntg_unpr}, Q {self.oder_qty}"
         )
