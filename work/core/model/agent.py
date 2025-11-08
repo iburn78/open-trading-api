@@ -154,7 +154,7 @@ class Agent:
             return True, None
 
     async def run(self, **kwargs):
-        """     
+        """  
         Keeps the agent alive until stopped.
         agent's main loop 
         - to be run in an asyncio task

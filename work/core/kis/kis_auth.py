@@ -533,7 +533,9 @@ def system_resp(data):
 
 def aes_cbc_base64_dec(key, iv, cipher_text):
     if key is None or iv is None:
-        raise AttributeError("key and iv cannot be None")
+        logmsg = "key and iv cannot be None"
+        logger.critical(logmsg)
+        raise AttributeError(logmsg)
 
     cipher = AES.new(key.encode("utf-8"), AES.MODE_CBC, iv.encode("utf-8"))
     return bytes.decode(unpad(cipher.decrypt(b64decode(cipher_text)), AES.block_size))
@@ -701,7 +703,9 @@ class KISWebSocket:
             if raw[0] in ["0", "1"]:
                 d1 = raw.split("|")
                 if len(d1) < 4:
-                    raise ValueError("data not found...")
+                    logmsg = "data not found..."
+                    logger.critical(logmsg)
+                    raise ValueError(logmsg)
 
                 tr_id = d1[1]
 
@@ -727,9 +731,9 @@ class KISWebSocket:
 
                 # Safety check
                 if len(parts) != n_rows * n_cols:
-                    raise ValueError(
-                        f"(error) Data length ({len(parts)}) does not match n_rows × n_cols ({n_rows * n_cols})"
-                    )
+                    logmsg = f"Data length ({len(parts)}) does not match n_rows × n_cols ({n_rows * n_cols})"
+                    logger.critical(logmsg)
+                    raise ValueError(logmsg)
 
                 rows = [parts[i * n_cols : (i + 1) * n_cols] for i in range(n_rows)]
                 df = pd.DataFrame(rows, columns=dm["columns"], dtype=object)
@@ -785,7 +789,9 @@ class KISWebSocket:
 
     async def __runner(self):
         if len(open_map.keys()) > 40:
-            raise ValueError("(error) Subscription's max is 40 - as defined in kis_auth.py")
+            logmsg = "Subscription's max is 40 - as defined in kis_auth.py"
+            logger.critical(logmsg)
+            raise ValueError(logmsg)
 
         url = f"{getTREnv().my_url_ws}{self.api_url}"
 
@@ -828,7 +834,7 @@ class KISWebSocket:
 
         add_data_map(tr_id=msg["body"]["input"]["tr_id"], columns=columns)
 
-        # logging.info("send message >> %s" % json.dumps(msg))
+        # logger.info(f"send message >> {json.dumps(msg)}")
 
         await ws.send(json.dumps(msg))
         smart_sleep()
@@ -847,7 +853,9 @@ class KISWebSocket:
             for d in data:
                 await self.send(ws, request, tr_type, d, kwargs)
         else:
-            raise ValueError("(error) data must be str or list")
+            logmsg = "data must be str or list"
+            logger.critical(logmsg)
+            raise ValueError(logmsg)
 
     # [modified version: subs and unsubs] -----------------------------------------------------
     def subscribe(

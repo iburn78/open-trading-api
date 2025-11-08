@@ -10,13 +10,15 @@ BACKUP_COUNT = 5 # num of files
 F_LEVEL = logging.DEBUG # file logging level
 S_LEVEL = logging.DEBUG # stream logging level
 
+LOG_INDENT = "                        "
+
 class BriefFormatter(logging.Formatter):
     LEVEL_MAP = {
         'DEBUG': 'D',
         'INFO': 'I',
-        'WARNING': 'W',
-        'ERROR': 'E',
-        'CRITICAL': 'C'
+        'WARNING': 'WARN',
+        'ERROR': 'ERROR',
+        'CRITICAL': 'CRITICAL'
     }
 
     def format(self, record):
@@ -92,9 +94,8 @@ def log_raise(msg, logger=None, name=None):
     logger = logger or optlog # arg default value looped up only once in reading func def. when dynamically initiallizing, need to catch dynamically.
     if name:
         msg = f"{name}> {msg}"
-    logger.error(msg)
+    logger.critical(msg)
     raise Exception(msg) 
-
 
 # can assign default_name to name argument
 class ModuleLogger:

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from .order import Order
 from .client import PersistentClient
 from .perf_metric import PerformanceMetric
-from ..common.optlog import optlog, log_raise
+from ..common.optlog import optlog, log_raise, LOG_INDENT
 from ..common.tools import adj_int
 from ..common.interface import RequestCommand, ClientRequest
 from ..kis.kis_auth import KISEnv
@@ -74,28 +74,28 @@ class OrderBook:
             return "[OrderBook] no records"
         return (
             f"[OrderBook] dashboard {(self.code)}, agent {self.agent_id}\n"
-            f"    ----------------------------------------------------\n"
-            f"    Current Holding     : {self.current_holding:>15,d}\n"
-            f"    On Buy Order        : {self.on_buy_order:>15,d}\n"
-            f"    - Limit (Amount)    : {self.on_LIMIT_buy_amount :>15,d}\n"
-            f"    - Market (Quantity) : {self.on_MARKET_buy_quantity :>15,d}\n"
-            f"    On Sell Order       : {self.on_sell_order:>15,d}\n"
-            f"    ----------------------------------------------------\n"
-            f"    Total Purchased     : {self.total_purchased:>15,d}\n"
-            f"    Total Sold          : {self.total_sold:>15,d}\n"
-            f"    Avg. Price          : {self.avg_price:>15,d}\n"
-            f"    BEP Price           : {self.bep_price:>15,d}\n"
-            f"    ----------------------------------------------------\n"
-            f"    Principle Cash Used : {self.principle_cash_used:>15,d}\n"
-            f"    Total Cost Incurred : {self.total_cost_incurred:>15,d}\n"
-            f"    Total Cash Used     : {self.total_cash_used:>15,d}\n"
-            f"    ----------------------------------------------------"
+            f"{LOG_INDENT}----------------------------------------------------\n"
+            f"{LOG_INDENT}Current Holding     : {self.current_holding:>15,d}\n"
+            f"{LOG_INDENT}On Buy Order        : {self.on_buy_order:>15,d}\n"
+            f"{LOG_INDENT}- Limit (Amount)    : {self.on_LIMIT_buy_amount :>15,d}\n"
+            f"{LOG_INDENT}- Market (Quantity) : {self.on_MARKET_buy_quantity :>15,d}\n"
+            f"{LOG_INDENT}On Sell Order       : {self.on_sell_order:>15,d}\n"
+            f"{LOG_INDENT}----------------------------------------------------\n"
+            f"{LOG_INDENT}Total Purchased     : {self.total_purchased:>15,d}\n"
+            f"{LOG_INDENT}Total Sold          : {self.total_sold:>15,d}\n"
+            f"{LOG_INDENT}Avg. Price          : {self.avg_price:>15,d}\n"
+            f"{LOG_INDENT}BEP Price           : {self.bep_price:>15,d}\n"
+            f"{LOG_INDENT}----------------------------------------------------\n"
+            f"{LOG_INDENT}Principle Cash Used : {self.principle_cash_used:>15,d}\n"
+            f"{LOG_INDENT}Total Cost Incurred : {self.total_cost_incurred:>15,d}\n"
+            f"{LOG_INDENT}Total Cash Used     : {self.total_cash_used:>15,d}\n"
+            f"{LOG_INDENT}----------------------------------------------------"
         )
     def _section(self, title, orders: list, indexed_orders: dict):
         if orders:  # list 
-            return f"{title} ({len(orders)} orders)\n" + "\n".join(f"    {o}" for o in orders)
+            return f"{title} ({len(orders)} orders)\n" + "\n".join(f"{LOG_INDENT}{o}" for o in orders)
         if indexed_orders:  # dict
-            return f"{title} ({len(indexed_orders)} orders)\n" + "\n".join(f"    {v}" for k, v in indexed_orders.items())
+            return f"{title} ({len(indexed_orders)} orders)\n" + "\n".join(f"{LOG_INDENT}{v}" for k, v in indexed_orders.items())
 
     def get_listings_str(self, processing_only: bool=True):
         processing_only = self.print_processing_only

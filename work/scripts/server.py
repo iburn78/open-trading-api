@@ -3,7 +3,7 @@ set_logger()
 
 import asyncio
 import datetime
-from core.common.optlog import optlog, log_raise
+from core.common.optlog import optlog, log_raise, LOG_INDENT
 from core.common.setup import HOST, PORT
 from core.model.agent import dispatch
 import core.kis.kis_auth as ka
@@ -139,7 +139,7 @@ async def _safe_close_writer(writer, agent_id=None):
         await asyncio.wait_for(writer.wait_closed(), timeout=CLEANUP_TIMEOUTS["writer_close"])
     except asyncio.TimeoutError:
         if agent_id:
-            optlog.warning("    writer close timeout", name=agent_id)
+            optlog.warning("{LOG_INDENT}writer close timeout", name=agent_id)
     except Exception:
         pass
     finally:
@@ -176,7 +176,7 @@ def _status_check(show=False, include_ka=True):
         if include_ka:
             logmsg = '[ka.open_map]'
             for k, d in ka.open_map.items(): 
-                logmsg += f"\n    {k}: {d['items']}"
+                logmsg += f"\n{LOG_INDENT}{k}: {d['items']}"
             optlog.debug(logmsg)
             logmsg = f'[ka.data_map]: {list(ka.data_map.keys())}'
             optlog.debug(logmsg)

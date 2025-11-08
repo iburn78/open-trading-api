@@ -4,7 +4,7 @@ import asyncio
 from .subs_manager import SubscriptionManager
 from .conn_agents import ConnectedAgents
 from .order_manager import OrderManager
-from core.common.optlog import optlog
+from core.common.optlog import optlog, LOG_INDENT
 from core.model.agent import AgentCard
 from core.common.interface import RequestCommand, ClientRequest, ServerResponse
 from core.kis.domestic_stock_functions_ws import ccnl_krx, ccnl_total
@@ -121,11 +121,11 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
             rd = client_request.get_request_data()
             if rd and isinstance(rd, list): 
-                logmsg += f"    request data: list ({len(rd)} items)"
+                logmsg += f"{LOG_INDENT}request data: list ({len(rd)} items)"
                 for o in rd: 
-                    logmsg += f"\n        {o}"
+                    logmsg += f"\n{LOG_INDENT}{o}"
             elif rd:
-                logmsg += f"    request data: {rd}"
+                logmsg += f"{LOG_INDENT}request data: {rd}"
             optlog.info(logmsg, name=cid)
 
             handler = COMMAND_HANDLERS.get(client_request.command)

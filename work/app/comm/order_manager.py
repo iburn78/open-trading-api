@@ -7,7 +7,7 @@ import os
 import time
 
 from core.common.setup import data_dir, disk_save_period
-from core.common.optlog import optlog, log_raise
+from core.common.optlog import optlog, log_raise, LOG_INDENT
 from core.model.agent import AgentCard, dispatch
 from core.model.order import Order, ReviseCancelOrder
 from core.kis.ws_data import TransactionNotice, RCtype, AllYN
@@ -105,15 +105,15 @@ class OrderManager:
             return "(no map initialized)"
         date_ = max(self.map.keys())
         res = '[OrderManager]\n'
-        res = res + f'    codes: {list(self.map[date_].keys())}\n'
+        res = res + f'{LOG_INDENT}codes: {list(self.map[date_].keys())}\n'
         for code, code_map in self.map[date_].items():
-            res = res + f'    - {code}\n'
-            res = res + f'      {PENDING_TRNS}: {list(code_map[PENDING_TRNS].keys())}\n'
-            res = res + f'      {INCOMPLETED_ORDERS}: { {agent_id: len(orders_dict) for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items()} }\n'
+            res = res + f'{LOG_INDENT}- {code}\n'
+            res = res + f'{LOG_INDENT}  {PENDING_TRNS}: {list(code_map[PENDING_TRNS].keys())}\n'
+            res = res + f'{LOG_INDENT}  {INCOMPLETED_ORDERS}: { {agent_id: len(orders_dict) for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items()} }\n'
             for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items():
                 for k, o in orders_dict.items():
-                    res = res + f'      - {agent_id}: {o}\n'
-            res = res + f'      {COMPLETED_ORDERS}: { {agent_id: len(orders) for agent_id, orders in code_map[COMPLETED_ORDERS].items()} }\n'
+                    res = res + f'{LOG_INDENT}  - {agent_id}: {o}\n'
+            res = res + f'{LOG_INDENT}  {COMPLETED_ORDERS}: { {agent_id: len(orders) for agent_id, orders in code_map[COMPLETED_ORDERS].items()} }\n'
         return res.strip()
 
     async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order], trenv, date_=None):
