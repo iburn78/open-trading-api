@@ -20,6 +20,17 @@ entry point to run
 - run in the root dir (e.g., work/) as a module ```python -m scripts.xxx```
 - for unbuffered terminal output: ```python -u -m scripts.xxx```
 
+or more modern way
+- Define pyproject.toml in the project root (see example pyproject.toml file).
+    - It declares your project metadata, dependencies, and packages to be installed.
+    - In [tool.setuptools.packages.find], you can use include = ["*"] to automatically include all packages.
+    - Packages (folders) should have __init__.py to be recognized as proper Python packages (required for relative imports).
+- (venv) pip install -e . performs an editable install, making the packages importable immediately.
+    - If metadata or dependencies in pyproject.toml change, you should rerun pip install -e . to update the environment.
+    - Adding files / modifying files are ok, but when the package names are changed (directory name changes), rerun pip install -e .
+    - After that, you can run scripts or modules without import errors — no need to manually adjust sys.path.
+- all subpackages have to be declared, and need to be accessed from the respective parent packages
+
 ## Notes 
 ### Market knowledge
 - Every orders that are not processed is cancelled over night
@@ -53,6 +64,9 @@ entry point to run
     - use queue accordingly
 - use pickle internal only: efficient, tailored to python objects, but executable
 - use in cmd: set PYTHONASYNCIODEBUG=1 (async performance measure)
+- in Linux: OpenBLAS optimization might be needed to use all threads
+- in Linux: install Intel MKL NumPy to boost speed 
+    - pip install numpy -U --extra-index-url https://pypi.anaconda.org/intel/simple
 
 ## To develop
 ### [incremental]

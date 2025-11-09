@@ -18,7 +18,7 @@ class StrategyCommand:
     # optional
     exchange: EXCHANGE = EXCHANGE.SOR
     
-class FeedbackKind(Enum):
+class FeedbackKind(str, Enum):
     ORDER = 'order'
     STR_COMMAND = 'str_command'
 
@@ -32,7 +32,7 @@ class StrategyFeedback:
     def __str__(self):
         return f"[StrFeedback] {self.kind.name}: {self.obj} {f', msg: {self.message}' if self.message else ''}"
 
-class UpdateEvent(Enum):   
+class UpdateEvent(str, Enum):   
     INITIATE = 'initiate'
     PRICE_UPDATE = 'price_update'
     ORDER_UPDATE = 'order_update'

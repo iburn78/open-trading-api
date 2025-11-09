@@ -15,6 +15,3 @@
 # agant orderbook has to have parse function 
 
 
-
-# define logging indent
-# logging - file separation: all, wanring over, 

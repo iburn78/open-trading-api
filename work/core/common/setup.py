@@ -15,6 +15,7 @@ demoSleep_ = 0.5 # min 0.5
 # ----------------------------------------------------
 work_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 data_dir = os.path.join(work_dir, 'data')
+# log_dir defined in optlog.py
 
 disk_save_period = 3600  # sec
 
