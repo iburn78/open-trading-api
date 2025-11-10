@@ -82,6 +82,10 @@ class Order:
             f"uid {self.unique_id[-12:]}"
         )
 
+    def __eq__(self, other):
+        if not isinstance(other, Order): return False
+        return self.unique_id == other.unique_id and self.order_no == other.order_no and self.processed == other.processed
+
     # async submit is handled in order_manager in the server side (so logging is in the server side)
     def submit(self, trenv):
         if self.completed or self.cancelled:

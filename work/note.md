@@ -15,8 +15,6 @@ intermediate applications to be used in scripts/
 - imports core
 
 ### scripts
-entry point to run
-- imports core and app
 - run in the root dir (e.g., work/) as a module ```python -m scripts.xxx```
 - for unbuffered terminal output: ```python -u -m scripts.xxx```
 
@@ -30,6 +28,7 @@ or more modern way
     - Adding files / modifying files are ok, but when the package names are changed (directory name changes), rerun pip install -e .
     - After that, you can run scripts or modules without import errors — no need to manually adjust sys.path.
 - all subpackages have to be declared, and need to be accessed from the respective parent packages
+- now you can run py files independently in script folder
 
 ## Notes 
 ### Market knowledge

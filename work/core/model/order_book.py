@@ -5,8 +5,8 @@ from .order import Order
 from .client import PersistentClient
 from .perf_metric import PerformanceMetric
 from ..common.optlog import optlog, log_raise, LOG_INDENT
-from ..common.tools import adj_int
-from ..common.interface import RequestCommand, ClientRequest
+from ..common.tools import adj_int, compare_indexed_listings
+from ..common.interface import RequestCommand, ClientRequest, Sync
 from ..kis.kis_auth import KISEnv
 from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice
 
@@ -23,7 +23,7 @@ class OrderBook:
     # private order lists - use setter functions for calculating dashboard info real time
     _indexed_sent_for_submit: dict["unique_id": str, Order] = field(default_factory=dict) # sent to server repository / once server sent it to KIS API, submitted orders will be sent back via on_dispatch
     _indexed_incompleted_orders: dict["order_no": str, Order] = field(default_factory=dict)
-    _completed_orders: list[Order] = field(default_factory=list) 
+    _indexed_completed_orders: dict["order_no": str, Order] = field(default_factory=dict)
     _unhandled_trns: list[TransactionNotice] = field(default_factory=list)
 
     # --------------------------------
@@ -60,17 +60,8 @@ class OrderBook:
     # _lock is necessary because order submission and notice processing may happen concurrently
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
-    def update_performance_metric(self, pm: PerformanceMetric):
-        # if pm.code != self.code: return None
-        pm.holding = self.current_holding
-        pm.avg_price = self.avg_price
-        pm.bep_price = self.bep_price
-        pm.principle_cash_used = self.principle_cash_used
-        pm.total_cost_incurred = self.total_cost_incurred
-        pm.total_cash_used = self.total_cash_used
-
     def __str__(self):
-        if not self._indexed_sent_for_submit and not self._indexed_incompleted_orders and not self._completed_orders:
+        if not self._indexed_sent_for_submit and not self._indexed_incompleted_orders and not self._indexed_completed_orders:
             return "[OrderBook] no records"
         return (
             f"[OrderBook] dashboard {(self.code)}, agent {self.agent_id}\n"
@@ -91,25 +82,50 @@ class OrderBook:
             f"{LOG_INDENT}Total Cash Used     : {self.total_cash_used:>15,d}\n"
             f"{LOG_INDENT}----------------------------------------------------"
         )
-    def _section(self, title, orders: list, indexed_orders: dict):
-        if orders:  # list 
-            return f"{title} ({len(orders)} orders)\n" + "\n".join(f"{LOG_INDENT}{o}" for o in orders)
-        if indexed_orders:  # dict
-            return f"{title} ({len(indexed_orders)} orders)\n" + "\n".join(f"{LOG_INDENT}{v}" for k, v in indexed_orders.items())
+    def _section(self, title, indexed_orders: dict):
+        return f"{title} ({len(indexed_orders)} orders)\n" + "\n".join(f"{LOG_INDENT}{v}" for k, v in indexed_orders.items())
 
     def get_listings_str(self, processing_only: bool=True):
         processing_only = self.print_processing_only
 
         sections = []
         if self._indexed_sent_for_submit:
-            sections.append(self._section("[OrderBook] sent for submit", None, self._indexed_sent_for_submit))
+            sections.append(self._section("[OrderBook] sent for submit", self._indexed_sent_for_submit))
         if self._indexed_incompleted_orders:
-            sections.append(self._section("[OrderBook] incompleted orders", None, self._indexed_incompleted_orders))
-        if self._completed_orders and not processing_only:
-            sections.append(self._section("[OrderBook] completed orders", self._completed_orders, None))
+            sections.append(self._section("[OrderBook] incompleted orders", self._indexed_incompleted_orders))
+        if self._indexed_completed_orders and not processing_only:
+            sections.append(self._section("[OrderBook] completed orders", self._indexed_completed_orders))
         if not sections:
             return "[OrderBook] no orders under processing"
         return "\n".join(sections)
+
+    def update_performance_metric(self, pm: PerformanceMetric):
+        # if pm.code != self.code: return None
+        pm.holding = self.current_holding
+        pm.avg_price = self.avg_price
+        pm.bep_price = self.bep_price
+        pm.principle_cash_used = self.principle_cash_used
+        pm.total_cost_incurred = self.total_cost_incurred
+        pm.total_cash_used = self.total_cash_used
+
+    async def process_sync(self, sync: Sync):
+        if self.agent_id != sync.agent_id: log_raise(f'[OrderBook] sync error - agent {self.agent_id}, received {sync.agent_id}')
+        async with self._lock:
+            # incompleted orders
+            ires, imsg = compare_indexed_listings(self._indexed_incompleted_orders, sync.incompleted_orders)
+            cres, cmsg = compare_indexed_listings(self._indexed_completed_orders, sync.completed_orders)
+            if ires and cres:
+                optlog.info(f'[OrderBook] agent {self.agent_id} sync done: all order history matches', name=self.agent_id)
+            else: 
+                msg = f'[OrderBook] agent {self.agent_id} updated with server OrderManager data:'
+                if not ires:
+                    msg += f'    [incompleted orders updated]\n' + imsg
+                if not cres:
+                    msg += f'    [completed orders updated]\n' + cmsg
+                optlog.warning(msg, name=self.agent_id)
+
+            self._indexed_incompleted_orders = sync.incompleted_orders
+            self._indexed_completed_orders = sync.completed_orders
 
     async def process_tr_notice(self, notice: TransactionNotice, trenv):
         # reroute notice to corresponding order
@@ -161,7 +177,7 @@ class OrderBook:
                 # if order is completed or canceled, move to completed_orders
                 if order.completed or order.cancelled:
                     self._indexed_incompleted_orders.pop(order.order_no)
-                    self._completed_orders.append(order)   
+                    self._indexed_completed_orders[order.order_no] = order
             else: 
                 # log_raise(f"Order not found in incompleted_orders for notice {notice.oder_no}, notice: {notice} ---", name=self.agent_id)
                 # just in case race condition occurs
@@ -220,5 +236,3 @@ class OrderBook:
         # as process_tr_notice requires _lock, take this out from _lock
         for trn in unhandled:
             await self.process_tr_notice(trn, self.trenv)
-
-

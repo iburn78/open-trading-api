@@ -72,7 +72,7 @@ def set_logger(fname: str|None = None, flevel = F_LEVEL, slevel= S_LEVEL,
             datefmt=DATE_FMT
         )
         log_file = os.path.join(log_dir, f'{fname}.log')
-        fh = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
+        fh = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count, encoding='utf-8')
         fh.setFormatter(formatter)
         fh.setLevel(flevel)
 
@@ -200,6 +200,7 @@ def log_filter(
         f.writelines(filtered)
 
     print(f"Extracted {len(filtered)} log entries → {outfile}")
+    print(''.join(filtered))
 
 
 def grep_logs(search_str: str, infile_name: str, outfile: str | None = None):
@@ -238,3 +239,4 @@ def grep_logs(search_str: str, infile_name: str, outfile: str | None = None):
         f.writelines(filtered)
 
     print(f"Found {len(filtered)} matching log entries → {outfile}")
+    print(''.join(filtered))

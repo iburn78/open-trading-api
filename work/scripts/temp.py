@@ -12,6 +12,10 @@
 # or need to make it a choice
 # should be able to pick up exactly where it stands
 
+
+
+
+
+#####
+# viewing the snapshot of an agent
 # agant orderbook has to have parse function 
-
-

@@ -6,7 +6,7 @@ from .conn_agents import ConnectedAgents
 from .order_manager import OrderManager
 from core.common.optlog import optlog, LOG_INDENT
 from core.model.agent import AgentCard
-from core.common.interface import RequestCommand, ClientRequest, ServerResponse
+from core.common.interface import RequestCommand, ClientRequest, ServerResponse, Sync
 from core.kis.domestic_stock_functions_ws import ccnl_krx, ccnl_total
 from core.kis.api_tools import get_psbl_order
 
@@ -61,6 +61,34 @@ async def handle_register_agent_card(client_request: ClientRequest, writer, **se
     resp.data_dict['trenv'] = server_data_dict.get("trenv")
     return resp
 
+# agent sync with server 
+async def handle_sync_order_history(client_request: ClientRequest, writer, **server_data_dict):
+    agent_id: str = client_request.get_request_data()
+    connected_agents: ConnectedAgents = server_data_dict.get('connected_agents')
+    agent_card: AgentCard = connected_agents.get_agent_card_by_id(agent_id)
+    order_manager: OrderManager = server_data_dict.get('order_manager')
+
+    sync: Sync = await order_manager.get_agent_sync(agent_card)
+
+    # return with sync data
+    resp = ServerResponse(True, "sync request submitted")
+    resp.data_dict['sync_data'] = sync
+    return resp
+
+async def handle_sync_complate_notice(client_request: ClientRequest, writer, **server_data_dict):
+    agent_id: str = client_request.get_request_data()
+    connected_agents: ConnectedAgents = server_data_dict.get('connected_agents')
+    agent_card: AgentCard = connected_agents.get_agent_card_by_id(agent_id)
+    order_manager: OrderManager = server_data_dict.get('order_manager')
+
+    success = order_manager.agent_sync_completed_lock_release(agent_card)
+    # return with sync data
+    if success:
+        resp = ServerResponse(success, "sync-release completed")
+    else: 
+        resp = ServerResponse(success, "")
+    return resp
+
 # Agent의 관리 종목(code) 실시간 시세에 대해 subscribe / unsubscribe
 # when disconnected, auto-unsubscribe (or use subs_manager.remove(subs_name, agent_card), where subs_name is ccnl_krx or ccnl_total, etc)
 async def handle_subscribe_trp_by_agent_card(client_request: ClientRequest, writer, **server_data_dict):
@@ -88,12 +116,14 @@ async def handle_get_psbl_order(client_request: ClientRequest, writer, **server_
     return resp
 
 # ------------------------------------------------------------
-# Command registry - UNIQUE PLACE TO REGISTER
+# Command registry - UNIQUE PLACE TO REGISTER in the server side
 # ------------------------------------------------------------
 COMMAND_HANDLERS = {
     RequestCommand.SUBMIT_ORDERS: handle_submit_orders, 
     RequestCommand.CANCEL_ALL_ORDERS_BY_AGENT: handle_cancel_all_orders_by_agent, 
     RequestCommand.REGISTER_AGENT_CARD: handle_register_agent_card, 
+    RequestCommand.SYNC_ORDER_HISTORY: handle_sync_order_history,
+    RequestCommand.SYNC_COMPLETE_NOTICE: handle_sync_complate_notice,
     RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD: handle_subscribe_trp_by_agent_card, 
     RequestCommand.GET_PSBL_ORDER: handle_get_psbl_order,
 }

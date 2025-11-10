@@ -8,6 +8,8 @@ class RequestCommand(Enum):
     SUBMIT_ORDERS = auto()
     CANCEL_ALL_ORDERS_BY_AGENT = auto() # sepcial kind of submit_orders in fact - no need to provide RC orders instead (logic implemented)
     REGISTER_AGENT_CARD = auto()
+    SYNC_ORDER_HISTORY = auto()
+    SYNC_COMPLETE_NOTICE = auto()
     SUBSCRIBE_TRP_BY_AGENT_CARD = auto()
     GET_PSBL_ORDER = auto()
 
@@ -32,6 +34,10 @@ class ClientRequest:
             if not isinstance(request_data, list): 
                 log_raise('invalid request_data type')
         
+        elif self.command == RequestCommand.SYNC_ORDER_HISTORY or self.command == RequestCommand.SYNC_COMPLETE_NOTICE: 
+            if not isinstance(request_data, str): 
+                log_raise('invalid request_data type')
+
         elif self.command == RequestCommand.GET_PSBL_ORDER: 
             if not isinstance(request_data, tuple): 
                 log_raise('invalid request_data type')
@@ -63,3 +69,9 @@ class ServerResponse:
 
     def get_id(self): 
         return self._request_id
+
+@dataclass
+class Sync:
+    agent_id: str | None = None
+    incompleted_orders: dict | None = None
+    completed_orders: dict | None = None

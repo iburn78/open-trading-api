@@ -8,6 +8,7 @@ import time
 
 from core.common.setup import data_dir, disk_save_period
 from core.common.optlog import optlog, log_raise, LOG_INDENT
+from core.common.interface import Sync
 from core.model.agent import AgentCard, dispatch
 from core.model.order import Order, ReviseCancelOrder
 from core.kis.ws_data import TransactionNotice, RCtype, AllYN
@@ -115,6 +116,27 @@ class OrderManager:
                     res = res + f'{LOG_INDENT}  - {agent_id}: {o}\n'
             res = res + f'{LOG_INDENT}  {COMPLETED_ORDERS}: { {agent_id: len(orders) for agent_id, orders in code_map[COMPLETED_ORDERS].items()} }\n'
         return res.strip()
+
+    async def get_agent_sync(self, agent: AgentCard):
+        lock = self._locks[agent.code]
+        await lock.acquire()
+        date_=date.today().isoformat()
+        date_map = self.map.setdefault(date_, {})
+        code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
+        ios = code_map[INCOMPLETED_ORDERS].setdefault(agent.id, {})
+        cos = code_map[COMPLETED_ORDERS].setdefault(agent.id, {})
+        optlog.debug(f"[OrderManager] agent sync data sent", name=agent.id)
+        return Sync(agent.id, ios, cos)
+
+    def agent_sync_completed_lock_release(self, agent: AgentCard):
+        lock = self._locks[agent.code]
+        if lock and lock.locked():
+            lock.release()
+            optlog.debug(f"[OrderManager] agent sync lock released for code {agent.code}", name=agent.id)
+            return True
+        else:
+            log_raise(f"[OrderManager] agent sync lock released FAILED for code {agent.code}", name=agent.id)
+            return False
 
     async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order], trenv, date_=None):
         if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should have not been submitted ---', name=agent.id)

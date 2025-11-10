@@ -6,9 +6,9 @@ from .order import Order
 from .client import PersistentClient
 from .order_book import OrderBook
 from .price import MarketPrices
-from ..common.interface import RequestCommand, ClientRequest, ServerResponse
+from ..common.interface import RequestCommand, ClientRequest, ServerResponse, Sync
 from .perf_metric import PerformanceMetric
-from ..common.optlog import optlog
+from ..common.optlog import optlog, log_raise
 from ..common.setup import TradePrinciples
 from ..common.tools import adj_int
 from ..strategy.strategy import StrategyBase, StrategyCommand, StrategyFeedback, FeedbackKind
@@ -164,6 +164,7 @@ class Agent:
         """
         await self.client.connect()
 
+        # Registration part
         register_request = ClientRequest(command=RequestCommand.REGISTER_AGENT_CARD)
         register_request.set_request_data(self.card) 
         register_resp: ServerResponse = await self.client.send_client_request(register_request)
@@ -171,9 +172,26 @@ class Agent:
         if not register_resp.success:
             await self.client.close()
             return 
-
         self.trenv = register_resp.data_dict['trenv'] # trenv should be in data, otherwise let it raise here
 
+        # Sync part - getting sync data
+        sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
+        sync_request.set_request_data(self.id)
+        sync_resp: ServerResponse = await self.client.send_client_request(sync_request)
+        optlog.debug(f'[ServerResponse] {sync_resp}', name=self.id)
+        sync = sync_resp.data_dict.get("sync_data") 
+        await self.order_book.process_sync(sync)
+
+        # Sync part - releasing lock
+        release_request = ClientRequest(command=RequestCommand.SYNC_COMPLETE_NOTICE)
+        release_request.set_request_data(self.id)
+        release_resp: ServerResponse = await self.client.send_client_request(release_request)
+        if release_resp.success:
+            optlog.debug(f'[ServerResponse] {release_resp} sync-release completed', name=self.id)
+        else: 
+            log_raise(f"lock release failed ---", name=self.id)
+
+        # Subscription part
         subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD)
         subs_request.set_request_data(self.card) 
         subs_resp: ServerResponse = await self.client.send_client_request(subs_request)
@@ -230,9 +248,8 @@ class Agent:
     async def handle_str(self, msg):
         optlog.info(f"[Agent] dispatched message: {msg}", name=self.id)
 
-    # dict should not have 'request_id' key, as it can be confused with a certain response to a specific request
-    async def handle_dict(self, data):
-        optlog.info(f"[Agent] dispatched dict: {data}", name=self.id)
+    async def handle_dict(self, dict_data):
+        optlog.info(f"[Agent] dispatched dict: {dict_data}", name=self.id)
 
     async def handle_order(self, order: Order):
         optlog.info(f"[submit result received] {order}", name=self.id) 
@@ -267,7 +284,7 @@ async def dispatch(to: AgentCard | list[AgentCard], message: object):
         try:
             agent.writer.write(msg_bytes)
             await agent.writer.drain()  # await ensures exceptions are caught here
-        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
-            optlog.error(f"[Agent] agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed.", name=agent.id, exc_info=True)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as e:
+            optlog.error(f"[Agent] agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed: {e}", name=agent.id)
         except Exception as e:
             optlog.error(f"[Agent] unexpected dispatch error: {e}", name=agent.id, exc_info=True)
