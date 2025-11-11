@@ -68,18 +68,28 @@ or more modern way
     - pip install numpy -U --extra-index-url https://pypi.anaconda.org/intel/simple
 
 ## To develop
-### [incremental]
-- make it run each agent only once: use local lock file method etc
-- manage agents using AgentManager (easy to see like EXCEL)
 
 ### [big topics]
 - Risk management and position Limits etc... 
 - Disaster recovery (disconnect from the KIS API server - how to reconnect safely)
 - Save state (to disk) 
-- State reconciliation - sync with account (periodically)
+- State reconciliation - e.g., periodic sync with account and OrderManager/Agent
 - Monitoring and alert / overall dashboard on health and status
 - Back-testing framework
 - Configuration management - centralized control/constants/set-up panel
 - Testing (how?)
 - Documentation
 - Performance profiling with cProfile(sync), yappi(async)
+
+### [AgentManager related]
+- make it run each agent only once: use local lock file method etc
+- manage agents (easy to see like EXCEL)
+- agent manager to use multi threads or multi cmd/terminal 
+
+### [immediate next]
+- viewing the snapshot of an agent (using rich or FastAPI etc for web)
+- performance measure: agant orderbook has to have parse function (to get the summary of orders)
+- sync with account
+- minimum functional AgentManager 
+    * assigns codes / allocation / strategy from Excel
+- revise brute-rand to be fully functional

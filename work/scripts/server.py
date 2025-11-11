@@ -192,6 +192,8 @@ async def server(shutdown_event: asyncio.Event):
         tg.create_task(order_manager.persist_to_disk())
         tg.create_task(order_manager.check_pending_trns_timeout())
 
+        await shutdown_event.wait() # the task group doesn't exit instantly
+
 if __name__ == "__main__":
     sep = "\n======================================================================================"
     optlog.info("[Server] server initiated..."+sep)
@@ -201,5 +203,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         optlog.info("[Server] server stopped by user (Ctrl+C)"+sep)
         shutdown_event.set()
-
-
+    except asyncio.CancelledError:
+        optlog.info("[Server] tasks cancelled cleanly" + sep)
+    finally:
+        optlog.info("[Server] shutdown complete" + sep)

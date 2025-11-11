@@ -8,6 +8,22 @@ from core.common.optlog import optlog
 from core.model.agent import Agent
 from core.strategy.brute_rand import BruteForceRandStrategy
 
+# from rich.live import Live
+# from rich.table import Table
+
+# async def monitor_agent_live(agent, interval=1):
+#     with Live(refresh_per_second=4) as live:
+#         while not agent.hardstop_event.is_set():
+#             table = Table(title=f"Agent {agent.id} Status")
+#             table.add_column("Var", justify="right")
+#             table.add_column("Value", justify="left")
+
+#             table.add_row("holding", f"{agent.order_book.current_holding:,.0f}")
+#             table.add_row("Holdings", str(agent.pm.total_allocated_cash))
+
+#             live.update(table)
+#             await asyncio.sleep(interval)
+
 async def main(sw=None): # switch
     if sw == "1":
         A = Agent(id = 'A1', code = '000660', strategy=BruteForceRandStrategy())
@@ -18,12 +34,15 @@ async def main(sw=None): # switch
         B.define_initial_state(total_allocated_cash=10000000)
         task2 = asyncio.create_task(B.run())  
 
+        # task_monitor = asyncio.create_task(monitor_agent_live(A))
+
         await asyncio.sleep(1000)
 
         A.hardstop_event.set()
         B.hardstop_event.set()
 
         await asyncio.gather(task1, task2)
+        # await asyncio.gather(task1, task2, task_monitor)
 
     else: 
         C = Agent(id = 'Ci', code = '055490')

@@ -48,14 +48,14 @@ class OrderManager:
                 order_no: [trn, trn, ...],
                 ...
             }
-            incompleted_orders: {
+            incompleted_orders: {  # indexed
                 agent_id: {order_no: order, order_no: order}
                 agent_id: {order_no: order, order_no: order}
                 ...
             }
-            completed_orders: {
-                agent_id: [order, order, ...], 
-                agent_id: [order, order, ...],
+            completed_orders: {  # indexed
+                agent_id: {order_no: order, order_no: order}
+                agent_id: {order_no: order, order_no: order}
                 ...
             }
         },
@@ -65,14 +65,14 @@ class OrderManager:
                 order_no: [trn, trn, ...],
                 ...
             }
-            incompleted_orders: {
+            incompleted_orders: {  # indexed
                 agent_id: {order_no: order, order_no: order}
                 agent_id: {order_no: order, order_no: order}
                 ...
             }
-            completed_orders: {
-                agent_id: [order, order, ...], 
-                agent_id: [order, order, ...],
+            completed_orders: {  # indexed
+                agent_id: {order_no: order, order_no: order}
+                agent_id: {order_no: order, order_no: order}
                 ...
             }
         },
@@ -114,7 +114,10 @@ class OrderManager:
             for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items():
                 for k, o in orders_dict.items():
                     res = res + f'{LOG_INDENT}  - {agent_id}: {o}\n'
-            res = res + f'{LOG_INDENT}  {COMPLETED_ORDERS}: { {agent_id: len(orders) for agent_id, orders in code_map[COMPLETED_ORDERS].items()} }\n'
+            res = res + f'{LOG_INDENT}  {COMPLETED_ORDERS}: { {agent_id: len(orders_dict) for agent_id, orders_dict in code_map[COMPLETED_ORDERS].items()} }\n'
+            for agent_id, orders_dict in code_map[COMPLETED_ORDERS].items():
+                for k, o in orders_dict.items():
+                    res = res + f'{LOG_INDENT}  - {agent_id}: {o}\n'
         return res.strip()
 
     async def get_agent_sync(self, agent: AgentCard):
@@ -208,7 +211,7 @@ class OrderManager:
                         # let it raise
                         log_raise(f'order.agent_id {order.agent_id} and notice.oder_no {notice.oder_no} mismatches ---', name=order.agent_id) 
                     # add to completed_orders
-                    code_map[COMPLETED_ORDERS].setdefault(order.agent_id, []).append(order)
+                    code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[order.order_no] = order
 
                 agent = connected_agents.get_agent_card_by_id(order.agent_id)
                 if agent: # if agent is still connected
