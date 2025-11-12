@@ -164,7 +164,7 @@ class OrderManager:
                 await dispatch(agent, order)  
 
             # registration
-            if order.order_no:
+            if order.submitted: # when order_no is assigned successfully
                 async with self._locks[order.code]:
                     date_map = self.map.setdefault(date_, {})
                     code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})

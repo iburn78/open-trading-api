@@ -8,7 +8,7 @@ class PerformanceMetric:
     code: str | None = None
 
     # initial setup data (set through agent)
-    total_allocated_cash: int | None = None
+    total_allocated_cash: int | None = None # this is pure cash, not including the initial holding
     initial_holding: int | None = None
     avg_price_initial_holding: int | None = None
     bep_price_initial_holding: int | None = None 

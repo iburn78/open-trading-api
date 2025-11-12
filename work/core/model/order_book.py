@@ -213,7 +213,7 @@ class OrderBook:
             self._indexed_sent_for_submit.pop(matched_order.unique_id)
 
             # order submission failure - revert and return
-            if dispatched_order.order_no is None: # this has to be checking with dispatched_order, but revert with matched_order
+            if not dispatched_order.submitted: # this has to be checking with dispatched_order, but revert with matched_order
                 # Revert the dashboard 
                 if matched_order.side == SIDE.BUY:
                     self.on_buy_order -= matched_order.quantity
@@ -225,7 +225,7 @@ class OrderBook:
                     self.on_sell_order -= matched_order.quantity
                 return
 
-            # order success
+            # order successfully submitted
             self._indexed_incompleted_orders[dispatched_order.order_no] = dispatched_order
 
             # processing unhandled trns here

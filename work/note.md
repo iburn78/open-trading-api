@@ -93,3 +93,5 @@ or more modern way
 - minimum functional AgentManager 
     * assigns codes / allocation / strategy from Excel
 - revise brute-rand to be fully functional
+
+- ON STARTUP implement updating market_prices... even before getting trps (may be not)

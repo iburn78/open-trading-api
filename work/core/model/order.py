@@ -25,10 +25,10 @@ class Order:
     # to be filled by server upon submission
     org_no: str | None = None
     order_no: str | None = None
-    submitted_time: str | None = None
+    submitted_time: str | None = None 
 
     # control flags
-    submitted: bool = False
+    submitted: bool = False # if order_no is assgined, then submitted == True
     accepted: bool = False
     completed: bool = False
     cancelled: bool = False 
@@ -100,6 +100,8 @@ class Order:
         else: 
             if pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
                 log_raise("Check submission response ---", name=self.agent_id)
+            elif not isinstance(res.ODNO.iloc[0], str) or len(res.ODNO.iloc[0]) == 0: 
+                log_raise(f"Check submission response (ODNO) {res.ODNO.iloc[0]}---", name=self.agent_id)
             self.order_no = res.ODNO.iloc[0]
             self.submitted_time = res.ORD_TMD.iloc[0]
             self.org_no = res.KRX_FWDG_ORD_ORGNO.iloc[0]
