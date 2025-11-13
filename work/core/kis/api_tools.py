@@ -25,4 +25,4 @@ def get_psbl_order(trenv, code: str, ord_dvsn: ORD_DVSN, price: int):
     q_ = res['nrcvb_buy_qty'].iloc[0] # 미수없는 매수수량
     p_ = res['psbl_qty_calc_unpr'].iloc[0] # 가능수량계산단가(시장가)
 
-    return int(a_), int(q_), int(p_)
+    return int(a_), int(q_), int(p_) # returned as int

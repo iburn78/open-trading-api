@@ -21,6 +21,7 @@ class Order:
 
     # auto gen
     unique_id: str = field(default_factory=lambda: pd.Timestamp.now().strftime('%Y%m%d%H%M%S%f'))
+    str_id: str | None = None # strategy command id, which generated this order
 
     # to be filled by server upon submission
     org_no: str | None = None

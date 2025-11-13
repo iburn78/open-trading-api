@@ -21,6 +21,8 @@ class OrderBook:
     print_processing_only: bool = True 
 
     # private order lists - use setter functions for calculating dashboard info real time
+    _indexed_submission_failure_orders: dict["str_id": str, Order] = field(default_factory=dict)
+    _non_str_origin_failure_orders: list[Order] =field(default_factory=list)
     _indexed_sent_for_submit: dict["unique_id": str, Order] = field(default_factory=dict) # sent to server repository / once server sent it to KIS API, submitted orders will be sent back via on_dispatch
     _indexed_incompleted_orders: dict["order_no": str, Order] = field(default_factory=dict)
     _indexed_completed_orders: dict["order_no": str, Order] = field(default_factory=dict)
@@ -153,8 +155,13 @@ class OrderBook:
                         self.on_MARKET_buy_quantity += -delta_qty
                     
                     # update stats
-                    self.avg_price = adj_int((self.current_holding*self.avg_price + delta_amount)/(self.current_holding+delta_qty) if delta_qty > 0 else self.avg_price)
-                    self.bep_price = adj_int((self.current_holding*self.bep_price + delta_amount + delta_cost)/(self.current_holding+delta_qty) if delta_qty > 0 else self.bep_price)
+                    ###_ LOGIC CHECK HERE !!!
+                    if self.current_holding+delta_qty == 0:
+                        self.avg_price = 0
+                        self.bep_price = 0
+                    else:
+                        self.avg_price = adj_int((self.current_holding*self.avg_price + delta_amount)/(self.current_holding+delta_qty) if delta_qty > 0 else self.avg_price)
+                        self.bep_price = adj_int((self.current_holding*self.bep_price + delta_amount + delta_cost)/(self.current_holding+delta_qty) if delta_qty > 0 else self.bep_price)
 
                     self.current_holding += delta_qty
                     self.total_purchased += delta_qty
@@ -214,7 +221,7 @@ class OrderBook:
 
             # order submission failure - revert and return
             if not dispatched_order.submitted: # this has to be checking with dispatched_order, but revert with matched_order
-                # Revert the dashboard 
+                # revert the dashboard 
                 if matched_order.side == SIDE.BUY:
                     self.on_buy_order -= matched_order.quantity
                     if matched_order.ord_dvsn == ORD_DVSN.LIMIT:
@@ -223,6 +230,12 @@ class OrderBook:
                         self.on_MARKET_buy_quantity -= matched_order.quantity # this is quantity
                 else:
                     self.on_sell_order -= matched_order.quantity
+
+                # save dispatched_order for record keeping by strategy id
+                if dispatched_order.str_id:
+                    self._indexed_submission_failure_orders[dispatched_order.str_id] = dispatched_order
+                else: 
+                    self._non_str_origin_failure_orders.append(dispatched_order)
                 return
 
             # order successfully submitted

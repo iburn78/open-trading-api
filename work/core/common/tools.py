@@ -32,7 +32,6 @@ def get_market(code):
     words = market.replace("_", " ").split()
     return words[0].upper()
 
-
 # indexed_listing = {key: item, key: item}
 def compare_indexed_listings(prev: dict, new: dict):
     # check if equal (using __eq__ in the item object)
@@ -53,3 +52,5 @@ def compare_indexed_listings(prev: dict, new: dict):
         diff_msg += f'    {key} newly added: \n'
         diff_msg += f'        new: {new.get(key)}\n'
     return False, diff_msg
+
+

@@ -29,6 +29,7 @@ _subscription_lock = threading.Lock()
 clearConsole = lambda: os.system("cls" if os.name in ("nt", "dos") else "clear")
 # logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 # logger = logging.getLogger(__name__)
+# here 'logger' is introduced to replace 'print' in the original code to 'optlog'
 logger = ModuleLogger(optlog, default_name="kis_auth")
 
 key_bytes = 32
@@ -167,10 +168,13 @@ def getTREnv():
 def smart_sleep():
     if _DEBUG:
         logger.info(f"[RateLimit] Sleeping {_smartSleep}s")
-    if _isPaper:
-        time.sleep(_demoSleep)
-    else: 
-        time.sleep(_smartSleep)
+    try:
+        if _isPaper:
+            time.sleep(_demoSleep)
+        else: 
+            time.sleep(_smartSleep)
+    except KeyboardInterrupt:
+        logger.debug(f'smart_sleep stopped by KeyboardInterrupt')
 
 def _getResultObject(json_data):
     _tc_ = namedtuple("res", json_data.keys())
@@ -357,7 +361,7 @@ class APIRespError(APIResp):
         )
 
     def printError(self, url=""):
-        logger.error(f"Error Code : {self.status_code} | {self.error_text}")
+        logger.error(f"[APIRespError] Error Code: {self.status_code} | {self.error_text}")
         if url:
             logger.error(f"URL: {url}")
 
@@ -404,7 +408,7 @@ def _url_fetch(
             ar.printAll()
         return ar
     else:
-        logger.error(f"Error Code : {res.status_code} | {res.text}")
+        logger.error(f"[_url_fetch] Error Code: {res.status_code} | {res.text}")
         return APIRespError(res.status_code, res.text)
 
 
@@ -924,3 +928,6 @@ class KISWebSocket:
         except asyncio.CancelledError:
             logger.info("Closing by cancel (e.g., by task-group cancel or keyboard)")
             raise  # re-raise for proper TaskGroup shutdown
+        except KeyboardInterrupt:
+            logger.info("Closing by cancel (e.g., by task-group cancel or keyboard)")
+            raise 

@@ -1,8 +1,11 @@
 import logging
 from logging.handlers import RotatingFileHandler
-import inspect, os
+import inspect, os, platform
 import re
 from datetime import datetime
+
+system = platform.system()
+if system == "Windows": import winsound
 
 # --- Global logger instance ---
 optlog: logging.Logger | None = None
@@ -46,6 +49,42 @@ class BriefFormatter(logging.Formatter):
             record.shortname = '[ ]'
         return super().format(record)
 
+# ----------------------------------------
+# sound notification
+# ----------------------------------------
+BEEP_LEVEL = logging.WARNING # overall threshold
+
+class BeepFilter(logging.Filter):
+    def filter(self, record):
+        # Called before emitting; return True to allow record through
+        if record.levelno >= BEEP_LEVEL:
+            self.beep(record.levelno)
+        return True
+
+    def beep(self, levelno):
+        # Map log level to frequency & duration
+        if levelno >= logging.CRITICAL:
+            freq, dur = 900, 500
+        elif levelno >= logging.ERROR:
+            freq, dur = 600, 400
+        elif levelno >= logging.WARNING:
+            freq, dur = 400, 200
+        else: # if used
+            freq, dur = 400, 200
+
+        notice_beep(freq, dur, msg=False)
+
+def notice_beep(freq=400, dur=200, msg=True):
+    if system == "Windows":
+        if msg: 
+            winsound.MessageBeep()
+        else:
+            winsound.Beep(freq, dur)
+    elif system == "Darwin":
+        os.system("say 'beep'")
+    else:  # Linux / Unix
+        print('\a')
+
 def set_logger(fname: str|None = None, flevel = F_LEVEL, slevel= S_LEVEL,
             max_bytes=MAX_BYTES, backup_count=BACKUP_COUNT) -> logging.Logger:
     """
@@ -82,6 +121,7 @@ def set_logger(fname: str|None = None, flevel = F_LEVEL, slevel= S_LEVEL,
 
         optlog.addHandler(fh)
         optlog.addHandler(sh)
+        optlog.addFilter(BeepFilter())
 
         # --- Wrap standard methods to allow name= dynamically ---
         for level in ["debug", "info", "warning", "error", "critical"]:
@@ -126,7 +166,6 @@ class ModuleLogger:
 # logger = ModuleLogger(optlog, default_name="KIS_ORIGNIAL_CODES")
 # logger.info("Hello world")       # logs: "KIS_ORIGNIAL_CODES> Hello world"
 # logger.error("Something failed") # logs: "KIS_ORIGINAL_CODES> Something failed"# 
-
 
 
 # -------------------------------------------------------------------------------
