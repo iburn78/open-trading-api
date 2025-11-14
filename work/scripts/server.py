@@ -106,7 +106,6 @@ async def handler_shell(reader, writer):
     finally:
         await client_disconnect_clean_up(addr, writer)
 
-
 async def client_disconnect_clean_up(addr, writer):
     port = addr[1]
     agent = connected_agents.get_agent_card_by_port(port)
@@ -130,7 +129,6 @@ async def _safe_run(desc, coro, timeout_key, agent_id=None):
         optlog.error(f"    {desc} timeout", name=agent_id)
     except Exception as e:
         optlog.error(f"    {desc} failed: {e}", name=agent_id, exc_info=True)
-
 
 async def _safe_close_writer(writer, agent_id=None):
     """Safely close an asyncio StreamWriter with timeout and log suppression."""

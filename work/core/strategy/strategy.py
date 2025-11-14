@@ -1,11 +1,9 @@
 from abc import ABC, abstractmethod
 import asyncio
 
-from ..common.optlog import optlog, log_raise
-from ..common.setup import TradePrinciples
+from ..common.optlog import log_raise
 from ..common.tools import adj_int
 from ..kis.ws_data import SIDE, ORD_DVSN
-from ..model.order_book import OrderBook
 from ..model.price import MarketPrices
 from ..model.perf_metric import PerformanceMetric
 from ..model.strategy_util import StrategyRequest, StrategyCommand, UpdateEvent, StrategyResponse
@@ -20,11 +18,15 @@ class StrategyBase(ABC):
     def __init__(self):
         self.agent_id = None
         self.code = None
-        self.order_book: OrderBook | None = None
-        self.market_prices: MarketPrices | None = None
-        self.pm: PerformanceMetric | None = None # through pm, strategy itself can access initial data of the agent
-        self.trade_principles: TradePrinciples | None = None
-        self.strict_API_check_required: bool = False 
+
+        # snapshot data to use in making strategy
+        # -----------------------------------------------------------------
+        self.mprice: MarketPrices | None = None
+        # - can safely assume market price is initialized
+        self.pm: PerformanceMetric | None = None 
+        # - through pm, access to initial data of the agent possible
+        # - self.update_pm() is called on every on_update through on_update_shell
+        # -----------------------------------------------------------------
 
         # Strategy - Agent communication channel (only used in StrategyBase and Agent, internal for both)
         self._command_queue: asyncio.Queue[StrategyCommand | bool] = asyncio.Queue() 
@@ -33,24 +35,25 @@ class StrategyBase(ABC):
         self._price_update_event: asyncio.Event = asyncio.Event()
         self._trn_receive_event: asyncio.Event = asyncio.Event()
 
-        # order history control data
+        # order history data: ever increasing
         self.failed_to_sent_strategy_command: list = []
-        self.sent_strategy_command: list = []
+        self.sent_strategy_command: list = [] # successfully sent ones 
 
-        self._on_update_lock: asyncio.Lock = asyncio.Lock()
+        # others
+        self.strict_API_check_required: bool = False 
         self.str_name = self.__class__.__name__ # subclass name
+        self._on_update_lock: asyncio.Lock = asyncio.Lock()
 
-    def link_agent_data(self, agent_id, code, trade_principles: TradePrinciples, order_book: OrderBook, market_prices: MarketPrices, perf_metric: PerformanceMetric, str_API: bool = False):
+    def link_agent_data(self, agent_id, code, market_prices: MarketPrices, perf_metric: PerformanceMetric, str_API: bool = False):
         self.agent_id = agent_id
         self.code = code
-        self.trade_principles = trade_principles
-        self.order_book = order_book
-        self.market_prices = market_prices  
+        self.mprice = market_prices  
         self.pm = perf_metric
         self.strict_API_check_required: bool = str_API 
-    
+
     async def logic_run(self):
         # initial run
+        self.pm.update() 
         await self.on_update_shell(UpdateEvent.INITIATE)
 
         async with asyncio.TaskGroup() as tg:
@@ -85,11 +88,11 @@ class StrategyBase(ABC):
     async def on_update(self, update_event: UpdateEvent):
         # this runs on events: initiate / price / trn / order_receive
         # -----------------------------------------------------------------
-        # strategy should be based on the snapshot(states) of the agent, not simply responding to the event
+        # strategy should be based on the snapshot(states) of the agent: pm and mprice
         # -----------------------------------------------------------------
         pass
 
-    async def send_str_command(self, str_command: StrategyCommand) -> StrategyResponse:
+    async def _send_str_command(self, str_command: StrategyCommand) -> StrategyResponse:
         await self._command_queue.put(str_command)
         response: StrategyResponse = await self._response_queue.get()
         if response.request != str_command.request:
@@ -99,40 +102,21 @@ class StrategyBase(ABC):
     async def order_submit(self, str_command: StrategyCommand):
         if str_command.request != StrategyRequest.ORDER:
             log_raise(f'[Strategy] StrategyRequest type not correctly set as {str_command.request}, reset to ORDER necessary', name=self.agent_id)
-        sent: bool = await self.send_str_command(str_command) 
-        if sent:
-            self.sent_strategy_command.append(str_command)
-        else:
+        valid: bool = await self.validate_strategy_order(str_command)
+        if not valid:
             self.failed_to_sent_strategy_command.append(str_command)
-        return sent
+            return False
+        else:
+            sent: bool = await self._send_str_command(str_command) 
+            if sent:
+                self.sent_strategy_command.append(str_command)
+            else:
+                self.failed_to_sent_strategy_command.append(str_command)
+            return sent
 
-    def get_agent_available_cash(self):
-        cp = self.market_prices.current_price
-        if cp is None:
-            # strategy running only when initial market price is ready
-            optlog.error(f'[Agent] market prices not yet initalized - aborted', name=self.id)
-            return None 
-        
-        # account for pending orders
-        on_LIMIT_order_amount = self.order_book.on_LIMIT_buy_amount*(1+TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN)
-        on_MARKET_order_amount = self.order_book.on_MARKET_buy_quantity*cp*(1+TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)
-
-        # current exact available cash
-        return self.pm.total_allocated_cash - self.order_book.total_cash_used - on_LIMIT_order_amount - on_MARKET_order_amount
-    
-    def get_max_MARKET_buy_amount(self):
-        ac = self.get_agent_available_cash()
-        return adj_int(ac*(1-TradePrinciples.MARKET_ORDER_SAFETY_MARGIN))
-
-    def get_max_LIMIT_buy_amount(self):
-        ac = self.get_agent_available_cash()
-        return adj_int(ac*(1-TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN))
-    
-    def get_max_sell_quantity(self):
-        agent_holding = self.pm.initial_holding + self.order_book.current_holding
-        # has to account for pending orders
-        return agent_holding - self.order_book.on_sell_order
-
+    # -----------------------------------------------------------------
+    # validators
+    # -----------------------------------------------------------------
     # internal logic checking before sending strategy command to the API server
     async def validate_strategy_order(self, str_cmd: StrategyCommand) -> bool:
         """
@@ -143,25 +127,26 @@ class StrategyBase(ABC):
         - Sufficient holdings for sell orders  
         - Market price availability for market orders
         """
+        self.pm.update() # final check, so update
         if str_cmd.side == SIDE.BUY:
             if str_cmd.ord_dvsn == ORD_DVSN.MARKET:
                 # [check 1] check if agent has enough cash (stricter cond-check)
-                exp_amount = adj_int(str_cmd.quantity*self.market_prices.current_price) # best guess with current price, and approach conservatively with margin
-                # if exp_amount > self.get_max_MARKET_buy_amount():
-                #     return False
+                exp_amount = adj_int(str_cmd.quantity*self.mprice.current_price) # best guess with current price, and approach conservatively with margin
+                if exp_amount > self.pm.max_MARKET_buy_amount:
+                    return False
 
                 # [check 2] check if the account API allows it 
                 if self.strict_API_check_required:
                     check_command = StrategyCommand(request=StrategyRequest.PSBL_QUANTITY, ord_dvsn=str_cmd.ord_dvsn, price=str_cmd.price)
-                    q_ = await self.send_str_command(str_command=check_command)
+                    q_ = await self._send_str_command(str_command=check_command)
                     if str_cmd.quantity > q_:
                         return False
 
             else: # LIMIT buy
-                if str_cmd.quantity*str_cmd.price > self.get_max_LIMIT_buy_amount():
+                if str_cmd.quantity*str_cmd.price > self.pm.max_LIMIT_buy_amount:
                     return False
         else: # str_cmd.side == SIDE.SELL:
-            if str_cmd.quantity > self.get_max_sell_quantity():
+            if str_cmd.quantity > self.pm.max_sell_quantity:
                 return False
 
         return True

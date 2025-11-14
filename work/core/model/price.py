@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from collections import deque
 from datetime import datetime, timedelta
 
-from .perf_metric import PerformanceMetric
 from ..common.tools import adj_int
 from ..common.optlog import optlog
 from ..kis.ws_data import TransactionPrices
@@ -119,8 +118,4 @@ class MarketPrices:
         p, q, t = trp.get_price_quantity_time()
         self.update(p, q, t)
 
-    def update_performance_metric(self, pm: PerformanceMetric):
-        # if pm.code != self.code: return None
-        pm.cur_price = self.current_price
-        pm.cur_time = self.current_time
         

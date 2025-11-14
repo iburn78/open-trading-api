@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
+import asyncio
 
 from .cost import CostCalculator
-from ..common.optlog import log_raise
+from ..common.optlog import optlog
 from ..common.tools import get_market, adj_int
 from ..kis.domestic_stock_functions import inquire_balance
 
@@ -44,21 +45,30 @@ class Account:
         parts.extend(str(h) for c, h in self.holdings.items())
         return "\n".join(parts)
 
-    def acc_load(self, trenv):
-        ptf, acc = inquire_balance(
-            cano=trenv.my_acct,
-            env_dv=trenv.env_dv,
-            acnt_prdt_cd=trenv.my_prod,
-            afhr_flpr_yn="N",
-            inqr_dvsn="01",
-            unpr_dvsn="01",
-            fund_sttl_icld_yn="N",
-            fncg_amt_auto_rdpt_yn="N",
-            prcs_dvsn="00"
-        )
+    async def acc_load(self, trenv):
+        max_retry = 5
+        for i in range(max_retry):
+            ptf, acc = inquire_balance(
+                cano=trenv.my_acct,
+                env_dv=trenv.env_dv,
+                acnt_prdt_cd=trenv.my_prod,
+                afhr_flpr_yn="N",
+                inqr_dvsn="01",
+                unpr_dvsn="01",
+                fund_sttl_icld_yn="N",
+                fncg_amt_auto_rdpt_yn="N",
+                prcs_dvsn="00"
+            )
 
-        if ptf.empty or acc.empty:
-            log_raise("Inquire balance error ---")
+            if ptf.empty or acc.empty:
+                if i < max_retry - 1: 
+                    optlog.warning("[Account] Inquire balance failed - retry")
+                    await asyncio.sleep(trenv.sleep*(i+1)) # waighted sleep
+                else:
+                    optlog.error("[Account] Inquire balance failed - max_try reached")
+                    return
+            else: 
+                break
 
         # 예수금 할당
         self.cash = self.cash or CashBalance()
@@ -97,4 +107,3 @@ class Account:
                 )
             new_holdings[code] = holding
         self.holdings = new_holdings
-        return self

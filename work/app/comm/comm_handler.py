@@ -75,7 +75,7 @@ async def handle_sync_order_history(client_request: ClientRequest, writer, **ser
     resp.data_dict['sync_data'] = sync
     return resp
 
-async def handle_sync_complate_notice(client_request: ClientRequest, writer, **server_data_dict):
+async def handle_sync_complete_notice(client_request: ClientRequest, writer, **server_data_dict):
     agent_id: str = client_request.get_request_data()
     connected_agents: ConnectedAgents = server_data_dict.get('connected_agents')
     agent_card: AgentCard = connected_agents.get_agent_card_by_id(agent_id)
@@ -108,8 +108,7 @@ async def handle_subscribe_trp_by_agent_card(client_request: ClientRequest, writ
 async def handle_get_psbl_order(client_request: ClientRequest, writer, **server_data_dict):
     trenv = server_data_dict.get("trenv")
     code, ord_dvsn, price = client_request.get_request_data()
-    a_, q_, p_ = get_psbl_order(trenv, code, ord_dvsn, price)
-    await asyncio.sleep(trenv.sleep)
+    a_, q_, p_ = await get_psbl_order(trenv, code, ord_dvsn, price)
 
     resp = ServerResponse(success=True, status="")
     resp.data_dict['psbl_data'] = (a_, q_, p_)
@@ -123,7 +122,7 @@ COMMAND_HANDLERS = {
     RequestCommand.CANCEL_ALL_ORDERS_BY_AGENT: handle_cancel_all_orders_by_agent, 
     RequestCommand.REGISTER_AGENT_CARD: handle_register_agent_card, 
     RequestCommand.SYNC_ORDER_HISTORY: handle_sync_order_history,
-    RequestCommand.SYNC_COMPLETE_NOTICE: handle_sync_complate_notice,
+    RequestCommand.SYNC_COMPLETE_NOTICE: handle_sync_complete_notice,
     RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD: handle_subscribe_trp_by_agent_card, 
     RequestCommand.GET_PSBL_ORDER: handle_get_psbl_order,
 }

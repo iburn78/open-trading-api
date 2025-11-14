@@ -9,7 +9,6 @@ from .price import MarketPrices
 from .perf_metric import PerformanceMetric
 from ..common.interface import RequestCommand, ClientRequest, ServerResponse, Sync
 from ..common.optlog import optlog, log_raise, notice_beep
-from ..common.setup import TradePrinciples
 from ..model.strategy_util import StrategyRequest, StrategyCommand, StrategyResponse
 from ..strategy.strategy import StrategyBase
 from ..kis.kis_auth import KISEnv
@@ -41,7 +40,6 @@ class Agent:
     hardstop_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     # data tracking and strategy
-    trade_principles: TradePrinciples = field (default_factory=TradePrinciples)
     order_book: OrderBook = field(default_factory=OrderBook)
     market_prices: MarketPrices = field(default_factory=MarketPrices)
     strategy: StrategyBase = field(default_factory=StrategyBase) 
@@ -68,24 +66,20 @@ class Agent:
 
         self.pm.agent_id = self.id
         self.pm.code = self.code
+        self.pm.order_book = self.order_book
+        self.pm.market_prices = self.order_book
 
-        # setup strategy with order_book and market_prices
-        self.strategy.link_agent_data(self.id, self.code, self.trade_principles, self.order_book, self.market_prices, self.pm)
+        # link strategy with agent own data - market_prices, pm, etc
+        self.strategy.link_agent_data(self.id, self.code, self.market_prices, self.pm)
 
     # has to be called on start-up
-    def initialize(self, total_allocated_cash = 0, initial_holding = 0, avg_price_initial_holding = 0, bep_price_initial_holding = 0):
-        self.pm.total_allocated_cash = total_allocated_cash
+    def initialize(self, initial_allocated_cash = 0, initial_holding = 0, avg_price_initial_holding = 0, bep_price_initial_holding = 0):
+        self.pm.initial_allocated_cash = initial_allocated_cash
         self.pm.initial_holding = initial_holding
         self.pm.avg_price_initial_holding = avg_price_initial_holding
         self.pm.bep_price_initial_holding = bep_price_initial_holding
         self.agent_initialized = True
     
-    def update_performance_metric(self):
-        self.order_book.update_performance_metric(self.pm)
-        self.market_prices.update_performance_metric(self.pm)
-        self.pm.calc()
-        return self.pm
-
     async def process_strategy_command(self): 
         while not self.hardstop_event.is_set():
             str_command: StrategyCommand = await self.strategy._command_queue.get()
@@ -133,6 +127,9 @@ class Agent:
             await self.client.close()
             return 
         self.trenv = register_resp.data_dict['trenv'] # trenv should be in data, otherwise let it raise here
+
+        # set order_book trenv here 
+        self.order_book.trenv = self.trenv 
 
         # [Sync part - getting sync data]
         sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
@@ -224,18 +221,21 @@ class Agent:
     async def handle_order(self, order: Order):
         optlog.info(f"[submit result received] {order}", name=self.id) 
         await self.order_book.handle_order_dispatch(order)
+        self.pm.update()
         self.strategy._order_receipt_event.set() 
 
     async def handle_prices(self, trp: TransactionPrices):
         self.market_prices.update_from_trp(trp)
         self.strategy._price_update_event.set()
         optlog.debug(self.market_prices, name=self.id)
+        self.pm.update()
         self.agent_initial_price_set_up.set() 
         
     async def handle_notice(self, trn: TransactionNotice):
         optlog.info(trn, name=self.id) # show trn before processing
         notice_beep() # make a sound upton trn
-        await self.order_book.process_tr_notice(trn, self.trenv) 
+        await self.order_book.process_tr_notice(trn)
+        self.pm.update()
         self.strategy._trn_receive_event.set()
 
     async def check_psbl_buy_amount(self, ord_dvsn: ORD_DVSN, price: int):

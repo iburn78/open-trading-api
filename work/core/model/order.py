@@ -29,7 +29,7 @@ class Order:
     submitted_time: str | None = None 
 
     # control flags
-    submitted: bool = False # if order_no is assgined, then submitted == True
+    submitted: bool = False # if order_no is assgined by KIS, then submitted == True
     accepted: bool = False
     completed: bool = False
     cancelled: bool = False 
@@ -90,7 +90,7 @@ class Order:
     # async submit is handled in order_manager in the server side (so logging is in the server side)
     def submit(self, trenv):
         if self.completed or self.cancelled:
-            log_raise('A completed or cancelled order submitted ---', name=self.agent_id)
+            log_raise('A completed or cancelled order is submitted ---', name=self.agent_id)
 
         ord_qty = str(self.quantity)
         ord_unpr = str(self.price)
@@ -165,7 +165,7 @@ class Order:
 
     def make_revise_cancel_order(self, rc, ord_dvsn, qty, pr, all_yn): # ord_dvsn could changed, e.g., from limit to market
         if not self.submitted:
-            log_raise(f"Order {self.order_no} not submitted yet but revise-cancel tried / instead modify order itself ---", name=self.agent_id)
+            log_raise(f"Order {self.order_no} is not submitted yet but revise-cancel tried / instead modify order itself ---", name=self.agent_id)
         return ReviseCancelOrder(agent_id=self.agent_id, code=self.code, side=self.side, ord_dvsn=ord_dvsn, quantity=qty, price=pr, rc=rc, all_yn=all_yn, original_order=self)
 
 

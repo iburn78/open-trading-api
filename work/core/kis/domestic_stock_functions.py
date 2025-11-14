@@ -457,7 +457,7 @@ def chk_holiday(
         raise ValueError("bass_dt is required (e.g. 'YYYYMMDD')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe is None:
             return pd.DataFrame()
         else:
@@ -494,13 +494,13 @@ def chk_holiday(
         NK100 = res.getBody().ctx_area_nk
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return chk_holiday(
                 bass_dt, NK100, FK100, "N", dataframe, depth + 1, max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            logger.info("Data fetch complete.")
             return dataframe
     else:
         res.printError(url=api_url)
@@ -737,7 +737,7 @@ def comp_program_trade_today(
     if res.isOK():
         # array 타입이므로 DataFrame으로 반환
         current_data = pd.DataFrame(res.getBody().output)
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -1075,7 +1075,7 @@ def daily_credit_balance(
         raise ValueError("fid_input_date_1 is required (e.g. '20240313')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe is None:
             return pd.DataFrame()
         else:
@@ -1105,14 +1105,14 @@ def daily_credit_balance(
         tr_cont = res.getHeader().tr_cont
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return daily_credit_balance(
                 fid_cond_mrkt_div_code, fid_cond_scr_div_code, fid_input_iscd, fid_input_date_1, "N", dataframe,
                 depth + 1, max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            logger.info("Data fetch complete.")
             return dataframe
     else:
         res.printError(url=api_url)
@@ -1873,7 +1873,7 @@ def exp_price_trend(
         output1_data = pd.DataFrame([res.getBody().output1])
         output2_data = pd.DataFrame(res.getBody().output2)
 
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return output1_data, output2_data
     else:
         res.printError(url=api_url)
@@ -3222,7 +3222,7 @@ def foreign_institution_total(
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output)
 
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -3279,7 +3279,7 @@ def frgnmem_pchs_trend(
     if res.isOK():
         output_data = pd.DataFrame(res.getBody().output)
 
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return output_data
     else:
         res.printError(url=api_url)
@@ -3639,7 +3639,7 @@ def inquire_account_balance(
         # output2 - object 타입 (단일 객체를 DataFrame으로 변환)
         df2 = pd.DataFrame([res.getBody().output2])
 
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return df1, df2
     else:
         res.printError(url=api_url)
@@ -3797,7 +3797,7 @@ def inquire_balance(
         raise ValueError("prcs_dvsn is required (e.g. '00: 전일매매포함, 01:전일매매미포함')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe1 is None:
             dataframe1 = pd.DataFrame()
         if dataframe2 is None:
@@ -3850,7 +3850,7 @@ def inquire_balance(
         NK100 = res.getBody().ctx_area_nk100
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return inquire_balance(
                 env_dv, cano, acnt_prdt_cd, afhr_flpr_yn, inqr_dvsn, unpr_dvsn,
@@ -3858,7 +3858,7 @@ def inquire_balance(
                 "N", dataframe1, dataframe2, depth + 1, max_depth
             )
         else:
-            # logging.info("Data fetch complete.")
+            # logger.info("Data fetch complete.")
             return dataframe1, dataframe2
     else:
         res.printError(url=api_url)
@@ -3947,7 +3947,7 @@ def inquire_balance_rlz_pl(
         raise ValueError("prcs_dvsn is required (e.g. '00:전일매매포함, 01:전일매매미포함')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe1 is None:
             dataframe1 = pd.DataFrame()
         if dataframe2 is None:
@@ -3995,7 +3995,7 @@ def inquire_balance_rlz_pl(
         NK100 = res.getBody().ctx_area_nk100
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return inquire_balance_rlz_pl(
                 cano, acnt_prdt_cd, afhr_flpr_yn, inqr_dvsn, unpr_dvsn,
@@ -4004,7 +4004,7 @@ def inquire_balance_rlz_pl(
                 dataframe1, dataframe2, depth + 1, max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            logger.info("Data fetch complete.")
             return dataframe1, dataframe2
     else:
         res.printError(url=api_url)
@@ -4150,7 +4150,7 @@ def inquire_credit_psamount(
 
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output, index=[0])
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -4267,7 +4267,7 @@ def inquire_daily_ccld(
             "inqr_dvsn_3 is required (e.g. '00 전체 / 01 현금 / 02 신용 / 03 담보 / 04 대주 / 05 대여 / 06 자기융자신규/상환 / 07 유통융자신규/상환')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe1 is None:
             dataframe1 = pd.DataFrame()
         if dataframe2 is None:
@@ -4336,7 +4336,7 @@ def inquire_daily_ccld(
         NK100 = res.getBody().ctx_area_nk100
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return inquire_daily_ccld(
                 env_dv, pd_dv, cano, acnt_prdt_cd, inqr_strt_dt, inqr_end_dt,
@@ -4345,7 +4345,7 @@ def inquire_daily_ccld(
                 excg_id_dvsn_cd, dataframe1, dataframe2, depth + 1, max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            logger.info("Data fetch complete.")
             return dataframe1, dataframe2
     else:
         res.printError(url=api_url)
@@ -5790,7 +5790,7 @@ def inquire_member_daily(
 
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output)
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -5890,7 +5890,7 @@ def inquire_overtime_price(
 
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output, index=[0])
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -5971,7 +5971,7 @@ def inquire_period_profit(
         raise ValueError("cblc_dvsn is required (e.g. '00')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe1 is None:
             dataframe1 = pd.DataFrame()
         if dataframe2 is None:
@@ -6017,14 +6017,14 @@ def inquire_period_profit(
         NK100 = res.getBody().ctx_area_nk100
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return inquire_period_profit(
                 cano, acnt_prdt_cd, inqr_strt_dt, inqr_end_dt, sort_dvsn, inqr_dvsn, cblc_dvsn,
                 pdno, NK100, FK100, "N", dataframe1, dataframe2, depth + 1, max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            logger.info("Data fetch complete.")
             return dataframe1, dataframe2
     else:
         res.printError(url=api_url)
@@ -6099,7 +6099,7 @@ def inquire_period_trade_profit(
         raise ValueError("cblc_dvsn is required (e.g. '00')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe1 is None:
             dataframe1 = pd.DataFrame()
         if dataframe2 is None:
@@ -6143,14 +6143,14 @@ def inquire_period_trade_profit(
         NK100 = res.getBody().ctx_area_nk100
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return inquire_period_trade_profit(
                 cano, acnt_prdt_cd, sort_dvsn, inqr_strt_dt, inqr_end_dt, cblc_dvsn,
                 pdno, NK100, FK100, "N", dataframe1, dataframe2, depth + 1, max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            logger.info("Data fetch complete.")
             return dataframe1, dataframe2
     else:
         res.printError(url=api_url)
@@ -6425,7 +6425,7 @@ def inquire_psbl_rvsecncl(
         raise ValueError("inqr_dvsn_2 is required (e.g. '0: 전체, 1: 매도, 2: 매수')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe is None:
             return pd.DataFrame()
         else:
@@ -6459,13 +6459,13 @@ def inquire_psbl_rvsecncl(
         NK100 = res.getBody().ctx_area_nk100
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return inquire_psbl_rvsecncl(
                 cano, acnt_prdt_cd, inqr_dvsn_1, inqr_dvsn_2, FK100, NK100, "N", dataframe, depth + 1, max_depth
             )
         else:
-            # logging.info("Data fetch complete.")
+            # logger.info("Data fetch complete.")
             return dataframe
     else:
         res.printError(url=api_url)
@@ -7492,7 +7492,7 @@ def intstock_multprice(
 
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output)
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -7579,7 +7579,7 @@ def intstock_stocklist_by_group(
         # output2 데이터프레임 생성
         output2_data = pd.DataFrame(res.getBody().output2)
 
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return output1_data, output2_data
     else:
         res.printError(url=api_url)
@@ -7938,7 +7938,7 @@ def investor_trend_estimate(
 
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output2)
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -9691,7 +9691,7 @@ def mktfunds(
 
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output)
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -10247,7 +10247,7 @@ def order_credit(
 
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output, index=[0])
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -10465,7 +10465,7 @@ def order_resv_ccnl(
         raise ValueError("cncl_yn is required (e.g. 'Y')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe is None:
             return pd.DataFrame()
         else:
@@ -10505,7 +10505,7 @@ def order_resv_ccnl(
         NK200 = res.getBody().ctx_area_nk200
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return order_resv_ccnl(
                 rsvn_ord_ord_dt, rsvn_ord_end_dt, tmnl_mdia_kind_cd, cano, acnt_prdt_cd,
@@ -10513,7 +10513,7 @@ def order_resv_ccnl(
                 FK200, NK200, "N", dataframe, depth + 1, max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            logger.info("Data fetch complete.")
             return dataframe
     else:
         res.printError(url=api_url)
@@ -10831,7 +10831,7 @@ def overtime_exp_trans_fluct(
 
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output)
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -11263,7 +11263,7 @@ def pension_inquire_balance(
         raise ValueError("inqr_dvsn is required (e.g. '00')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe1 is None:
             dataframe1 = pd.DataFrame()
         if dataframe2 is None:
@@ -11305,14 +11305,14 @@ def pension_inquire_balance(
         NK100 = res.getBody().ctx_area_nk100
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return pension_inquire_balance(
                 cano, acnt_prdt_cd, acca_dvsn_cd, inqr_dvsn, FK100, NK100, "N", dataframe1, dataframe2, depth + 1,
                 max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            logger.info("Data fetch complete.")
             return dataframe1, dataframe2
     else:
         res.printError(url=api_url)
@@ -11383,7 +11383,7 @@ def pension_inquire_daily_ccld(
         raise ValueError("inqr_dvsn_3 is required (e.g. '00: 전체')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe is None:
             return pd.DataFrame()
         else:
@@ -11419,14 +11419,14 @@ def pension_inquire_daily_ccld(
         NK100 = res.getBody().ctx_area_nk100
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return pension_inquire_daily_ccld(
                 cano, acnt_prdt_cd, user_dvsn_cd, sll_buy_dvsn_cd, ccld_nccs_dvsn, inqr_dvsn_3, FK100, NK100, "N",
                 dataframe, depth + 1, max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            logger.info("Data fetch complete.")
             return dataframe
     else:
         res.printError(url=api_url)
@@ -11715,7 +11715,7 @@ def period_rights(
         raise ValueError("inqr_end_dt is required (e.g. '20250103')")
 
     if depth > max_depth:
-        logging.warning("Max recursive depth reached.")
+        logger.warning("Max recursive depth reached.")
         if dataframe is None:
             return pd.DataFrame()
         else:
@@ -11755,7 +11755,7 @@ def period_rights(
         NK100 = res.getBody().ctx_area_nk100
 
         if tr_cont in ["M", "F"]:  # 다음 페이지 존재
-            logging.info("Call Next page...")
+            logger.info("Call Next page...")
             ka.smart_sleep()  # 시스템 안정적 운영을 위한 지연
             return period_rights(
                 inqr_dvsn, cano, acnt_prdt_cd, inqr_strt_dt, inqr_end_dt,
@@ -11763,7 +11763,7 @@ def period_rights(
                 NK100, FK100, "N", dataframe, depth + 1, max_depth
             )
         else:
-            logging.info("Data fetch complete.")
+            logger.info("Data fetch complete.")
             return dataframe
     else:
         res.printError(url=api_url)
@@ -12106,7 +12106,7 @@ def program_trade_by_stock(
 
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output)
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -12159,7 +12159,7 @@ def program_trade_by_stock_daily(
 
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output)
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)
@@ -12270,7 +12270,7 @@ def psearch_title(
 
     if res.isOK():
         current_data = pd.DataFrame(res.getBody().output2)
-        logging.info("Data fetch complete.")
+        logger.info("Data fetch complete.")
         return current_data
     else:
         res.printError(url=api_url)

@@ -1,10 +1,12 @@
+import asyncio
+
 from .ws_data import ORD_DVSN
 from .domestic_stock_functions import inquire_psbl_order
 
 # Note: KIS API related func runs should be done in server side
 
 # this takes API usage frequency limit, so use with care
-def get_psbl_order(trenv, code: str, ord_dvsn: ORD_DVSN, price: int):
+async def get_psbl_order(trenv, code: str, ord_dvsn: ORD_DVSN, price: int):
     if ord_dvsn == ORD_DVSN.MARKET:
         price = 0
     if code is None or code == '':
@@ -20,6 +22,7 @@ def get_psbl_order(trenv, code: str, ord_dvsn: ORD_DVSN, price: int):
         cma_evlu_amt_icld_yn = 'N',  # CMA평가금액포함여부
         ovrs_icld_yn = 'N'  # 해외포함여부
     )
+    await asyncio.sleep(trenv.sleep)
 
     a_ = res['nrcvb_buy_amt'].iloc[0] # 미수없는 매수금액
     q_ = res['nrcvb_buy_qty'].iloc[0] # 미수없는 매수수량

@@ -3,6 +3,7 @@ from enum import Enum, auto
 import uuid
 
 from .optlog import log_raise
+from ..kis.kis_auth import KISEnv
 
 class RequestCommand(Enum):
     SUBMIT_ORDERS = auto()
@@ -75,3 +76,5 @@ class Sync:
     agent_id: str | None = None
     incompleted_orders: dict | None = None
     completed_orders: dict | None = None
+    pending_trns: dict | None = None
+    trenv: KISEnv | None = None

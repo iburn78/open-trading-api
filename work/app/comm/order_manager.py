@@ -128,8 +128,9 @@ class OrderManager:
         code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
         ios = code_map[INCOMPLETED_ORDERS].setdefault(agent.id, {})
         cos = code_map[COMPLETED_ORDERS].setdefault(agent.id, {})
+        ptrns = code_map[PENDING_TRNS]
         optlog.debug(f"[OrderManager] agent sync data sent", name=agent.id)
-        return Sync(agent.id, ios, cos)
+        return Sync(agent.id, ios, cos, ptrns)
 
     def agent_sync_completed_lock_release(self, agent: AgentCard):
         lock = self._locks[agent.code]
@@ -164,7 +165,7 @@ class OrderManager:
                 await dispatch(agent, order)  
 
             # registration
-            if order.submitted: # when order_no is assigned successfully
+            if order.submitted: # when order_no is assigned successfully by KIS
                 async with self._locks[order.code]:
                     date_map = self.map.setdefault(date_, {})
                     code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})

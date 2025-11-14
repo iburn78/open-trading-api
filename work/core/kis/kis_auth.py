@@ -434,7 +434,12 @@ def auth_ws(svr):
     }
 
     url = f"{_TRENV.my_url}/oauth2/Approval" 
-    res = requests.post(url, data=json.dumps(p), headers=_min_headers_ws)  # 토큰 발급
+    try:
+        res = requests.post(url, data=json.dumps(p), headers=_min_headers_ws)  # 토큰 발급
+    except Exception as e:
+        logger.error(f"Check internet connection: {e}")
+        return 
+        
     rescode = res.status_code
     if rescode == 200:  # 토큰 정상 발급
         approval_key = _getResultObject(res.json()).approval_key
@@ -547,8 +552,6 @@ def aes_cbc_base64_dec(key, iv, cipher_text):
 
 # subscription management 
 open_map: dict = {} # comprehensive dict for all subscribed
-to_add_map: dict = {} # incremental addition
-to_remove_map: dict = {} # incremental removal
 
 def add_open_map(
         name: str,
@@ -558,7 +561,7 @@ def add_open_map(
 ):
     # [revised version] -----------------------------------------------------
     with _subscription_lock:
-        global open_map, to_add_map
+        global open_map
 
         # normalize to list
         if isinstance(data, str):
@@ -594,6 +597,8 @@ def add_open_map(
         if subscribed_items:
             logger.warning(f"{name} already subscribed for {subscribed_items}")
 
+        return to_add_map
+
     # [original version] -----------------------------------------------------
     # if open_map.get(name, None) is None:
     #     open_map[name] = {
@@ -614,7 +619,7 @@ def remove_open_map(
         kwargs: dict = None,
 ):
     with _subscription_lock:
-        global open_map, to_remove_map
+        global open_map
 
         # normalize to list
         if isinstance(data, str):
@@ -653,10 +658,11 @@ def remove_open_map(
 
         if non_exist_items:
             logger.warning(f"{non_exist_items} not subscribed under {name} - unable to remove")
+        
+        return to_remove_map
 
-
+# simply every increasing record of tr_id and corresponding info like columns
 data_map: dict = {}
-
 
 def add_data_map(
         tr_id: str,
@@ -752,7 +758,7 @@ class KISWebSocket:
                 add_data_map(
                     tr_id=rsp.tr_id, encrypt=rsp.encrypt, key=rsp.ekey, iv=rsp.iv
                 )
-                raw_data = json.loads(raw)
+                # raw_data = json.loads(raw)
                 if rsp.isPingPong:
                     # logger.info(f"### RECV [PINGPONG] [{raw}]")
                     await ws.pong(raw)
@@ -770,18 +776,18 @@ class KISWebSocket:
     async def __subscription_manager(self, ws):
         """Listen for updates from self.queue and apply them dynamically."""
         while True:
-            action = await self.queue.get()  # signal to recheck subscription
+            action, to_do_map = await self.queue.get()  # signal to recheck subscription
             try:
                 # adjust subscriptions
                 if action == "subscribe":
                     # request subscribe
-                    for name, obj in to_add_map.items():
+                    for name, obj in to_do_map.items():
                         await self.send_multiple(
                             ws, obj["func"], "1", obj["items"], obj["kwargs"]
                         )
                         logger.info(f'{name} for {obj["items"]} subscribed')
                 elif action == "unsubscribe":
-                    for name, obj in to_remove_map.items():
+                    for name, obj in to_do_map.items():
                         await self.send_multiple(
                             ws, obj["func"], "2", obj["items"], obj["kwargs"]
                         )
@@ -868,8 +874,8 @@ class KISWebSocket:
             data: list | str,
             kwargs: dict = None,
     ):
-        add_open_map(request.__name__, request, data, kwargs)
-        self.queue.put_nowait("subscribe")
+        to_add_map = add_open_map(request.__name__, request, data, kwargs)
+        self.queue.put_nowait(("subscribe", to_add_map))
 
     def unsubscribe(
             self,
@@ -877,8 +883,8 @@ class KISWebSocket:
             data: list | str,
             kwargs: dict = None,
     ):
-        remove_open_map(request.__name__, request, data, kwargs)
-        self.queue.put_nowait("unsubscribe")
+        to_remove_map = remove_open_map(request.__name__, request, data, kwargs)
+        self.queue.put_nowait(("unsubscribe", to_remove_map))
 
     # [original version] -----------------------------------------------------
     # @classmethod
