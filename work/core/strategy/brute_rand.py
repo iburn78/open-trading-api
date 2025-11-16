@@ -15,6 +15,9 @@ class BruteForceRandStrategy(StrategyBase):
         super().__init__() 
     
     async def on_update(self, update_event: UpdateEvent):
+        ###_ improve... to a minimal working str 
+        ###_ e.g., referring to the price(marekt) data and pm(performance) data
+
         q = random.randint(1, 5)
         x = random.randint(0, 1)    
         if x == 0:

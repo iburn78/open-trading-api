@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import asyncio
 
 from ..common.optlog import log_raise
-from ..common.tools import adj_int
+from ..common.tools import excel_round
 from ..kis.ws_data import SIDE, ORD_DVSN
 from ..model.price import MarketPrices
 from ..model.perf_metric import PerformanceMetric
@@ -53,7 +53,6 @@ class StrategyBase(ABC):
 
     async def logic_run(self):
         # initial run
-        self.pm.update() 
         await self.on_update_shell(UpdateEvent.INITIATE)
 
         async with asyncio.TaskGroup() as tg:
@@ -82,13 +81,17 @@ class StrategyBase(ABC):
 
     async def on_update_shell(self, update_event: UpdateEvent):
         async with self._on_update_lock:
+            self.pm.update()
             await self.on_update(update_event)
 
     @abstractmethod
     async def on_update(self, update_event: UpdateEvent):
         # this runs on events: initiate / price / trn / order_receive
         # -----------------------------------------------------------------
-        # strategy should be based on the snapshot(states) of the agent: pm and mprice
+        # - strategy should be based on the snapshot(states) of the agent: pm and mprice
+        # - on_update should not await inside; fast deterministic decisions should be made 
+        #     * if it takes time, pm could not be correct anymore (outdated)
+        #     * on_update runs frequently anyway
         # -----------------------------------------------------------------
         pass
 
@@ -131,8 +134,8 @@ class StrategyBase(ABC):
         if str_cmd.side == SIDE.BUY:
             if str_cmd.ord_dvsn == ORD_DVSN.MARKET:
                 # [check 1] check if agent has enough cash (stricter cond-check)
-                exp_amount = adj_int(str_cmd.quantity*self.mprice.current_price) # best guess with current price, and approach conservatively with margin
-                if exp_amount > self.pm.max_MARKET_buy_amount:
+                exp_amount = excel_round(str_cmd.quantity*self.mprice.current_price) # best guess with current price, and approach conservatively with margin
+                if exp_amount > self.pm.max_market_buy_amt:
                     return False
 
                 # [check 2] check if the account API allows it 
@@ -143,10 +146,10 @@ class StrategyBase(ABC):
                         return False
 
             else: # LIMIT buy
-                if str_cmd.quantity*str_cmd.price > self.pm.max_LIMIT_buy_amount:
+                if str_cmd.quantity*str_cmd.price > self.pm.max_limit_buy_amt:
                     return False
         else: # str_cmd.side == SIDE.SELL:
-            if str_cmd.quantity > self.pm.max_sell_quantity:
+            if str_cmd.quantity > self.pm.max_sell_qty:
                 return False
 
         return True

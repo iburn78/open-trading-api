@@ -3,7 +3,7 @@ import asyncio
 from .ws_data import ORD_DVSN
 from .domestic_stock_functions import inquire_psbl_order
 
-# Note: KIS API related func runs should be done in server side
+# Note: API related func runs should be done in server side
 
 # this takes API usage frequency limit, so use with care
 async def get_psbl_order(trenv, code: str, ord_dvsn: ORD_DVSN, price: int):

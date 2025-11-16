@@ -1,3 +1,3 @@
 """
-Provides interfaces for KIS API Serve.
+Provides interfaces for the API server.
 """

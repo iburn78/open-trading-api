@@ -2,7 +2,6 @@ from dataclasses import dataclass
 import pandas as pd
 
 from core.common.optlog import optlog, log_raise
-from core.common.tools import adj_int
 from core.model.account import Account
 
 @dataclass
@@ -57,7 +56,7 @@ class PerformanceManager:
         self.target_df[['quantity', 'avg_price', 'bep_price']] = self.target_df['code'].apply(
             lambda code: pd.Series(_get_values(code))
         )
-        self.target_df['cash_t_2'] = adj_int(self.target_df['cash_t_2'] - self.target_df['quantity']*self.target_df['bep_price'])
+        self.target_df['cash_t_2'] = self.target_df['cash_t_2'] - self.target_df['quantity']*self.target_df['bep_price']
     
     def _check_cash_t_2_total(self):
         max_exposure_exceeded = []

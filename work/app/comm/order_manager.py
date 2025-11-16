@@ -35,7 +35,7 @@ class OrderManager:
     - pending trns are due to race condition between order submission and getting the trn (order_no not yet assigned from the server)
     - when new orders are added, need to check if there are any pending trn for the order
     
-    # Communication with KIS API server 
+    # Communication with the API server 
     - order submitted: order itself send back (with order_no etc filled) 
     - upon order submission, pending trns are checked and send back 
     - trn received: trn is sent back to the corresponding agent right away
@@ -147,7 +147,7 @@ class OrderManager:
         if date_ is None: date_=date.today().isoformat()
 
         # below is sequential submission 
-        # may consider to concurrently submit: KIS might not allow this
+        # may consider to concurrently submit: API might not allow this
         # tasks = []
         # for o in orders:
         #     task = asyncio.create_task(...)  
@@ -165,7 +165,7 @@ class OrderManager:
                 await dispatch(agent, order)  
 
             # registration
-            if order.submitted: # when order_no is assigned successfully by KIS
+            if order.submitted: # when order_no is assigned successfully by API
                 async with self._locks[order.code]:
                     date_map = self.map.setdefault(date_, {})
                     code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
@@ -229,14 +229,15 @@ class OrderManager:
         async with self._locks[agent.code]:
             date_map = self.map.setdefault(date_, {})
             code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
-            incompleted_orders: dict = code_map[INCOMPLETED_ORDERS].get(agent.id, {})
+            incompleted_orders: dict[str, Order] = code_map[INCOMPLETED_ORDERS].get(agent.id, {})
             if not incompleted_orders:
                 optlog.info(f"[OrderManager] no incompleted orders to cancel for agent {agent.id} ---", name=agent.id)
                 return 
 
             rc_orders = [] 
-            for k, o in incompleted_orders.items():
-                cancel_order = ReviseCancelOrder(agent_id=agent.id, code=o.code, side=o.side, ord_dvsn=o.ord_dvsn, quantity=o.quantity, price=o.price, rc=RCtype.CANCEL, all_yn=AllYN.ALL, original_order=o)
+            for o in incompleted_orders.values():
+                cancel_order = o.make_revise_cancel_order(rc=RCtype.CANCEL, ord_dvsn=o.ord_dvsn, qty=o.quantity-o.processed, pr=o.price, all_yn=AllYN.ALL) 
+                # quantity doesn't matter anyway when cancel all
                 rc_orders.append(cancel_order)
 
             await self.submit_orders_and_register(agent, rc_orders, trenv, date_)

@@ -15,7 +15,7 @@ from app.comm.subs_manager import SubscriptionManager
 from app.comm.order_manager import OrderManager
 
 # server.py -----------------------------------------------------------
-# KIS와의 Communication
+# KIS API 와의 Communication
 # - REST: 1 time request/response
 # - WS: tradenotice 등 수신
 # Localhost Server

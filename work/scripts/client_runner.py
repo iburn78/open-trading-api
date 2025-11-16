@@ -18,7 +18,7 @@ from core.strategy.brute_rand import BruteForceRandStrategy
 #             table.add_column("Var", justify="right")
 #             table.add_column("Value", justify="left")
 
-#             table.add_row("holding", f"{agent.order_book.orderbook_holding:,.0f}")
+#             table.add_row("holding", f"{agent.order_book.orderbook_holding_qty:,.0f}")
 #             table.add_row("Holdings", str(agent.pm.initial_allocated_cash))
 
 #             live.update(table)
@@ -27,11 +27,11 @@ from core.strategy.brute_rand import BruteForceRandStrategy
 async def main(sw=None): # switch
     if sw == "1":
         A = Agent(id = 'A1', code = '000660', strategy=BruteForceRandStrategy())
-        A.initialize(initial_allocated_cash=10000000)
+        A.initial_value_setup(init_cash_allocated=10000000)
         task1 = asyncio.create_task(A.run())  
 
         B = Agent(id = 'B1', code = '001440', strategy=BruteForceRandStrategy())
-        B.initialize(initial_allocated_cash=10000000)
+        B.initial_value_setup(init_cash_allocated=10000000)
         task2 = asyncio.create_task(B.run())  
 
         # task_monitor = asyncio.create_task(monitor_agent_live(A))

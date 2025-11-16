@@ -71,7 +71,7 @@ or more modern way
 
 ### [big topics]
 - Risk management and position Limits etc... 
-- Disaster recovery (disconnect from the KIS API server - how to reconnect safely)
+- Disaster recovery (disconnect from the API server - how to reconnect safely)
 - Save state (to disk) 
 - State reconciliation - e.g., periodic sync with account and OrderManager/Agent
 - Monitoring and alert / overall dashboard on health and status
@@ -86,6 +86,15 @@ or more modern way
 - manage agents (easy to see like EXCEL)
 - agent manager to use multi threads or multi cmd/terminal 
 
+### [long term strategy related]
+- review over-night behavior of server and agent: technically
+    * order_manager records data daily (keeps for multiple days)
+    * agent orderbook keeps all orders
+- make multi-day (longer terms) strategy possible (necessary at all?)
+    * currently agent sync with daily data
+    * may need to engage agent manager 
+- may need to build server/agent scheduler/controller
+
 ### [immediate next]
 - viewing the snapshot of an agent (using rich or FastAPI etc for web)
 - performance measure: agant orderbook has to have parse function (to get the summary of orders)
@@ -93,5 +102,3 @@ or more modern way
 - minimum functional AgentManager 
     * assigns codes / allocation / strategy from Excel
 - revise brute-rand to be fully functional
-
-- ON STARTUP implement updating market_prices... even before getting trps (may be not)

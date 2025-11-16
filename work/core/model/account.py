@@ -3,7 +3,7 @@ import asyncio
 
 from .cost import CostCalculator
 from ..common.optlog import optlog
-from ..common.tools import get_market, adj_int
+from ..common.tools import get_listed_market, excel_round
 from ..kis.domestic_stock_functions import inquire_balance
 
 @dataclass
@@ -27,7 +27,7 @@ class Holding: # Stock Holding / data is filled from the API server (e.g., actua
     avg_price: float = 0.0  # fee/tax not considered
     bep_cost: int = 0 # cost if gain is 0 after fee/tax
     bep_price: float = 0.0  # fee/tax considered
-    market: str = None  # to assign later (for fee calculation), e.g., KOSPI, KOSDAQ... 
+    listed_market: str = None  # to assign later (for fee calculation), e.g., KOSPI, KOSDAQ... 
 
     def __str__(self):
         return (
@@ -86,24 +86,24 @@ class Account:
             quantity = int(row.hldg_qty) 
             amount = int(row.pchs_amt)
             avg_price = amount/quantity
-            market = get_market(code)
-            bep_cost, bep_price = CostCalculator.bep_cost_calculate(quantity, avg_price, market, trenv.my_svr)
+            listed_market = get_listed_market(code)
+            bep_cost, bep_price = CostCalculator.bep_cost_calculate(quantity, avg_price, listed_market, trenv.my_svr)
             if holding:
                 holding.quantity = quantity
                 holding.amount = amount
-                holding.avg_price = adj_int(avg_price)
-                holding.bep_cost = adj_int(bep_cost)
-                holding.bep_price = adj_int(bep_price)
+                holding.avg_price = excel_round(avg_price)
+                holding.bep_cost = excel_round(bep_cost)
+                holding.bep_price = excel_round(bep_price)
             else: 
                 holding = Holding(
                         name = row.prdt_name, 
                         code = row.pdno,
                         quantity = quantity,
                         amount = amount,
-                        avg_price = adj_int(avg_price),
-                        bep_cost = adj_int(bep_cost), 
-                        bep_price = adj_int(bep_price), 
-                        market = market,
+                        avg_price = excel_round(avg_price),
+                        bep_cost = excel_round(bep_cost), 
+                        bep_price = excel_round(bep_price), 
+                        listed_market = listed_market,
                 )
             new_holdings[code] = holding
         self.holdings = new_holdings

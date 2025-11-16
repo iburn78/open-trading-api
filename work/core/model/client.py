@@ -26,7 +26,7 @@ class PersistentClient:
         try:
             self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
         except ConnectionRefusedError as e:
-            optlog.error(f"[Client] connection refused: {self.host}:{self.port} → {e}", name=self.agent_id, exc_info=True)
+            optlog.error(f"[Client] connection refused: {self.host}:{self.port} → {e}", name=self.agent_id)
             return
         except Exception as e:
             optlog.error(f"[Client] unexpected error in connecting to {self.host}:{self.port}: {e}", name=self.agent_id, exc_info=True)

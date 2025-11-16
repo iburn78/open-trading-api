@@ -19,13 +19,13 @@ class OrderBook:
     trenv: KISEnv | None = None # initialized once agent is registered
     print_processing_only: bool = True 
 
-    # private order lists - use setter functions for calculating dashboard info real time
+    # private order lists - should use setter/getter functions to calculate dashboard info real time
     _indexed_submission_failure_orders: dict["str_id": str, Order] = field(default_factory=dict)
-    _non_str_origin_failure_orders: list[Order] =field(default_factory=list)
-    _indexed_sent_for_submit: dict["unique_id": str, Order] = field(default_factory=dict) # sent to server repository / once server sent it to KIS API, submitted orders will be sent back via on_dispatch
+    _non_strategy_related_failure_orders: list[Order] =field(default_factory=list)
+    _indexed_sent_for_submit: dict["unique_id": str, Order] = field(default_factory=dict) # order sent to the server; once the server sent it to API, the submitted order will be sent back through on_dispatch
     _indexed_incompleted_orders: dict["order_no": str, Order] = field(default_factory=dict)
     _indexed_completed_orders: dict["order_no": str, Order] = field(default_factory=dict)
-    # - below _pending_trns... doesn't need to be this agent specific; so possible not to emptied out eventually, which is acceptable
+    # - below _pending_trns: copied from the server; and this is not agent specific; so possible not to emptied out eventually, which is acceptable
     _pending_trns_from_server_on_sync: dict["order_no": str, list[TransactionNotice]] = field(default_factory=dict)
     _unhandled_trns: list[TransactionNotice] = field(default_factory=list)
 
@@ -34,28 +34,28 @@ class OrderBook:
 
     # ----------------------------------------------------------------
     # dashboard info / shared with performance metric
-    # - below ONLY from orders in this order book 
-    #   (including sync data, but not including initial agent set-up)
+    # - below ONLY accounts for the transactions since in this order book creation
+    #   (includes initialization with sync data, but does not include initial agent set-up)
     # ----------------------------------------------------------------
-    orderbook_holding: int = 0  
+    orderbook_holding_qty: int = 0  
     # - quantity
-    # - orderbook_holding can be negative (e.g., agent reconnected and synced with server, initial holding amount exists, etc.) 
+    # - orderbook_holding_qty can be negative (e.g., agent reconnected and synced with server, initial holding quantity exists, etc.) 
 
     # 주문 상태
-    on_buy_order: int = 0 # quantity, include from _indexed_sent_for_submit and _indexed_incompleted_orders 
-    on_LIMIT_buy_amount: int = 0 # amount
-    on_MARKET_buy_quantity: int = 0 # quantity
-    on_sell_order: int = 0 # qauntity, include from _indexed_sent_for_submit and _indexed_incompleted_orders 
+    pending_buy_qty: int = 0 # quantity, counted from _indexed_sent_for_submit and _indexed_incompleted_orders 
+    pending_limit_buy_amt: int = 0 # amount
+    pending_market_buy_qty: int = 0 # quantity
+    pending_sell_qty: int = 0 # qauntity, counted from _indexed_sent_for_submit and _indexed_incompleted_orders 
 
     # 체결된 사항
-    total_purchased: int = 0 # cumulative quantity
-    total_sold: int = 0 # cumulative quantity
+    cumul_buy_qty: int = 0 # cumulative quantity
+    cumul_sell_qty: int = 0 # cumulative quantity
 
-    # history reflected overall data
-    # - on buy/sell order amounts not accounted (체결된 사항)
-    principle_cash_used: int = 0 # (purchased - sold) excluding fee and tax: negative possible (e.g., profit or sold from initial holding)
-    total_cost_incurred: int = 0 # cumulative tax and fee
-    total_cash_used: int = 0 # principle + total_cost_incurred
+    # history reflected data
+    # - pending orders not accounted (체결된 사항)
+    net_cash_used: int = 0 # (cumul buy - sold) excluding fee and tax: negative possible (e.g., profit or sold from initial holding)
+    cumul_cost: int = 0 # cumulative tax and fee
+    total_cash_used: int = 0 # net_cash_used + cumul_cost
     # ----------------------------------------------------------------
 
     def __str__(self):
@@ -64,18 +64,18 @@ class OrderBook:
         return (
             f"[OrderBook] dashboard {(self.code)}, agent {self.agent_id}\n"
             f"{LOG_INDENT}----------------------------------------------------\n"
-            f"{LOG_INDENT}OrderBook Holding     : {self.orderbook_holding:>15,d}\n"
-            f"{LOG_INDENT}On Buy Order        : {self.on_buy_order:>15,d}\n"
-            f"{LOG_INDENT}- Limit (Amount)    : {self.on_LIMIT_buy_amount :>15,d}\n"
-            f"{LOG_INDENT}- Market (Quantity) : {self.on_MARKET_buy_quantity :>15,d}\n"
-            f"{LOG_INDENT}On Sell Order       : {self.on_sell_order:>15,d}\n"
-            f"{LOG_INDENT}----------------------------------------------------\n"
-            f"{LOG_INDENT}Total Purchased     : {self.total_purchased:>15,d}\n"
-            f"{LOG_INDENT}Total Sold          : {self.total_sold:>15,d}\n"
-            f"{LOG_INDENT}----------------------------------------------------\n"
-            f"{LOG_INDENT}Principle Cash Used : {self.principle_cash_used:>15,d}\n"
-            f"{LOG_INDENT}Total Cost Incurred : {self.total_cost_incurred:>15,d}\n"
-            f"{LOG_INDENT}Total Cash Used     : {self.total_cash_used:>15,d}\n"
+            f"{LOG_INDENT}OrderBook Holding Qty: {self.orderbook_holding_qty:>15,d}\n"
+            f"{LOG_INDENT}Pending Buy Qty      : {self.pending_buy_qty:>15,d}\n"
+            f"{LOG_INDENT}- Limit (Amount)     : {self.pending_limit_buy_amt :>15,d}\n"
+            f"{LOG_INDENT}- Market (Quantity)  : {self.pending_market_buy_qty :>15,d}\n"
+            f"{LOG_INDENT}Pending Sell Qty     : {self.pending_sell_qty:>15,d}\n"
+            f"{LOG_INDENT}-------------------  ---------------------------------\n"
+            f"{LOG_INDENT}Cumulative Buy       : {self.cumul_buy_qty:>15,d}\n"
+            f"{LOG_INDENT}Cumulative Sell      : {self.cumul_sell_qty:>15,d}\n"
+            f"{LOG_INDENT}-------------------  ---------------------------------\n"
+            f"{LOG_INDENT}Net Cash Used        : {self.net_cash_used:>15,d}\n"
+            f"{LOG_INDENT}Cumulative Cost      : {self.cumul_cost:>15,d}\n"
+            f"{LOG_INDENT}Total Cash Used      : {self.total_cash_used:>15,d}\n"
             f"{LOG_INDENT}----------------------------------------------------"
         )
     def _section(self, title, indexed_orders: dict):
@@ -128,30 +128,30 @@ class OrderBook:
         # this is to be called when connected to the server
         # therefore, the order_book initial state expected to be empty 
         if self._indexed_submission_failure_orders: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 1", name=self.agent_id) 
-        if self._non_str_origin_failure_orders: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 2", name=self.agent_id) 
+        if self._non_strategy_related_failure_orders: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 2", name=self.agent_id) 
         if self._indexed_sent_for_submit: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 3", name=self.agent_id) 
         if self._indexed_incompleted_orders: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 4", name=self.agent_id) 
         if self._indexed_completed_orders: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 5", name=self.agent_id) 
         if self._unhandled_trns: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 6", name=self.agent_id) 
 
         # checking representative ones
-        if self.orderbook_holding != 0: optlog.warning(f"[OrderBook] key_stat is not zero - 1", name=self.agent_id)
-        if self.on_buy_order != 0 : optlog.warning(f"[OrderBook] key_stat is not zero - 2", name=self.agent_id)
-        if self.on_sell_order != 0 : optlog.warning(f"[OrderBook] key_stat is not zero - 3", name=self.agent_id)
+        if self.orderbook_holding_qty != 0: optlog.warning(f"[OrderBook] key_stat is not zero - 1", name=self.agent_id)
+        if self.pending_buy_qty != 0 : optlog.warning(f"[OrderBook] key_stat is not zero - 2", name=self.agent_id)
+        if self.pending_sell_qty != 0 : optlog.warning(f"[OrderBook] key_stat is not zero - 3", name=self.agent_id)
         if self.total_cash_used != 0: optlog.warning(f"[OrderBook] key_stat is not zero - 4", name=self.agent_id)
 
     def _parse_orders_and_update_stats(self):
         # from completed to sent
         for k, v in self._indexed_completed_orders.items():
-            self.stat_update_to_on_orders(v)
+            self.stat_update_to_pending_orders(v)
             self.stat_update(v)
 
         for k, v in self._indexed_incompleted_orders.items():
-            self.stat_update_to_on_orders(v)
+            self.stat_update_to_pending_orders(v)
             self.stat_update(v)
 
         for k, v in self._indexed_sent_for_submit.items():
-            self.stat_update_to_on_orders(v)
+            self.stat_update_to_pending_orders(v)
 
     # Executed order portion stat update (체결된 사항에 대한 update)
     # - prev_qty = order.processed 
@@ -168,45 +168,45 @@ class OrderBook:
         delta_amount = updated_order.amount - prev_amount
 
         if updated_order.side == SIDE.BUY:
-            # adjust on_order (to feedback in available cash for new orders)
-            self.on_buy_order += -delta_qty
+            # adjust pending orders (to feedback in cash available for new orders)
+            self.pending_buy_qty += -delta_qty
             
             if updated_order.ord_dvsn == ORD_DVSN.LIMIT:
-                self.on_LIMIT_buy_amount += -delta_amount
+                self.pending_limit_buy_amt += -delta_amount
             else:  # MARKET or MIDDLE
-                self.on_MARKET_buy_quantity += -delta_qty
+                self.pending_market_buy_qty += -delta_qty
                     
-            self.orderbook_holding += delta_qty
-            self.total_purchased += delta_qty
-            self.principle_cash_used += delta_amount
+            self.orderbook_holding_qty += delta_qty
+            self.cumul_buy_qty += delta_qty
+            self.net_cash_used += delta_amount
 
         else:
-            # adjust on_order
-            self.on_sell_order += -delta_qty
+            # adjust pending orders
+            self.pending_sell_qty += -delta_qty
 
             # update stats
-            self.orderbook_holding += -delta_qty
-            self.total_sold += delta_qty
-            self.principle_cash_used += -delta_amount
+            self.orderbook_holding_qty += -delta_qty
+            self.cumul_sell_qty += delta_qty
+            self.net_cash_used += -delta_amount
 
-        self.total_cost_incurred += delta_cost
-        self.total_cash_used = self.principle_cash_used + self.total_cost_incurred
+        self.cumul_cost += delta_cost
+        self.total_cash_used = self.net_cash_used + self.cumul_cost
 
     # reflect: even before sumitted, count in already generated orders
-    # revert: API refused order portion stat update (각종 오류로, KIS에서 submit 실패한 사항에 대한 update)
+    # revert: API refused order portion stat update (각종 오류로, API 에서 submit 실패한 사항에 대한 update)
     # note: cash is not yet used
-    def stat_update_to_on_orders(self, order, revert=False):
+    def stat_update_to_pending_orders(self, order, revert=False):
         if revert: m = -1
         else: m = 1
             
         if order.side == SIDE.BUY:
-            self.on_buy_order += m*order.quantity
+            self.pending_buy_qty += m*order.quantity
             if order.ord_dvsn == ORD_DVSN.LIMIT:
-                self.on_LIMIT_buy_amount += m*order.quantity * order.price
+                self.pending_limit_buy_amt += m*order.quantity * order.price
             else:  # MARKET or MIDDLE
-                self.on_MARKET_buy_quantity += m*order.quantity
+                self.pending_market_buy_qty += m*order.quantity
         else:
-            self.on_sell_order += m*order.quantity
+            self.pending_sell_qty += m*order.quantity
 
     async def process_tr_notice(self, notice: TransactionNotice):
         # reroute notice to corresponding order
@@ -237,7 +237,7 @@ class OrderBook:
     async def submit_new_order(self, client: PersistentClient, order: Order):
         async with self._lock:
             # note the dashboard has to be reverted if order fails in the server: implemented in handle_order_dispatch()
-            self.stat_update_to_on_orders(order)
+            self.stat_update_to_pending_orders(order)
             self._indexed_sent_for_submit[order.unique_id] = order
 
             submit_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
@@ -257,16 +257,16 @@ class OrderBook:
             # order submission failure - revert and return
             if not dispatched_order.submitted: # this has to be checking with dispatched_order, but need to revert with matched_order
                 # revert the dashboard 
-                self.stat_update_to_on_orders(matched_order, revert=True)
+                self.stat_update_to_pending_orders(matched_order, revert=True)
 
                 # save dispatched_order for record keeping by strategy id
                 if dispatched_order.str_id:
                     self._indexed_submission_failure_orders[dispatched_order.str_id] = dispatched_order
                 else: 
-                    self._non_str_origin_failure_orders.append(dispatched_order)
+                    self._non_strategy_related_failure_orders.append(dispatched_order)
                 return
 
-            # order successfully submitted to KIS
+            # order successfully submitted to the API
             self._indexed_incompleted_orders[dispatched_order.order_no] = dispatched_order
 
             # handle notices that are synced from the server

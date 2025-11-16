@@ -7,6 +7,7 @@ from .client import PersistentClient
 from .order_book import OrderBook
 from .price import MarketPrices
 from .perf_metric import PerformanceMetric
+from ..common.tools import get_listed_market
 from ..common.interface import RequestCommand, ClientRequest, ServerResponse, Sync
 from ..common.optlog import optlog, log_raise, notice_beep
 from ..model.strategy_util import StrategyRequest, StrategyCommand, StrategyResponse
@@ -32,6 +33,7 @@ class Agent:
     # id and code do not change for the lifetime
     id: str  # ID SHOULD BE UNIQUE ACROSS ALL AGENTS (should be managed centrally)
     code: str
+    listed_market: str | None = None # KOSPI, KOSDAQ etc (used in tax calc) - determined by code / auto assigned
 
     # for server communication
     card: AgentCard = field(default_factory=lambda: AgentCard(id="", code=""))
@@ -53,6 +55,7 @@ class Agent:
 
     def __post_init__(self):
         # initialize
+        self.listed_market = get_listed_market(self.code)
         self.card.id = self.id
         self.card.code = self.code
 
@@ -66,6 +69,7 @@ class Agent:
 
         self.pm.agent_id = self.id
         self.pm.code = self.code
+        self.pm.listed_market = self.listed_market
         self.pm.order_book = self.order_book
         self.pm.market_prices = self.order_book
 
@@ -73,11 +77,15 @@ class Agent:
         self.strategy.link_agent_data(self.id, self.code, self.market_prices, self.pm)
 
     # has to be called on start-up
-    def initialize(self, initial_allocated_cash = 0, initial_holding = 0, avg_price_initial_holding = 0, bep_price_initial_holding = 0):
-        self.pm.initial_allocated_cash = initial_allocated_cash
-        self.pm.initial_holding = initial_holding
-        self.pm.avg_price_initial_holding = avg_price_initial_holding
-        self.pm.bep_price_initial_holding = bep_price_initial_holding
+    def initial_value_setup(self, init_cash_allocated = 0, init_holding_qty = 0, 
+                            init_avg_price = 0, init_bep_price = 0,
+                            init_market_price = 0, init_time = None):
+        self.pm.init_cash_allocated = init_cash_allocated
+        self.pm.init_holding_qty = init_holding_qty
+        self.pm.init_avg_price = init_avg_price
+        self.pm.init_bep_price = init_bep_price
+        self.pm.init_market_price = init_market_price
+        self.pm.init_time = init_time
         self.agent_initialized = True
     
     async def process_strategy_command(self): 
@@ -128,8 +136,9 @@ class Agent:
             return 
         self.trenv = register_resp.data_dict['trenv'] # trenv should be in data, otherwise let it raise here
 
-        # set order_book trenv here 
+        # set order_book and pm trenv here 
         self.order_book.trenv = self.trenv 
+        self.pm.my_svr = self.trenv.my_svr
 
         # [Sync part - getting sync data]
         sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
@@ -156,7 +165,7 @@ class Agent:
 
         # [Price initialization part]
         optlog.debug(f'[Agent] waiting for initial market price', name=self.id)
-        await self.agent_initial_price_set_up.wait() # ensures, pm is set with latest market data
+        await self.agent_initial_price_set_up.wait() # ensures that pm is set with latest market data
         optlog.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", name=self.id)
 
         # [Strategy enact part]
@@ -173,13 +182,28 @@ class Agent:
     # makes an order, not sent to server yet
     def create_an_order(self, strategy_command: StrategyCommand): 
         ''' Create an order and add to new_orders (which is not yet sent to server for submission) '''
+        # agent data (getting from agent)
+        # - agent_id, code, listed_market
+
+        # strategy data
         side = strategy_command.side
         ord_dvsn = strategy_command.ord_dvsn
         quantity = strategy_command.quantity
         price = strategy_command.price
         exchange = strategy_command.exchange
         str_id = strategy_command.id
-        return Order(agent_id=self.id, code=self.code, side=side, ord_dvsn=ord_dvsn, quantity=quantity, price=price, exchange=exchange, str_id=str_id)
+
+        return Order(
+            agent_id=self.id, 
+            code=self.code, 
+            listed_market=self.listed_market, 
+            side=side, 
+            ord_dvsn=ord_dvsn, 
+            quantity=quantity, 
+            price=price, 
+            exchange=exchange, 
+            str_id=str_id
+            )
     
     def cancel_all_orders(self):
         if self._check_connected('cancel'):
@@ -221,21 +245,18 @@ class Agent:
     async def handle_order(self, order: Order):
         optlog.info(f"[submit result received] {order}", name=self.id) 
         await self.order_book.handle_order_dispatch(order)
-        self.pm.update()
         self.strategy._order_receipt_event.set() 
 
     async def handle_prices(self, trp: TransactionPrices):
         self.market_prices.update_from_trp(trp)
         self.strategy._price_update_event.set()
         optlog.debug(self.market_prices, name=self.id)
-        self.pm.update()
         self.agent_initial_price_set_up.set() 
         
     async def handle_notice(self, trn: TransactionNotice):
         optlog.info(trn, name=self.id) # show trn before processing
         notice_beep() # make a sound upton trn
         await self.order_book.process_tr_notice(trn)
-        self.pm.update()
         self.strategy._trn_receive_event.set()
 
     async def check_psbl_buy_amount(self, ord_dvsn: ORD_DVSN, price: int):

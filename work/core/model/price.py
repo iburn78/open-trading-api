@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from collections import deque
 from datetime import datetime, timedelta
 
-from ..common.tools import adj_int
+from ..common.tools import excel_round
 from ..common.optlog import optlog
 from ..kis.ws_data import TransactionPrices
 
@@ -39,7 +39,7 @@ class MarketPrices:
         return (
             f"[MarketPrices] {self.code}, current {self.current_price}, "
             f"l/h {self.low_price}/{self.high_price}, ma {self.moving_avg}, "
-            f"m_amt {adj_int(self.moving_amount/10**6)}M, cum_amt {adj_int(self.cumulative_amount/10**6)}M, "
+            f"m_amt {excel_round(self.moving_amount/10**6)}M, cum_amt {excel_round(self.cumulative_amount/10**6)}M, "
             f"window {self.window_size} min"
         )
 

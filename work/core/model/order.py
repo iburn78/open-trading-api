@@ -4,20 +4,21 @@ from dataclasses import dataclass, field
 
 from .cost import CostCalculator
 from ..common.optlog import optlog, log_raise
-from ..common.tools import get_market, excel_round_int 
+from ..common.tools import get_listed_market, excel_round 
 from ..kis.domestic_stock_functions import order_cash, order_rvsecncl
 from ..kis.ws_data import SIDE, ORD_DVSN, EXCHANGE, RCtype, AllYN, TransactionNotice
 
 @dataclass
 class Order:
+    # required vars
     agent_id: str 
-
     code: str
     side: SIDE 
     ord_dvsn: ORD_DVSN 
     quantity: int
     price: int
-    exchange: EXCHANGE 
+    exchange: EXCHANGE # KRX, NXT
+    listed_market: str = None # KOSPI, KOSDAQ, etc (should be assigned from the agent data)
 
     # auto gen
     unique_id: str = field(default_factory=lambda: pd.Timestamp.now().strftime('%Y%m%d%H%M%S%f'))
@@ -39,7 +40,6 @@ class Order:
     avg_price: float = 0.0
     bep_cost: int = 0
     bep_price: float = 0.0
-    market: str = None # KOSPI, KOSDAQ, etc
 
     # - as the order is fullfilled, cost_occured should refect exact cost up to that moment
     # - round only done when the order is fully fullfilled
@@ -63,12 +63,12 @@ class Order:
         if self.ord_dvsn == ORD_DVSN.MARKET and self.price != 0: # for market orders, price has to be set to 0
             log_raise("Market orders should not have a price ---", name=self.agent_id)
 
-        self.market = get_market(self.code)
-
         if not self.ord_dvsn.is_allowed_in(self.exchange):
             log_raise(f"Order type {self.ord_dvsn.name} not allowed on exchange {self.exchange} ---", name=self.agent_id)
 
-        if self.market not in ['KOSPI', 'KOSDAQ']:
+        self.listed_market = get_listed_market(self.code) if self.listed_market is None else self.listed_market # if not assigned by the agent, get independently (avoid using frequently)
+
+        if self.listed_market not in ['KOSPI', 'KOSDAQ']:
             log_raise("Check the market of the stock: KOSPI or KOSDAQ ---", name=self.agent_id)
         
     def __str__(self):
@@ -139,16 +139,16 @@ class Order:
                     side = notice.seln_byov_cls,
                     quantity = notice.cntg_qty, 
                     price = notice.cntg_unpr,
-                    market = self.market, 
+                    listed_market = self.listed_market, 
                     svr = trenv.my_svr,
                     traded_exchange = notice.traded_exchange
                 )
-                self.fee_occured += fee_float # accumulation of float errors: fine 1) no need to be float-exact, 2) will zero-out away, 3) later converted to adj_int
+                self.fee_occured += fee_float # accumulation of float errors: fine 1) no need to be float-exact, 2) will zero-out away, 3) later converted to int (rounding)
                 self.tax_occured += tax_float 
-                self.fee_rounded = excel_round_int(self.fee_occured, fee_rd)
-                self.tax_rounded = excel_round_int(self.tax_occured, tax_rd)
+                self.fee_rounded = excel_round(self.fee_occured, fee_rd)
+                self.tax_rounded = excel_round(self.tax_occured, tax_rd)
 
-                self.bep_cost, self.bep_price = CostCalculator.bep_cost_calculate(self.processed, self.avg_price, self.market, trenv.my_svr)
+                self.bep_cost, self.bep_price = CostCalculator.bep_cost_calculate(self.processed, self.avg_price, self.listed_market, trenv.my_svr)
 
                 if self.processed > self.quantity:
                     log_raise('Check order processed quantity ---', name=self.agent_id)
@@ -163,11 +163,22 @@ class Order:
         # no need to define any here
         pass
 
-    def make_revise_cancel_order(self, rc, ord_dvsn, qty, pr, all_yn): # ord_dvsn could changed, e.g., from limit to market
+    def make_revise_cancel_order(self, rc, ord_dvsn, qty, pr, all_yn): # ord_dvsn could changed, e.g., from a limit to a market order
         if not self.submitted:
             log_raise(f"Order {self.order_no} is not submitted yet but revise-cancel tried / instead modify order itself ---", name=self.agent_id)
-        return ReviseCancelOrder(agent_id=self.agent_id, code=self.code, side=self.side, ord_dvsn=ord_dvsn, quantity=qty, price=pr, rc=rc, all_yn=all_yn, original_order=self)
-
+        return ReviseCancelOrder(
+            agent_id=self.agent_id, 
+            code=self.code, 
+            side=self.side, 
+            ord_dvsn=ord_dvsn, 
+            quantity=qty, 
+            price=pr, 
+            exchange=self.exchange, 
+            listed_market=self.listed_market, 
+            rc=rc, 
+            all_yn=all_yn, 
+            original_order=self
+            )
 
 @dataclass
 class ReviseCancelOrder(Order):
