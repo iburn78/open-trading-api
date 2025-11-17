@@ -904,7 +904,7 @@ class KISWebSocket:
     # ):
     #     self.send_multiple(ws, request, "2", data)
 
-    # [original version - left uncommented for compatibility] -----------------------------------------------------
+    # [original version - left uncommented out for compatibility] -----------------------------------------------------
     def start(
             self,
             on_result: Callable[
@@ -917,6 +917,7 @@ class KISWebSocket:
         try:
             asyncio.run(self.__runner())
         except KeyboardInterrupt:
+            # when cancelling, the logging could cause unnecessary noise
             # logger.error("Closing by cancel (e.g., by task-group cancel or keyboard)")
             pass
 
