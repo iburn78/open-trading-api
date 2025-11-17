@@ -71,7 +71,7 @@ class Agent:
         self.pm.code = self.code
         self.pm.listed_market = self.listed_market
         self.pm.order_book = self.order_book
-        self.pm.market_prices = self.order_book
+        self.pm.market_prices = self.market_prices
 
         # link strategy with agent own data - market_prices, pm, etc
         self.strategy.link_agent_data(self.id, self.code, self.market_prices, self.pm)

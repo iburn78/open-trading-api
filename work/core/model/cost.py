@@ -104,6 +104,6 @@ class CostCalculator:
 
         bep_rate = (2*fee_percent/100+tax_percent/100)/(1-(fee_percent/100+tax_percent/100))
         bep_cost = excel_round(quantity*avg_price*bep_rate)
-        bep_price = excel_round((quantity*avg_price + bep_cost)/quantity)
+        bep_price = excel_round((quantity*avg_price + bep_cost)/quantity if quantity > 0 else bep_cost)
 
         return bep_cost, bep_price

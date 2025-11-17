@@ -917,7 +917,8 @@ class KISWebSocket:
         try:
             asyncio.run(self.__runner())
         except KeyboardInterrupt:
-            logger.error("Closing by cancel (e.g., by task-group cancel or keyboard)")
+            # logger.error("Closing by cancel (e.g., by task-group cancel or keyboard)")
+            pass
 
     # [modified version as async] -----------------------------------------------------
     async def start_async(
@@ -932,8 +933,10 @@ class KISWebSocket:
         try:
             await self.__runner()
         except asyncio.CancelledError:
-            logger.info("Closing by cancel (e.g., by task-group cancel or keyboard)")
+            # when cancelling, the logging could cause unnecessary noise
+            # logger.info("Closing by cancel (e.g., by task-group cancel or keyboard)")
             raise  # re-raise for proper TaskGroup shutdown
         except KeyboardInterrupt:
-            logger.info("Closing by cancel (e.g., by task-group cancel or keyboard)")
+            # when cancelling, the logging could cause unnecessary noise
+            # logger.info("Closing by cancel (e.g., by task-group cancel or keyboard)")
             raise 
