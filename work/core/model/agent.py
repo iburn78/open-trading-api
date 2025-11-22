@@ -7,11 +7,11 @@ from .client import PersistentClient
 from .order_book import OrderBook
 from .price import MarketPrices
 from .perf_metric import PerformanceMetric
+from .strategy_base import StrategyBase
 from ..common.tools import get_listed_market
 from ..common.interface import RequestCommand, ClientRequest, ServerResponse, Sync
 from ..common.optlog import optlog, log_raise, notice_beep
 from ..model.strategy_util import StrategyRequest, StrategyCommand, StrategyResponse
-from ..strategy.strategy import StrategyBase
 from ..kis.kis_auth import KISEnv
 from ..kis.ws_data import TransactionPrices, TransactionNotice, ORD_DVSN
 

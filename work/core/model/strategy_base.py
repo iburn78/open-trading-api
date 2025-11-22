@@ -4,9 +4,9 @@ import asyncio
 from ..common.optlog import log_raise
 from ..common.tools import excel_round
 from ..kis.ws_data import SIDE, ORD_DVSN
-from ..model.price import MarketPrices
-from ..model.perf_metric import PerformanceMetric
-from ..model.strategy_util import StrategyRequest, StrategyCommand, UpdateEvent, StrategyResponse
+from .price import MarketPrices
+from .perf_metric import PerformanceMetric
+from .strategy_util import StrategyRequest, StrategyCommand, UpdateEvent, StrategyResponse
 
 class StrategyBase(ABC):
     """
@@ -53,6 +53,8 @@ class StrategyBase(ABC):
 
     async def logic_run(self):
         # initial run
+        ###_ may develop checker if this is mock str or not 
+
         await self.on_update_shell(UpdateEvent.INITIATE)
 
         async with asyncio.TaskGroup() as tg:
@@ -66,8 +68,6 @@ class StrategyBase(ABC):
             await self.on_update_shell(UpdateEvent.PRICE_UPDATE)
             self._price_update_event.clear()
 
-    # if two trns received almost same time, only one update called due to the event wait / clear mechanism: other events the same here
-    # this is intended behavior as update only needs to be called at every meaningful moment not for every single event
     async def on_trn_receive(self):
         while True:
             await self._trn_receive_event.wait()
@@ -88,13 +88,23 @@ class StrategyBase(ABC):
 
     @abstractmethod
     async def on_update(self, update_event: UpdateEvent):
-        # this runs on events: initiate / price / trn / order_receive
-        # -----------------------------------------------------------------
-        # - strategy should be based on the snapshot(states) of the agent: pm and mprice
-        # - on_update should not await inside; fast deterministic decisions should be made 
-        #     * if it takes time, pm could not be correct anymore (outdated)
-        #     * on_update runs frequently anyway
-        # -----------------------------------------------------------------
+        '''
+        ----------------------------------------------------------------------------------------------------------------
+        this runs on events: initiate / price / trn / order_receive
+        - however, this does not run on every single event 
+        - this is intended behavior as update only needs to be called once
+            * if two trns received almost same time (e.g., 011, 022), event/wait/clear mechanism may not trigger twice
+            * on_update runs frequently anyway
+        ----------------------------------------------------------------------------------------------------------------
+        - strategy should be based on the snapshot(states) of the agent: pm and mprice
+        ----------------------------------------------------------------------------------------------------------------
+        - on_update should not await inside; fast deterministic decisions should be made 
+            * if it takes time, pm could not be correct anymore (outdated)
+        ----------------------------------------------------------------------------------------------------------------
+        - on_update is called at the last stage after processing all the price / notice / order etc
+            * so there can be some time gap 
+            * locks may delay further the on_update call
+        '''
         pass
 
     async def _send_str_command(self, str_command: StrategyCommand) -> StrategyResponse:
