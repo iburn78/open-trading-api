@@ -7,6 +7,7 @@ import sys
 from core.common.optlog import optlog
 from core.model.agent import Agent
 from core.strategy.brute_rand import BruteForceRandStrategy
+from core.strategy.double_up import DoubleUpStrategy
 
 # from rich.live import Live
 # from rich.table import Table
@@ -26,11 +27,11 @@ from core.strategy.brute_rand import BruteForceRandStrategy
 
 async def main(sw=None): # switch
     if sw == "1":
-        A = Agent(id = 'A1', code = '000660', strategy=BruteForceRandStrategy())
+        A = Agent(id = 'A1', code = '000660', strategy=DoubleUpStrategy())
         A.initial_value_setup(init_cash_allocated=10000000)
         task1 = asyncio.create_task(A.run())  
 
-        B = Agent(id = 'B1', code = '001440', strategy=BruteForceRandStrategy())
+        B = Agent(id = 'B1', code = '001440', strategy=DoubleUpStrategy())
         B.initial_value_setup(init_cash_allocated=10000000)
         task2 = asyncio.create_task(B.run())  
 

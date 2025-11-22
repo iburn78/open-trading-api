@@ -97,8 +97,13 @@ or more modern way
 
 ### [immediate next]
 - viewing the snapshot of an agent (using rich or FastAPI etc for web)
-- performance measure: agant orderbook has to have parse function (to get the summary of orders)
+- performance measure: agent orderbook has to have parse function (to get the summary of orders)
 - sync with account
 - minimum functional AgentManager 
     * assigns codes / allocation / strategy from Excel
 - revise brute-rand to be fully functional
+
+### [Trading Strategy related]
+- 유동주식수 and volume: use at the same time
+- try make a back tester
+- price/volume history: get / save / etc

@@ -250,7 +250,7 @@ class Agent:
     async def handle_prices(self, trp: TransactionPrices):
         self.market_prices.update_from_trp(trp)
         self.strategy._price_update_event.set()
-        optlog.debug(self.market_prices, name=self.id)
+        # optlog.debug(self.market_prices, name=self.id)
         self.agent_initial_price_set_up.set() 
         
     async def handle_notice(self, trn: TransactionNotice):

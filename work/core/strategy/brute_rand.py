@@ -8,15 +8,14 @@ from ..kis.ws_data import SIDE, ORD_DVSN
 
 class BruteForceRandStrategy(StrategyBase):
     """
-    Buy shares at a random time
-    Sell it when the price up a certain percentage
+    Buy / sell shares at a random time
+    Test purpose strategy
     """
     def __init__(self):
         super().__init__() 
     
+    ###_ strategy should check if this is mock str or not 
     async def on_update(self, update_event: UpdateEvent):
-        ###_ improve... to a minimal working str 
-        ###_ e.g., referring to the price(marekt) data and pm(performance) data
 
         q = random.randint(1, 5)
         x = random.randint(0, 1)    

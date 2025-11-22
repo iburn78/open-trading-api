@@ -66,6 +66,8 @@ class StrategyBase(ABC):
             await self.on_update_shell(UpdateEvent.PRICE_UPDATE)
             self._price_update_event.clear()
 
+    # if two trns received almost same time, only one update called due to the event wait / clear mechanism: other events the same here
+    # this is intended behavior as update only needs to be called at every meaningful moment not for every single event
     async def on_trn_receive(self):
         while True:
             await self._trn_receive_event.wait()
@@ -102,6 +104,8 @@ class StrategyBase(ABC):
             log_raise(f'StretegyResponse request type {response.request} not match with orignial command {str_command.request}', name=self.agent_id)
         return response.response_data
 
+    # True if order submitted, False if not (either at the validation level, or from the API level)
+    # failed to sent orders are saved too
     async def order_submit(self, str_command: StrategyCommand):
         if str_command.request != StrategyRequest.ORDER:
             log_raise(f'[Strategy] StrategyRequest type not correctly set as {str_command.request}, reset to ORDER necessary', name=self.agent_id)

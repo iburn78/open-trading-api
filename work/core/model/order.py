@@ -79,7 +79,7 @@ class Order:
             f"{'submitted' if self.submitted else 'not_submitted'}, "
             f"{'accepted' if self.accepted else 'not_accepted'}, "
             f"{'completed' if self.completed else 'not_completed'}, "
-            f"{'cancelled' if self.cancelled else 'not_cancelled'}"
+            f"{'cancelled' if self.cancelled else 'not_cancelled'}, "
             f"uid {self.unique_id[-12:]}"
         )
 
