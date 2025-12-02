@@ -32,11 +32,11 @@ class CostCalculator:
     TAX = {  
         # On-exchange (장내)
         'KOSPI': {
-            'TransactionTax': 0, 
+            'TransactionTax': 0, # to increase to 0.05 (2026.1.1)
             'RuralDevTax': 0.15,
         },
         'KOSDAQ': {
-            'TransactionTax': 0.15, 
+            'TransactionTax': 0.15, # to increase to 0.20 (2026.1.1)
             'RuralDevTax': 0,
         },
         # OTC (장외) including 비상장
@@ -52,7 +52,7 @@ class CostCalculator:
     RD_rule = { 
         # 0: # 1원 미만 rounding
         # -1: # 10원 미만 rounding 
-        'FEE': -1, 
+        'FEE': 0, # maybe -1; need check
         'MIN_FEE': 0, 
         'TAX': 0, 
     }
@@ -87,14 +87,12 @@ class CostCalculator:
         else: 
             tax = cls.TAX[listed_market]['TransactionTax'] + cls.TAX[listed_market]['RuralDevTax']
         
-        fee_float = quantity*price*fee/100
-        tax_float = quantity*price*tax/100
+        fee_ = excel_round(quantity*price*fee/100, fee_rd_rule)
+        tax_ = excel_round(quantity*price*tax/100, tax_rd_rule)
 
-        return fee_float, tax_float, fee_rd_rule, tax_rd_rule
+        return fee_, tax_
 
-    # 보수적으로 보았을때에 매각시 수익이 0가 되는 total cost의 계산
-    # 일단 전체 보유 Amount로만 추정... 
-    # 하나의 order quantity에 매수/매도가 여러번 있을수 있다보니, rounding 에러가 발생, 오차 발생 가능
+    # 매각시 수익이 0 이 되는 total cost의 계산
     @classmethod
     def bep_cost_calculate(cls, quantity, avg_price, listed_market, svr): 
         exchange = "KRX"  # default to be conservative
@@ -102,8 +100,8 @@ class CostCalculator:
         fee_percent = fee_table[exchange]
         tax_percent = cls.TAX[listed_market]['TransactionTax'] + cls.TAX[listed_market]['RuralDevTax']
 
-        bep_rate = (2*fee_percent/100+tax_percent/100)/(1-(fee_percent/100+tax_percent/100))
-        bep_cost = excel_round(quantity*avg_price*bep_rate)
-        bep_price = excel_round((quantity*avg_price + bep_cost)/quantity if quantity > 0 else bep_cost)
+        bep_rate = (1+fee_percent/100)/(1-(fee_percent/100+tax_percent/100))
+        bep_cost = excel_round(quantity*avg_price*(bep_rate-1))
+        bep_price = excel_round(avg_price*bep_rate)
 
         return bep_cost, bep_price

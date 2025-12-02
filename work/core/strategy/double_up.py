@@ -18,14 +18,19 @@ class DoubleUpStrategy(StrategyBase):
     MAX_PURCHASE_QTY = 12
     DOUBLEUP_MULTIPLIER = 2
 
-    SELL_BEP_RETURN_RATE = 0.002  
-    BUY_BEP_RETURN_RATE = -0.01
+    SELL_BEP_RETURN_RATE = 0.003 
+    BUY_BEP_RETURN_RATE = -0.005
+
+    ###_ cost gap seems exists / study logs
+    ###_ bep_return_rate seems cumulative / not correct
 
     async def on_update(self, update_event: UpdateEvent):
-        if update_event == UpdateEvent.PRICE_UPDATE:
-            optlog.debug(f"{self.code}: {self.pm.cur_price} / {self.pm.return_rate}", name=self.agent_id)
+        optlog.debug(f"{self.code}-{update_event.name}: {self.pm.cur_price:,d} / {self.pm.bep_return_rate:.6f}", name=self.agent_id)
 
-        if self.pm.holding_qty + self.pm.pending_buy_qty == 0:
+        # ensure no action while pending
+        if self.pm.pending_buy_qty > 0 or self.pm.pending_sell_qty > 0: return
+
+        if self.pm.holding_qty == 0:
             # buy once
             q = self.INITIAL_BUY_QTY
 
@@ -35,6 +40,7 @@ class DoubleUpStrategy(StrategyBase):
             optlog.info(self.pm.order_book, name=self.agent_id)
             return
 
+        # pending sell quantity 
         if self.pm.bep_return_rate is not None and self.pm.bep_return_rate >= self.SELL_BEP_RETURN_RATE:
             # sell all
             q = self.pm.holding_qty  # quantity to sell
@@ -47,7 +53,7 @@ class DoubleUpStrategy(StrategyBase):
         if self.pm.bep_return_rate is not None and self.pm.bep_return_rate <= self.BUY_BEP_RETURN_RATE:
             # buy double up to max buy amount
 
-            q = max(self.pm.holding_qty*self.DOUBLEUP_MULTIPLIER, self.MAX_PURCHASE_QTY)
+            q = min(self.pm.holding_qty*self.DOUBLEUP_MULTIPLIER, self.MAX_PURCHASE_QTY)
             optlog.info(f"DOUBLE-UP BUY {q}", name=self.agent_id)
             sc = StrategyCommand(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
             sent = await self.order_submit(sc)

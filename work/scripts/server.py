@@ -204,4 +204,5 @@ if __name__ == "__main__":
     except asyncio.CancelledError:
         optlog.info("[Server] tasks cancelled cleanly" + sep)
     finally:
+        asyncio.run(order_manager.persist_to_disk(immediate = True))
         optlog.info("[Server] shutdown complete" + sep)

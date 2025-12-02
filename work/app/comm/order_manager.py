@@ -282,10 +282,17 @@ class OrderManager:
                                 # don't break, but the error msg will repeat
                                 optlog.error(f'[OrderManager] pending TRNs EXPIRED - timeout {max_age} sec: order_no {order_no}')
 
-    async def persist_to_disk(self):
+
+    async def persist_to_disk(self, immediate=False):
+        if immediate:
+            return await self._save_once()
+
         while True:
             # save only today's record
             await asyncio.sleep(disk_save_period)
+            await self._save_once() 
+
+    async def _save_once(self):
             os.makedirs(data_dir, exist_ok=True)
             date_ = date.today().isoformat()
             date_map = self.map.get(date_, {})
@@ -306,4 +313,4 @@ class OrderManager:
             cutoff = (date.today() - timedelta(days=OM_KEEP_DAYS)).isoformat()
             dates_to_remove = [d for d in self.map.keys() if d < cutoff]
             for d in dates_to_remove:
-                del self.map[d] 
+                del self.map[d]

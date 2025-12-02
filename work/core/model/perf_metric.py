@@ -34,6 +34,7 @@ class PerformanceMetric:
     # OrderBook managed data: set by the 'setter' below
     # -------------------------------------------------------
     orderbook_holding_qty: int | None = None # quantity, can be negative 
+    orderbook_holding_avg_price: float | None = None 
     # - 주문 상태
     pending_buy_qty: int | None = None  # quantity (미체결 매수 주문 수량: limit and market quantity)
     pending_limit_buy_amt: int | None = None # amount (지정가 주문 금액)
@@ -119,7 +120,7 @@ class PerformanceMetric:
         self.holding_value = self.holding_qty*self.cur_price 
         self.cash_balance = self.init_cash_allocated - self.total_cash_used
     
-        self.avg_price = excel_round((self.init_holding_qty*self.init_avg_price + self.net_cash_used)/self.holding_qty if self.holding_qty > 0 else 0)
+        self.avg_price = excel_round((self.init_holding_qty*self.init_avg_price + self.orderbook_holding_qty*self.orderbook_holding_avg_price)/self.holding_qty if self.holding_qty > 0 else 0)
         _, self.bep_price = CostCalculator.bep_cost_calculate(self.holding_qty, self.avg_price, self.listed_market, self.my_svr)
 
         self.return_rate = (self.cur_price-self.avg_price)/self.avg_price if self.avg_price > 0 else 0

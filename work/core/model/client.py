@@ -68,8 +68,8 @@ class PersistentClient:
                 else:
                     optlog.error(f"[Client] dispatched msg received but no receiver: {msg}", name=self.agent_id)
 
-        except asyncio.CancelledError: # client-cancelled situation (cancelld by the event loop in the client side)
-            optlog.info("[Client] listen task cancelled", name=self.agent_id)  # intentional
+        except (asyncio.CancelledError, ConnectionAbortedError, ConnectionResetError, OSError) as e: # client-cancelled situation (cancelld by the event loop in the client side)
+            optlog.info(f"[Client] listen task cancelled {e}", name=self.agent_id)  # intentional
             raise  # usually propagate cancellation
         except asyncio.IncompleteReadError:
             if self._closing:

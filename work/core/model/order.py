@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from .cost import CostCalculator
 from ..common.optlog import optlog, log_raise
-from ..common.tools import get_listed_market, excel_round 
+from ..common.tools import get_listed_market
 from ..kis.domestic_stock_functions import order_cash, order_rvsecncl
 from ..kis.ws_data import SIDE, ORD_DVSN, EXCHANGE, RCtype, AllYN, TransactionNotice
 
@@ -16,7 +16,7 @@ class Order:
     side: SIDE 
     ord_dvsn: ORD_DVSN 
     quantity: int
-    price: int
+    price: int # price sent for order submission
     exchange: EXCHANGE # KRX, NXT
     listed_market: str = None # KOSPI, KOSDAQ, etc (should be assigned from the agent data)
 
@@ -37,17 +37,12 @@ class Order:
 
     # for tax and fee calculation
     amount: int = 0 # total purchased/sold cumulative amount (sum of quantity x price)
-    avg_price: float = 0.0
-    bep_cost: int = 0
-    bep_price: float = 0.0
+    avg_price: float = 0.0 # meaningful only when it is an market order
 
-    # - as the order is fullfilled, cost_occured should refect exact cost up to that moment
-    # - round only done when the order is fully fullfilled
+    # actual status
     processed: int = 0
-    fee_occured: float = 0.0
-    tax_occured: float = 0.0
-    fee_rounded: int = 0   # if completed or cancelled, this is final 
-    tax_rounded: int = 0   # if completed or cancelled, this is final 
+    fee_: int = 0
+    tax_: int = 0
 
     # Further develop needs:
     # - IOC, FOK, handling of end of day cancellation etc
@@ -81,6 +76,11 @@ class Order:
             f"{'completed' if self.completed else 'not_completed'}, "
             f"{'cancelled' if self.cancelled else 'not_cancelled'}, "
             f"uid {self.unique_id[-12:]}"
+            f"\n                                 "
+            f"fee: {self.fee_}, "
+            f"tax: {self.tax_}, "
+            f"amount: {self.amount}, "
+            f"avg_price: {self.avg_price} "
         )
 
     def __eq__(self, other):
@@ -135,7 +135,7 @@ class Order:
                 self.amount += notice.cntg_qty*notice.cntg_unpr
                 self.avg_price = self.amount/self.processed
 
-                fee_float, tax_float, fee_rd, tax_rd = CostCalculator.calculate(
+                fee_, tax_ = CostCalculator.calculate(
                     side = notice.seln_byov_cls,
                     quantity = notice.cntg_qty, 
                     price = notice.cntg_unpr,
@@ -143,12 +143,9 @@ class Order:
                     svr = trenv.my_svr,
                     traded_exchange = notice.traded_exchange
                 )
-                self.fee_occured += fee_float # accumulation of float errors: fine 1) no need to be float-exact, 2) will zero-out away, 3) later converted to int (rounding)
-                self.tax_occured += tax_float 
-                self.fee_rounded = excel_round(self.fee_occured, fee_rd)
-                self.tax_rounded = excel_round(self.tax_occured, tax_rd)
-
-                self.bep_cost, self.bep_price = CostCalculator.bep_cost_calculate(self.processed, self.avg_price, self.listed_market, trenv.my_svr)
+                # 개별 체결건에 대해 fee, tax가 누적됨
+                self.fee_occured += fee_
+                self.tax_occured += tax_
 
                 if self.processed > self.quantity:
                     log_raise('Check order processed quantity ---', name=self.agent_id)

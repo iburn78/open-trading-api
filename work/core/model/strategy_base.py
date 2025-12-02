@@ -53,8 +53,6 @@ class StrategyBase(ABC):
 
     async def logic_run(self):
         # initial run
-        ###_ may develop checker if this is mock str or not 
-
         await self.on_update_shell(UpdateEvent.INITIATE)
 
         async with asyncio.TaskGroup() as tg:
@@ -97,6 +95,7 @@ class StrategyBase(ABC):
             * on_update runs frequently anyway
         ----------------------------------------------------------------------------------------------------------------
         - strategy should be based on the snapshot(states) of the agent: pm and mprice
+            * pm.cur_price can be an (weighted) average price (if trp sends multiple lines of transaction records)
         ----------------------------------------------------------------------------------------------------------------
         - on_update should not await inside; fast deterministic decisions should be made 
             * if it takes time, pm could not be correct anymore (outdated)

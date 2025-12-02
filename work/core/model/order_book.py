@@ -38,6 +38,7 @@ class OrderBook:
     #   (includes initialization with sync data, but does not include initial agent set-up)
     # ----------------------------------------------------------------
     orderbook_holding_qty: int = 0  
+    orderbook_holding_avg_price: float = 0.0
     # - quantity
     # - orderbook_holding_qty can be negative (e.g., agent reconnected and synced with server, initial holding quantity exists, etc.) 
 
@@ -69,13 +70,16 @@ class OrderBook:
             f"{LOG_INDENT}- Limit (Amount)     : {self.pending_limit_buy_amt :>15,d}\n"
             f"{LOG_INDENT}- Market (Quantity)  : {self.pending_market_buy_qty :>15,d}\n"
             f"{LOG_INDENT}Pending Sell Qty     : {self.pending_sell_qty:>15,d}\n"
-            f"{LOG_INDENT}-------------------  ---------------------------------\n"
+            f"{LOG_INDENT}----------------------------------------------------\n"
             f"{LOG_INDENT}Cumulative Buy       : {self.cumul_buy_qty:>15,d}\n"
             f"{LOG_INDENT}Cumulative Sell      : {self.cumul_sell_qty:>15,d}\n"
-            f"{LOG_INDENT}-------------------  ---------------------------------\n"
+            f"{LOG_INDENT}----------------------------------------------------\n"
             f"{LOG_INDENT}Net Cash Used        : {self.net_cash_used:>15,d}\n"
             f"{LOG_INDENT}Cumulative Cost      : {self.cumul_cost:>15,d}\n"
             f"{LOG_INDENT}Total Cash Used      : {self.total_cash_used:>15,d}\n"
+            f"{LOG_INDENT}----------------------------------------------------"
+            f"{LOG_INDENT}OrderBook Holding Q  : {self.orderbook_holding_qty:>15,d}\n"
+            f"{LOG_INDENT}OrderBook Holding AvP: {self.orderbook_holding_avg_price:>15,d}\n"
             f"{LOG_INDENT}----------------------------------------------------"
         )
     def _section(self, title, indexed_orders: dict):
@@ -144,27 +148,27 @@ class OrderBook:
         # from completed to sent
         for k, v in self._indexed_completed_orders.items():
             self.stat_update_to_pending_orders(v)
-            self.stat_update(v)
+            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0)
 
         for k, v in self._indexed_incompleted_orders.items():
             self.stat_update_to_pending_orders(v)
-            self.stat_update(v)
+            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0)
 
         for k, v in self._indexed_sent_for_submit.items():
             self.stat_update_to_pending_orders(v)
 
     # Executed order portion stat update (체결된 사항에 대한 update)
     # - prev_qty = order.processed 
-    # - prev_cost = order.fee_rounded + order.tax_rounded 
+    # - prev_cost = order.fee_ + order.tax_ 
     # - prev_amount = order.amount 
-    def stat_update(self, updated_order: Order, prev_qty = 0, prev_cost = 0, prev_amount = 0):
+    def stat_update(self, updated_order: Order, prev_qty, prev_cost, prev_amount):
         delta_qty = updated_order.processed - prev_qty
         if delta_qty == 0:
             return # nothing to update
         if delta_qty < 0: 
             optlog.error(f'[OrderBook] stat_update - delta quantity negative: {updated_order}', name=self.agent_id)
 
-        delta_cost = (updated_order.fee_rounded + updated_order.tax_rounded) - prev_cost
+        delta_cost = (updated_order.fee_ + updated_order.tax_) - prev_cost
         delta_amount = updated_order.amount - prev_amount
 
         if updated_order.side == SIDE.BUY:
@@ -176,7 +180,9 @@ class OrderBook:
             else:  # MARKET or MIDDLE
                 self.pending_market_buy_qty += -delta_qty
                     
+            pq = self.orderbook_holding_qty
             self.orderbook_holding_qty += delta_qty
+            self.orderbook_holding_avg_price = (pq*self.orderbook_holding_avg_price+delta_amount)/self.orderbook_holding_qty if self.orderbook_holding_qty !=0 else 0
             self.cumul_buy_qty += delta_qty
             self.net_cash_used += delta_amount
 
@@ -216,7 +222,7 @@ class OrderBook:
             if order: 
                 # store previous state
                 prev_qty = order.processed 
-                prev_cost = order.fee_rounded + order.tax_rounded 
+                prev_cost = order.fee_ + order.tax_ 
                 prev_amount = order.amount 
 
                 # update order itself 

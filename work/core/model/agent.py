@@ -153,7 +153,7 @@ class Agent:
         release_request.set_request_data(self.id)
         release_resp: ServerResponse = await self.client.send_client_request(release_request)
         if release_resp.success:
-            optlog.debug(f'[ServerResponse] {release_resp} sync-release completed', name=self.id)
+            optlog.debug(f'[ServerResponse] {release_resp}', name=self.id)
         else: 
             log_raise(f"lock release failed ---", name=self.id)
 

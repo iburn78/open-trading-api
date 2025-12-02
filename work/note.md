@@ -67,6 +67,10 @@ or more modern way
 - in Linux: install Intel MKL NumPy to boost speed 
     - pip install numpy -U --extra-index-url https://pypi.anaconda.org/intel/simple
 
+
+### Tips
+- Update windows terminal from old CMD to windows terminal and use this: winget install --id Microsoft.WindowsTerminal -e 
+
 ## To develop
 
 ### [big topics]
@@ -85,6 +89,7 @@ or more modern way
 - make it run each agent only once: use local lock file method etc
 - manage agents (easy to see like EXCEL)
 - agent manager to use multi threads or multi cmd/terminal 
+- sync with account
 
 ### [long term strategy related]
 - review over-night behavior of server and agent: technically
@@ -96,14 +101,22 @@ or more modern way
 - may need to build server/agent scheduler/controller
 
 ### [immediate next]
-- viewing the snapshot of an agent (using rich or FastAPI etc for web)
+
+#### snapshot
+- viewing the snapshot of an agent (using rich or FastAPI etc for web) and more specific feedback on actions
 - performance measure: agent orderbook has to have parse function (to get the summary of orders)
-- sync with account
-- minimum functional AgentManager 
-    * assigns codes / allocation / strategy from Excel
-- revise brute-rand to be fully functional
+
+#### server/reconnect
+- when reconnect / check if really continuous / how it works now and how should it work 
+- make it multi day re-connection
+- need to make reset function of server status... etc 
 
 ### [Trading Strategy related]
 - 유동주식수 and volume: use at the same time
 - try make a back tester
 - price/volume history: get / save / etc
+
+
+
+
+

@@ -15,7 +15,7 @@ if __name__ == "__main__":
         outfile=None, # auto assign
     )
 
-    search_str = "000660"
+    search_str = " A1"
     file_name = 'client_runner'
 
     grep_logs(
