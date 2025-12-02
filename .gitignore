@@ -169,3 +169,4 @@ cython_debug/
 # Project Specific --------------------
 .pkl
 data/
+log/
