@@ -75,12 +75,11 @@ class Order:
             f"{'accepted' if self.accepted else 'not_accepted'}, "
             f"{'completed' if self.completed else 'not_completed'}, "
             f"{'cancelled' if self.cancelled else 'not_cancelled'}, "
-            f"uid {self.unique_id[-12:]}"
-            f"\n                                 "
+            f"uid {self.unique_id[-12:]}, "
             f"fee: {self.fee_}, "
             f"tax: {self.tax_}, "
             f"amount: {self.amount}, "
-            f"avg_price: {self.avg_price} "
+            f"avg_price: {self.avg_price:.2f} "
         )
 
     def __eq__(self, other):
@@ -144,14 +143,15 @@ class Order:
                     traded_exchange = notice.traded_exchange
                 )
                 # 개별 체결건에 대해 fee, tax가 누적됨
-                self.fee_occured += fee_
-                self.tax_occured += tax_
+                self.fee_ += fee_
+                self.tax_ += tax_
 
                 if self.processed > self.quantity:
                     log_raise('Check order processed quantity ---', name=self.agent_id)
                 if self.processed == self.quantity:
                     self.completed = True
                     optlog.info(f"[Order] order {self.order_no} completed", name=self.agent_id)
+                    optlog.info(self)
             else: 
                 log_raise("Check logic ---", name=self.agent_id)
 

@@ -27,7 +27,6 @@ class PerformanceMetric:
     init_holding_qty: int | None = None
     init_avg_price: int | None = None
     init_bep_price: int | None = None 
-    init_market_price: int | None = None 
     init_time: datetime | None = None
 
     # -------------------------------------------------------
@@ -87,6 +86,7 @@ class PerformanceMetric:
     def _feed_in_ob_mp_managed_data(self):
         # get data from order_book
         self.orderbook_holding_qty = self.order_book.orderbook_holding_qty
+        self.orderbook_holding_avg_price = self.order_book.orderbook_holding_avg_price
         self.pending_buy_qty = self.order_book.pending_buy_qty
         self.pending_limit_buy_amt = self.order_book.pending_limit_buy_amt
         self.pending_market_buy_qty = self.order_book.pending_market_buy_qty
@@ -126,7 +126,8 @@ class PerformanceMetric:
         self.return_rate = (self.cur_price-self.avg_price)/self.avg_price if self.avg_price > 0 else 0
         self.bep_return_rate = (self.cur_price-self.bep_price)/self.bep_price if self.bep_price > 0 else 0
 
-        self.init_value = self.init_cash_allocated + self.init_holding_qty*self.init_market_price
+        ###_ below used? where and check again
+        self.init_value = self.init_cash_allocated + self.init_holding_qty*self.init_avg_price
         self.cur_value = self.cash_balance + self.holding_value
         self.unrealized_gain = self.cur_value - self.init_value                      
         self.cap_return_rate = self.unrealized_gain / self.init_value if self.init_value > 0 else 0 

@@ -52,7 +52,7 @@ class MarketPrices:
         self._amount_window = deque(maxlen=self.maxlen)  # (timestamp, amount)
 
         # running sums for O(1) updates
-        self._sum_price = 0.0
+        self._sum_price = 0
         self._sum_volume = 0
         self._sum_amount = 0
 

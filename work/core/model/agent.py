@@ -79,12 +79,11 @@ class Agent:
     # has to be called on start-up
     def initial_value_setup(self, init_cash_allocated = 0, init_holding_qty = 0, 
                             init_avg_price = 0, init_bep_price = 0,
-                            init_market_price = 0, init_time = None):
+                            init_time = None):
         self.pm.init_cash_allocated = init_cash_allocated
         self.pm.init_holding_qty = init_holding_qty
         self.pm.init_avg_price = init_avg_price
         self.pm.init_bep_price = init_bep_price
-        self.pm.init_market_price = init_market_price
         self.pm.init_time = init_time
         self.agent_initialized = True
     

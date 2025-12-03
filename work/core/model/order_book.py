@@ -77,9 +77,8 @@ class OrderBook:
             f"{LOG_INDENT}Net Cash Used        : {self.net_cash_used:>15,d}\n"
             f"{LOG_INDENT}Cumulative Cost      : {self.cumul_cost:>15,d}\n"
             f"{LOG_INDENT}Total Cash Used      : {self.total_cash_used:>15,d}\n"
-            f"{LOG_INDENT}----------------------------------------------------"
-            f"{LOG_INDENT}OrderBook Holding Q  : {self.orderbook_holding_qty:>15,d}\n"
-            f"{LOG_INDENT}OrderBook Holding AvP: {self.orderbook_holding_avg_price:>15,d}\n"
+            f"{LOG_INDENT}----------------------------------------------------\n"
+            f"{LOG_INDENT}OrderBook Holding AvP: {self.orderbook_holding_avg_price:>15,.0f}\n"
             f"{LOG_INDENT}----------------------------------------------------"
         )
     def _section(self, title, indexed_orders: dict):
@@ -157,7 +156,7 @@ class OrderBook:
         for k, v in self._indexed_sent_for_submit.items():
             self.stat_update_to_pending_orders(v)
 
-    # Executed order portion stat update (체결된 사항에 대한 update)
+    # executed order portion stat update (체결된 사항에 대한 update)
     # - prev_qty = order.processed 
     # - prev_cost = order.fee_ + order.tax_ 
     # - prev_amount = order.amount 
@@ -192,13 +191,15 @@ class OrderBook:
 
             # update stats
             self.orderbook_holding_qty += -delta_qty
+            if self.orderbook_holding_qty == 0: 
+                self.orderbook_holding_avg_price = 0
             self.cumul_sell_qty += delta_qty
             self.net_cash_used += -delta_amount
 
         self.cumul_cost += delta_cost
         self.total_cash_used = self.net_cash_used + self.cumul_cost
 
-    # reflect: even before sumitted, count in already generated orders
+    # count in orders that are not yet submtted
     # revert: API refused order portion stat update (각종 오류로, API 에서 submit 실패한 사항에 대한 update)
     # note: cash is not yet used
     def stat_update_to_pending_orders(self, order, revert=False):

@@ -23,6 +23,9 @@ class DoubleUpStrategy(StrategyBase):
 
     ###_ cost gap seems exists / study logs
     ###_ bep_return_rate seems cumulative / not correct
+    ###_ hard to see initial holding / dbl check if sync is baed on code (agent id)
+    ###_ check if agent id is not changed, while code is changed
+    ###_ when server is on, check pkl, and load // print when save (opt)
 
     async def on_update(self, update_event: UpdateEvent):
         optlog.debug(f"{self.code}-{update_event.name}: {self.pm.cur_price:,d} / {self.pm.bep_return_rate:.6f}", name=self.agent_id)

@@ -52,7 +52,7 @@ class CostCalculator:
     RD_rule = { 
         # 0: # 1원 미만 rounding
         # -1: # 10원 미만 rounding 
-        'FEE': 0, # maybe -1; need check
+        'FEE': 0, # maybe -1; need check (seems better tracking with 0)
         'MIN_FEE': 0, 
         'TAX': 0, 
     }
@@ -101,7 +101,8 @@ class CostCalculator:
         tax_percent = cls.TAX[listed_market]['TransactionTax'] + cls.TAX[listed_market]['RuralDevTax']
 
         bep_rate = (1+fee_percent/100)/(1-(fee_percent/100+tax_percent/100))
-        bep_cost = excel_round(quantity*avg_price*(bep_rate-1))
-        bep_price = excel_round(avg_price*bep_rate)
+        bep_cost = quantity*avg_price*(bep_rate-1) 
+        bep_price = avg_price*bep_rate 
 
+        # return as floats
         return bep_cost, bep_price
