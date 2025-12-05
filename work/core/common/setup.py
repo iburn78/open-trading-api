@@ -17,7 +17,8 @@ work_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 data_dir = os.path.join(work_dir, 'data')
 # log_dir defined in optlog.py
 
-disk_save_period = 3600  # sec
+order_manager_keep_days = 7 # days
+disk_save_period = 900 # sec
 
 # ----------------------------------------------------
 # key parameters in trading logic setup

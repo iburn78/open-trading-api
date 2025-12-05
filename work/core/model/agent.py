@@ -148,6 +148,10 @@ class Agent:
         optlog.info(f"[ServerResponse] {subs_resp}", name=self.id)
 
         # [Price initialization part]
+        ###_ if not while market open, may initialize with last price data 
+        ###_ current method is too conservative anyway.... 
+        ###_ it stucks all actions following... and cannot initialize agent while out of market time
+        ###_ may intro logic that : strategy ensures it receives market price once while other pm / etc data update possible with latest data
         optlog.debug(f'[Agent] waiting for initial market price', name=self.id)
         await self.agent_initial_price_set_up.wait() # ensures that pm is set with latest market data
         optlog.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", name=self.id)

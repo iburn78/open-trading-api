@@ -6,19 +6,17 @@ import pickle
 import os
 import time
 
-from core.common.setup import data_dir, disk_save_period
+from core.common.setup import data_dir, disk_save_period, order_manager_keep_days
 from core.common.optlog import optlog, log_raise, LOG_INDENT
 from core.common.interface import Sync
 from core.model.agent import AgentCard, dispatch
-from core.model.order import Order, ReviseCancelOrder
+from core.model.order import Order
 from core.kis.ws_data import TransactionNotice, RCtype, AllYN
 from app.comm.conn_agents import ConnectedAgents
 
 # server side application
 # Orders placed by agents are managed here in a comphrehensive way
 # all order records are kept
-# to be saved in disc everyday (to be implemented later)
-OM_KEEP_DAYS: int = 7 
 
 # naming constants
 PENDING_TRNS = 'pending_trns'
@@ -90,6 +88,7 @@ class OrderManager:
             lambda: {PENDING_TRNS: defaultdict(list), INCOMPLETED_ORDERS: defaultdict(dict), COMPLETED_ORDERS: defaultdict(list)}
         )
     ))
+    load_days: int = order_manager_keep_days
 
     # Each key gets its own asyncio.Lock automatically
     # key = code
@@ -99,7 +98,7 @@ class OrderManager:
 
     def __post_init__(self): 
         self.sec = lambda t: int(t[:2])*3600 + int(t[2:4])*60 + int(t[4:6])
-        self._pending_trns_task = None
+        self.load_history()
 
     def __str__(self):
         if not self.map:
@@ -120,16 +119,26 @@ class OrderManager:
                     res = res + f'{LOG_INDENT}  - {agent_id}: {o}\n'
         return res.strip()
 
-    # sync is based on agent.id not by code...
-    # agent.id has to be identical to get sync correctly
-    async def get_agent_sync(self, agent: AgentCard):
+    # sync is based first by code, and then by checking if agent.id exists
+    # code and agent.id has to be correct 
+    # sync_start_date should be an isoformat ("YYYY-MM-DD")
+    async def get_agent_sync(self, agent: AgentCard, sync_start_date: str | None = None):
         lock = self._locks[agent.code]
         await lock.acquire()
         date_=date.today().isoformat()
         date_map = self.map.setdefault(date_, {})
         code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
-        ios = code_map[INCOMPLETED_ORDERS].setdefault(agent.id, {})
+        # incompleted_orders: only sync needed for today
+        ios = code_map[INCOMPLETED_ORDERS].setdefault(agent.id, {}) 
+        # completed_orders: multi-day sync needed
+        ###_
+        ###_
+        ###_ be careful order_no can be identical... across dates
+        ###_ during sync, only orders might be needed... change to list (as duplicate keys might not be allowed) 
+        ###_ sync should respect time orders
+        ###_
         cos = code_map[COMPLETED_ORDERS].setdefault(agent.id, {})
+        # pending_trns: only sync needed for today
         ptrns = code_map[PENDING_TRNS]
         optlog.debug(f"[OrderManager] agent sync data sent", name=agent.id)
         return Sync(agent.id, ios, cos, ptrns)
@@ -312,7 +321,29 @@ class OrderManager:
                     lock.release()
 
             # clean up old dates
-            cutoff = (date.today() - timedelta(days=OM_KEEP_DAYS)).isoformat()
+            cutoff = (date.today() - timedelta(days=self.load_days)).isoformat()
             dates_to_remove = [d for d in self.map.keys() if d < cutoff]
             for d in dates_to_remove:
                 del self.map[d]
+
+            return date_
+    
+    def load_history(self):
+        self.map.clear()
+        cutoff_date = (date.today() - timedelta(days=self.load_days)).isoformat()
+        for fname in sorted(os.listdir(data_dir)):
+            if not (fname.startswith("order_manager_") and fname.endswith(".pkl")):
+                continue
+
+            date_ = fname[14:24]  # 'YYYY-MM-DD'
+            if date_ < cutoff_date:
+                continue  # skip old files
+            path = os.path.join(data_dir, fname)
+            try:
+                with open(path, "rb") as f:
+                    loaded = pickle.load(f)
+            except Exception as e:
+                optlog.error(f"[OrderManager] failed to load {fname}: {e}")
+                continue
+            self.map[date_] = loaded
+            optlog.info(f"[OrderManager] loaded history for {date_} ({fname})")

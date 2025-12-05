@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime
 
-from ..common.tools import excel_round
+from ..common.tools import excel_round_vector
 from ..common.optlog import log_raise
 
 tr_id_dict = {
@@ -223,7 +223,7 @@ class TransactionPrices: # MarketPrices 국내주식 실시간체결가 (KRX, bu
                 code = self.trprices.iloc[0]["MKSC_SHRN_ISCD"] if not self.trprices.empty else "N/A"
                 log_raise(f"check required: qty sum is zero or NaN ({code})---")
 
-            pr_avg = excel_round((pr * qty).sum() / qty_sum)
+            pr_avg = excel_round_vector((pr * qty).sum() / qty_sum)
 
             lt_series = pd.to_datetime(
                 self.trprices["BSOP_DATE"] + " " + self.trprices["STCK_CNTG_HOUR"],

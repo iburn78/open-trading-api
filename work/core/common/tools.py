@@ -7,11 +7,15 @@ from .optlog import log_raise
 # ----------------------------------------
 # Float precision adjust
 # ----------------------------------------
-def excel_round(x: int | list[int], ndigits=0):  # excel like rounding / works for scaler and vector / positive and negative
+def excel_round_vector(x: int | list[int], ndigits=0):  # excel like rounding / works for scaler and vector / positive and negative
     x = np.asarray(x)
     eps = 1e-7
     eps_sign = np.where(x >=0, eps, -eps)
     return (np.round(x + eps_sign, ndigits)+eps_sign).astype(int)
+
+def excel_round(x: float, ndigits=0):  # scaler
+    eps = 1e-7 if x >= 0 else -1e-7
+    return int(round(x + eps, ndigits))
 
 # ----------------------------------------
 # Get external data

@@ -194,6 +194,14 @@ async def server(shutdown_event: asyncio.Event):
 
         await shutdown_event.wait() # the task group doesn't exit instantly
 
+###_ auto reconnect on error / save data to disk, and load it
+###_ kis_auth has its own retry ... study why it does not work in some cases
+###_ 
+###_ 1205_160813.367 [ERROR] sv> kis_auth> Connection exception >> no close frame received or sent 
+###_ 1205_160822.854 [ERROR] sv> kis_auth> Connection exception >> [WinError 121] 세마포 제한 시간이 만료되었습니다
+###_
+###_ full close / reconnect might be necessary
+
 async def main():
     sep = "\n======================================================================================"
     optlog.info("[Server] server initiated..."+sep)
@@ -206,8 +214,10 @@ async def main():
         shutdown_event.set()
     except asyncio.CancelledError:
         optlog.info("[Server] tasks cancelled cleanly" + sep)
+        shutdown_event.set()
     finally:
-        await order_manager.persist_to_disk(immediate = True)
+        saved_date = await order_manager.persist_to_disk(immediate = True)
+        optlog.info(f"[Server] order_manager saved for {saved_date}")
         optlog.info("[Server] shutdown complete" + sep)
 
 if __name__ == "__main__":
