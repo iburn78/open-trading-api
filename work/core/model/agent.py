@@ -61,6 +61,7 @@ class Agent:
 
         self.order_book.agent_id = self.id
         self.order_book.code = self.code
+        self.order_book.on_update = self.on_orderbook_update
 
         self.market_prices.code = self.code
 
@@ -77,16 +78,17 @@ class Agent:
         self.strategy.link_agent_data(self.id, self.code, self.market_prices, self.pm)
 
     # has to be called on start-up
+    # INITIAL STATE has to be defined carefully, as "sync" will be performed
     def initial_value_setup(self, init_cash_allocated = 0, init_holding_qty = 0, 
-                            init_avg_price = 0, init_bep_price = 0,
-                            init_time = None):
+                            init_avg_price = 0):
         self.pm.init_cash_allocated = init_cash_allocated
         self.pm.init_holding_qty = init_holding_qty
         self.pm.init_avg_price = init_avg_price
-        self.pm.init_bep_price = init_bep_price
-        self.pm.init_time = init_time
         self.agent_initialized = True
     
+    def on_orderbook_update(self, pending=False):
+        self.pm.update(pending)
+
     async def process_strategy_command(self): 
         while not self.hardstop_event.is_set():
             str_command: StrategyCommand = await self.strategy._command_queue.get()
@@ -139,6 +141,18 @@ class Agent:
         self.order_book.trenv = self.trenv 
         self.pm.my_svr = self.trenv.my_svr
 
+        # [Subscription part]
+        subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD)
+        subs_request.set_request_data(self.card) 
+        subs_resp: ServerResponse = await self.client.send_client_request(subs_request)
+        optlog.info(f"[ServerResponse] {subs_resp}", name=self.id)
+
+        # [Price initialization part]
+        optlog.debug(f'[Agent] waiting for initial market price', name=self.id)
+        await self.agent_initial_price_set_up.wait() # ensures that pm is set with latest market data
+        optlog.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", name=self.id)
+        self.pm.update()
+
         # [Sync part - getting sync data]
         sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
         sync_request.set_request_data(self.id)
@@ -155,17 +169,6 @@ class Agent:
             optlog.debug(f'[ServerResponse] {release_resp}', name=self.id)
         else: 
             log_raise(f"lock release failed ---", name=self.id)
-
-        # [Subscription part]
-        subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD)
-        subs_request.set_request_data(self.card) 
-        subs_resp: ServerResponse = await self.client.send_client_request(subs_request)
-        optlog.info(f"[ServerResponse] {subs_resp}", name=self.id)
-
-        # [Price initialization part]
-        optlog.debug(f'[Agent] waiting for initial market price', name=self.id)
-        await self.agent_initial_price_set_up.wait() # ensures that pm is set with latest market data
-        optlog.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", name=self.id)
 
         # [Strategy enact part]
         asyncio.create_task(self.process_strategy_command())

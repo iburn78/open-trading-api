@@ -29,20 +29,21 @@ from core.strategy.null_str import NullStr
 async def main(sw=None): # switch
     if sw == "1":
         # A = Agent(id = 'A1', code = '000660', strategy=NullStr())
-        # A = Agent(id = 'A1', code = '000660', strategy=DoubleUpStrategy())
-        # A.initial_value_setup(init_cash_allocated=100000000, init_holding_qty=20, init_avg_price=550000)
-        # task1 = asyncio.create_task(A.run())  
+        A = Agent(id = 'A2', code = '000660', strategy=DoubleUpStrategy())
+        A.initial_value_setup(init_cash_allocated=100000000, init_holding_qty=20, init_avg_price=500000)
+        # A.initial_value_setup(init_cash_allocated=100000000)
+        task1 = asyncio.create_task(A.run())  
 
-        B = Agent(id = 'B1', code = '001440', strategy=NullStr())
-        B.initial_value_setup(init_cash_allocated=10000000)
-        task2 = asyncio.create_task(B.run())  
+        # B = Agent(id = 'B1', code = '001440', strategy=NullStr())
+        # B.initial_value_setup(init_cash_allocated=10000000)
+        # task2 = asyncio.create_task(B.run())  
 
         # task_monitor = asyncio.create_task(monitor_agent_live(A))
 
         await asyncio.sleep(1000)
 
-        # A.hardstop_event.set()
-        B.hardstop_event.set()
+        A.hardstop_event.set()
+        # B.hardstop_event.set()
 
         # await asyncio.gather(task1, task2)
         # await asyncio.gather(task1, task2, task_monitor)
@@ -58,9 +59,7 @@ async def main(sw=None): # switch
         await asyncio.gather(task3)
     
     elif sw == "3": 
-
         pass
-
 
 
 if __name__ == "__main__":

@@ -120,6 +120,8 @@ class OrderManager:
                     res = res + f'{LOG_INDENT}  - {agent_id}: {o}\n'
         return res.strip()
 
+    # sync is based on agent.id not by code...
+    # agent.id has to be identical to get sync correctly
     async def get_agent_sync(self, agent: AgentCard):
         lock = self._locks[agent.code]
         await lock.acquire()

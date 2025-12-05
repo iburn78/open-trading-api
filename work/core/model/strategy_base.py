@@ -81,7 +81,7 @@ class StrategyBase(ABC):
 
     async def on_update_shell(self, update_event: UpdateEvent):
         async with self._on_update_lock:
-            self.pm.update()
+            self.pm.update() # for market price update and corresponding data
             await self.on_update(update_event)
 
     @abstractmethod

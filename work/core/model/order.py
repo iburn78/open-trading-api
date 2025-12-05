@@ -3,7 +3,7 @@ import pandas as pd
 from dataclasses import dataclass, field 
 
 from .cost import CostCalculator
-from ..common.optlog import optlog, log_raise
+from ..common.optlog import optlog, log_raise, LOG_INDENT
 from ..common.tools import get_listed_market
 from ..kis.domestic_stock_functions import order_cash, order_rvsecncl
 from ..kis.ws_data import SIDE, ORD_DVSN, EXCHANGE, RCtype, AllYN, TransactionNotice
@@ -37,7 +37,7 @@ class Order:
 
     # for tax and fee calculation
     amount: int = 0 # total purchased/sold cumulative amount (sum of quantity x price)
-    avg_price: float = 0.0 # meaningful only when it is an market order
+    avg_price: float = 0 # meaningful only when it is an market order
 
     # actual status
     processed: int = 0
@@ -150,8 +150,7 @@ class Order:
                     log_raise('Check order processed quantity ---', name=self.agent_id)
                 if self.processed == self.quantity:
                     self.completed = True
-                    optlog.info(f"[Order] order {self.order_no} completed", name=self.agent_id)
-                    optlog.info(self)
+                    optlog.info(f"[Order] order {self.order_no} completed\n{LOG_INDENT}{self}", name=self.agent_id)
             else: 
                 log_raise("Check logic ---", name=self.agent_id)
 

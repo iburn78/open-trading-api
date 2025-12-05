@@ -15,17 +15,12 @@ class DoubleUpStrategy(StrategyBase):
         super().__init__() 
     
     INITIAL_BUY_QTY = 1
-    MAX_PURCHASE_QTY = 12
+    MAX_PURCHASE_QTY = 4
     DOUBLEUP_MULTIPLIER = 2
 
-    SELL_BEP_RETURN_RATE = 0.003 
-    BUY_BEP_RETURN_RATE = -0.005
+    SELL_BEP_RETURN_RATE = 0.001 
+    BUY_BEP_RETURN_RATE = -0.002
 
-    ###_ cost gap seems exists / study logs
-    ###_ bep_return_rate seems cumulative / not correct
-    ###_ hard to see initial holding / dbl check if sync is baed on code (agent id)
-    ###_ check if agent id is not changed, while code is changed
-    ###_ when server is on, check pkl, and load // print when save (opt)
 
     async def on_update(self, update_event: UpdateEvent):
         optlog.debug(f"{self.code}-{update_event.name}: {self.pm.cur_price:,d} / {self.pm.bep_return_rate:.6f}", name=self.agent_id)
@@ -36,11 +31,9 @@ class DoubleUpStrategy(StrategyBase):
         if self.pm.holding_qty == 0:
             # buy once
             q = self.INITIAL_BUY_QTY
-
             optlog.info(f"INITIAL BUY {q}", name=self.agent_id)
             sc = StrategyCommand(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
             sent = await self.order_submit(sc)
-            optlog.info(self.pm.order_book, name=self.agent_id)
             return
 
         # pending sell quantity 
@@ -50,7 +43,6 @@ class DoubleUpStrategy(StrategyBase):
             optlog.info(f"SELL ALLL {q}", name=self.agent_id) 
             sc = StrategyCommand(side=SIDE.SELL, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
             sent = await self.order_submit(sc)
-            optlog.info(self.pm.order_book, name=self.agent_id)
             return
 
         if self.pm.bep_return_rate is not None and self.pm.bep_return_rate <= self.BUY_BEP_RETURN_RATE:
@@ -60,6 +52,5 @@ class DoubleUpStrategy(StrategyBase):
             optlog.info(f"DOUBLE-UP BUY {q}", name=self.agent_id)
             sc = StrategyCommand(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
             sent = await self.order_submit(sc)
-            optlog.info(self.pm.order_book, name=self.agent_id)
             return
 

@@ -101,6 +101,8 @@ async def handler_shell(reader, writer):
     optlog.info(f"[Server] client connected {addr}")
     try:
         await handle_client(reader, writer, **server_data_dict)
+    except asyncio.CancelledError:
+        raise  # re-raise needed for TaskGroup to handle
     except Exception as e:
         optlog.error(f"[Server] handler crashed: {e}", name=addr[1])
     finally:
@@ -192,17 +194,21 @@ async def server(shutdown_event: asyncio.Event):
 
         await shutdown_event.wait() # the task group doesn't exit instantly
 
-if __name__ == "__main__":
+async def main():
     sep = "\n======================================================================================"
     optlog.info("[Server] server initiated..."+sep)
+
     shutdown_event = asyncio.Event()
     try:
-        asyncio.run(server(shutdown_event))
+        await server(shutdown_event)
     except KeyboardInterrupt:
         optlog.info("[Server] server stopped by user (Ctrl+C)"+sep)
         shutdown_event.set()
     except asyncio.CancelledError:
         optlog.info("[Server] tasks cancelled cleanly" + sep)
     finally:
-        asyncio.run(order_manager.persist_to_disk(immediate = True))
+        await order_manager.persist_to_disk(immediate = True)
         optlog.info("[Server] shutdown complete" + sep)
+
+if __name__ == "__main__":
+    asyncio.run(main())

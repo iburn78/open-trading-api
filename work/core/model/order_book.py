@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass, field
+from typing import Callable
 
 from .order import Order
 from .client import PersistentClient
@@ -17,7 +18,7 @@ class OrderBook:
     agent_id: str = ""
     code: str = ""
     trenv: KISEnv | None = None # initialized once agent is registered
-    print_processing_only: bool = True 
+    on_update: Callable | None  = None
 
     # private order lists - should use setter/getter functions to calculate dashboard info real time
     _indexed_submission_failure_orders: dict["str_id": str, Order] = field(default_factory=dict)
@@ -33,14 +34,16 @@ class OrderBook:
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
     # ----------------------------------------------------------------
-    # dashboard info / shared with performance metric
+    # dashboard info / shared with performance metric / has to be reset before sync
     # - below ONLY accounts for the transactions since in this order book creation
-    #   (includes initialization with sync data, but does not include initial agent set-up)
+    # - there can be initial holding qty assigned to the agent / pm (not known to the order_book)
+    # - if sell, orderbook_holding_qty is sold first: that is FILO 
+    # - if initial holding qty is sold, then it does not affect orderbook_holding_qty
+    # - orderbook_holding_avg_price is only for new buys in this order_book
     # ----------------------------------------------------------------
-    orderbook_holding_qty: int = 0  
-    orderbook_holding_avg_price: float = 0.0
-    # - quantity
-    # - orderbook_holding_qty can be negative (e.g., agent reconnected and synced with server, initial holding quantity exists, etc.) 
+    orderbook_holding_qty: int = 0 # can not be negative
+    orderbook_holding_avg_price: float = 0
+    initial_holding_sold_qty: int = 0 # when initial holding qty is sold, this records it
 
     # 주문 상태
     pending_buy_qty: int = 0 # quantity, counted from _indexed_sent_for_submit and _indexed_incompleted_orders 
@@ -70,6 +73,7 @@ class OrderBook:
             f"{LOG_INDENT}- Limit (Amount)     : {self.pending_limit_buy_amt :>15,d}\n"
             f"{LOG_INDENT}- Market (Quantity)  : {self.pending_market_buy_qty :>15,d}\n"
             f"{LOG_INDENT}Pending Sell Qty     : {self.pending_sell_qty:>15,d}\n"
+            f"{LOG_INDENT}Init Holding Sold Qty: {self.initial_holding_sold_qty:>15,d}\n"
             f"{LOG_INDENT}----------------------------------------------------\n"
             f"{LOG_INDENT}Cumulative Buy       : {self.cumul_buy_qty:>15,d}\n"
             f"{LOG_INDENT}Cumulative Sell      : {self.cumul_sell_qty:>15,d}\n"
@@ -85,8 +89,6 @@ class OrderBook:
         return f"{title} ({len(indexed_orders)} orders)\n" + "\n".join(f"{LOG_INDENT}{v}" for k, v in indexed_orders.items())
 
     def get_listings_str(self, processing_only: bool=True):
-        processing_only = self.print_processing_only
-
         sections = []
         if self._indexed_sent_for_submit:
             sections.append(self._section("[OrderBook] sent for submit", self._indexed_sent_for_submit))
@@ -130,18 +132,18 @@ class OrderBook:
     def _check_if_start_from_empty(self):
         # this is to be called when connected to the server
         # therefore, the order_book initial state expected to be empty 
-        if self._indexed_submission_failure_orders: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 1", name=self.agent_id) 
-        if self._non_strategy_related_failure_orders: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 2", name=self.agent_id) 
-        if self._indexed_sent_for_submit: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 3", name=self.agent_id) 
-        if self._indexed_incompleted_orders: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 4", name=self.agent_id) 
-        if self._indexed_completed_orders: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 5", name=self.agent_id) 
-        if self._unhandled_trns: optlog.warning(f"[OrderBook] parse_orders, initial state not empty - 6", name=self.agent_id) 
+        if self._indexed_submission_failure_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 1", name=self.agent_id) 
+        if self._non_strategy_related_failure_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 2", name=self.agent_id) 
+        if self._indexed_sent_for_submit: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 3", name=self.agent_id) 
+        if self._indexed_incompleted_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 4", name=self.agent_id) 
+        if self._indexed_completed_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 5", name=self.agent_id) 
+        if self._unhandled_trns: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 6", name=self.agent_id) 
 
         # checking representative ones
-        if self.orderbook_holding_qty != 0: optlog.warning(f"[OrderBook] key_stat is not zero - 1", name=self.agent_id)
-        if self.pending_buy_qty != 0 : optlog.warning(f"[OrderBook] key_stat is not zero - 2", name=self.agent_id)
-        if self.pending_sell_qty != 0 : optlog.warning(f"[OrderBook] key_stat is not zero - 3", name=self.agent_id)
-        if self.total_cash_used != 0: optlog.warning(f"[OrderBook] key_stat is not zero - 4", name=self.agent_id)
+        if self.orderbook_holding_qty != 0: optlog.error(f"[OrderBook] key_stat is not zero - 1", name=self.agent_id)
+        if self.pending_buy_qty != 0 : optlog.error(f"[OrderBook] key_stat is not zero - 2", name=self.agent_id)
+        if self.pending_sell_qty != 0 : optlog.error(f"[OrderBook] key_stat is not zero - 3", name=self.agent_id)
+        if self.total_cash_used != 0: optlog.error(f"[OrderBook] key_stat is not zero - 4", name=self.agent_id)
 
     def _parse_orders_and_update_stats(self):
         # from completed to sent
@@ -190,14 +192,19 @@ class OrderBook:
             self.pending_sell_qty += -delta_qty
 
             # update stats
-            self.orderbook_holding_qty += -delta_qty
-            if self.orderbook_holding_qty == 0: 
+            if self.orderbook_holding_qty - delta_qty >= 0:
+                self.orderbook_holding_qty += -delta_qty
+            else:
+                self.initial_holding_sold_qty += -(self.orderbook_holding_qty - delta_qty)
+                self.orderbook_holding_qty = 0
                 self.orderbook_holding_avg_price = 0
+
             self.cumul_sell_qty += delta_qty
             self.net_cash_used += -delta_amount
 
         self.cumul_cost += delta_cost
         self.total_cash_used = self.net_cash_used + self.cumul_cost
+        self.on_update()
 
     # count in orders that are not yet submtted
     # revert: API refused order portion stat update (각종 오류로, API 에서 submit 실패한 사항에 대한 update)
@@ -214,6 +221,7 @@ class OrderBook:
                 self.pending_market_buy_qty += m*order.quantity
         else:
             self.pending_sell_qty += m*order.quantity
+        self.on_update(pending=True)
 
     async def process_tr_notice(self, notice: TransactionNotice):
         # reroute notice to corresponding order

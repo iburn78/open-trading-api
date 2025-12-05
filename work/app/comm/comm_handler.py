@@ -164,7 +164,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
         except (pickle.UnpicklingError, EOFError, AttributeError,
             ValueError, ImportError, IndexError) as e:
-            response = ServerResponse(success=False, status=f"client request pickle load error {e}")
+            response = ServerResponse(success=False, status=f"client request load error {e}")
             optlog.error(f"[HandleClient] {response}", name=cid, exc_info=True)
 
         except Exception as e:

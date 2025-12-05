@@ -12,4 +12,3 @@ class NullStr(StrategyBase):
     async def on_update(self, update_event: UpdateEvent):
         if update_event == UpdateEvent.INITIATE:
             optlog.debug(f"Null Strategy Initiated: {self.code}: {self.pm.cur_price:,d} / {self.pm.bep_return_rate:.6f}", name=self.agent_id)
-            optlog.info(self.pm.order_book, name=self.agent_id)

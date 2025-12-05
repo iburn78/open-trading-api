@@ -24,9 +24,9 @@ class Holding: # Stock Holding / data is filled from the API server (e.g., actua
     code: str
     quantity: int
     amount: int # 수량*체결가
-    avg_price: float = 0.0  # fee/tax not considered
+    avg_price: float = 0  # fee/tax not considered
     bep_cost: int = 0 # cost if gain is 0 after fee/tax
-    bep_price: float = 0.0  # fee/tax considered
+    bep_price: float = 0  # fee/tax considered
     listed_market: str = None  # to assign later (for fee calculation), e.g., KOSPI, KOSDAQ... 
 
     def __str__(self):

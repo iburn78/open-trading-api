@@ -90,12 +90,13 @@ or more modern way
 - manage agents (easy to see like EXCEL)
 - agent manager to use multi threads or multi cmd/terminal 
 - sync with account
+- agent better to handle only one code (initial qty, price / sync), but if initial value assigned correctly, code can be changed (as sync will check first code and then id)
 
 ### [long term strategy related]
 - review over-night behavior of server and agent: technically
     * order_manager records data daily (keeps for multiple days)
-    * agent orderbook keeps all orders
-- make multi-day (longer terms) strategy possible (necessary at all?)
+    * agent order_book keeps all orders
+- make multi-day (longer terms) strategy/sync possible 
     * currently agent sync with daily data
     * may need to engage agent manager 
 - may need to build server/agent scheduler/controller
@@ -104,10 +105,11 @@ or more modern way
 
 #### snapshot
 - viewing the snapshot of an agent (using rich or FastAPI etc for web) and more specific feedback on actions
-- performance measure: agent orderbook has to have parse function (to get the summary of orders)
+- performance measure: agent order_book has to have parse function (to get the summary of orders)
 
 #### server/reconnect
-- when reconnect / check if really continuous / how it works now and how should it work 
+- when reconnect / check if really continuous / how it works now and how should it work
+- when load/save pkl, may print status to log
 - make it multi day re-connection
 - need to make reset function of server status... etc 
 
