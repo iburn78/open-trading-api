@@ -5,7 +5,6 @@ from typing import Callable
 from .order import Order
 from .client import PersistentClient
 from ..common.optlog import optlog, log_raise, LOG_INDENT
-from ..common.tools import compare_indexed_listings
 from ..common.interface import RequestCommand, ClientRequest, Sync
 from ..kis.kis_auth import KISEnv
 from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice
@@ -25,6 +24,7 @@ class OrderBook:
     _non_strategy_related_failure_orders: list[Order] =field(default_factory=list)
     _indexed_sent_for_submit: dict["unique_id": str, Order] = field(default_factory=dict) # order sent to the server; once the server sent it to API, the submitted order will be sent back through on_dispatch
     _indexed_incompleted_orders: dict["order_no": str, Order] = field(default_factory=dict)
+    _indexed_prev_incompleted_orders: dict["order_no": str, Order] = field(default_factory=dict) # only used when sync
     _indexed_completed_orders: dict["order_no": str, Order] = field(default_factory=dict)
     # - below _pending_trns: copied from the server; and this is not agent specific; so possible not to emptied out eventually, which is acceptable
     _pending_trns_from_server_on_sync: dict["order_no": str, list[TransactionNotice]] = field(default_factory=dict)
@@ -103,25 +103,17 @@ class OrderBook:
     async def process_sync(self, sync: Sync):
         if self.agent_id != sync.agent_id: log_raise(f'[OrderBook] sync error - agent {self.agent_id}, received {sync.agent_id}')
         async with self._lock:
-            ires, imsg = compare_indexed_listings(self._indexed_incompleted_orders, sync.incompleted_orders)
-            cres, cmsg = compare_indexed_listings(self._indexed_completed_orders, sync.completed_orders)
 
-            # check if the same or not, and show differences
-            if ires and cres:
-                optlog.info(f'[OrderBook] agent {self.agent_id} sync done: all order history matches', name=self.agent_id)
-            else: 
-                msg = f'[OrderBook] agent {self.agent_id} updated with server OrderManager data:'
-                if not ires:
-                    msg += f'    [incompleted orders updated]\n' + imsg
-                if not cres:
-                    msg += f'    [completed orders updated]\n' + cmsg
-                optlog.info(msg, name=self.agent_id)
-
+            optlog.info(f"sync data received: {sync}", name=self.agent_id)
+            
+            # sync has to be done when agent is initialized... 
             self._check_if_start_from_empty()
 
             # then overwrite with the server data
+            self._indexed_prev_incompleted_orders = sync.prev_incompleted_orders
             self._indexed_incompleted_orders = sync.incompleted_orders
             self._indexed_completed_orders = sync.completed_orders
+
             # _pending_trns_from_server_on_sync value assigned only here
             self._pending_trns_from_server_on_sync = sync.pending_trns
 
@@ -147,15 +139,19 @@ class OrderBook:
 
     def _parse_orders_and_update_stats(self):
         # from completed to sent
-        for k, v in self._indexed_completed_orders.items():
+        for _, v in self._indexed_completed_orders.items():
             self.stat_update_to_pending_orders(v)
             self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0)
 
-        for k, v in self._indexed_incompleted_orders.items():
+        for _, v in self._indexed_prev_incompleted_orders.items():
+            self.stat_update_to_pending_orders(v, prev_incomplete=True)
+            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0)
+
+        for _, v in self._indexed_incompleted_orders.items():
             self.stat_update_to_pending_orders(v)
             self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0)
 
-        for k, v in self._indexed_sent_for_submit.items():
+        for _, v in self._indexed_sent_for_submit.items():
             self.stat_update_to_pending_orders(v)
 
     # executed order portion stat update (체결된 사항에 대한 update)
@@ -209,18 +205,21 @@ class OrderBook:
     # count in orders that are not yet submtted
     # revert: API refused order portion stat update (각종 오류로, API 에서 submit 실패한 사항에 대한 update)
     # note: cash is not yet used
-    def stat_update_to_pending_orders(self, order, revert=False):
+    def stat_update_to_pending_orders(self, order: Order, revert=False, prev_incomplete=False):
         if revert: m = -1
         else: m = 1
-            
+
+        if prev_incomplete: to_process = m*order.processed 
+        else: to_process = m*order.quantity 
+
         if order.side == SIDE.BUY:
-            self.pending_buy_qty += m*order.quantity
+            self.pending_buy_qty += to_process
             if order.ord_dvsn == ORD_DVSN.LIMIT:
-                self.pending_limit_buy_amt += m*order.quantity * order.price
+                self.pending_limit_buy_amt += to_process * order.price
             else:  # MARKET or MIDDLE
-                self.pending_market_buy_qty += m*order.quantity
+                self.pending_market_buy_qty += to_process
         else:
-            self.pending_sell_qty += m*order.quantity
+            self.pending_sell_qty += to_process
         self.on_update(pending=True)
 
     async def process_tr_notice(self, notice: TransactionNotice):

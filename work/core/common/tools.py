@@ -31,6 +31,7 @@ def get_listed_market(code):
     return words[0].upper()
 
 # indexed_listing = {key: item, key: item}
+# below not used anywhere... may delete
 def compare_indexed_listings(prev: dict, new: dict):
     # check if equal (using __eq__ in the item object)
     if prev == new:
@@ -51,4 +52,33 @@ def compare_indexed_listings(prev: dict, new: dict):
         diff_msg += f'        new: {new.get(key)}\n'
     return False, diff_msg
 
+# dict merge
+# if keys are identical while merge, add "#" to the key of A (until it becomes unique)
+def merge_with_suffix_on_A(A: dict, B: dict) -> dict:
+    # Start with an empty merged dict
+    result = {}
 
+    # 1) Insert A’s keys, renaming if needed to avoid conflicts with B
+    for k, v in A.items():
+        new_key = k
+        # If this key exists in B, or already in result, rename A's key
+        while new_key in B or new_key in result:
+            new_key += "#"
+        result[new_key] = v
+
+    # 2) Insert B’s keys EXACTLY as they are
+    for k, v in B.items():
+        result[k] = v
+
+    return result
+
+def merge_with_suffix_on_B(A: dict, B: dict) -> dict:
+    result = dict(A)  # preserve A order and values (shallow copy of A, and will be the initial starting point)
+
+    for k, v in B.items():
+        new_key = k
+        while new_key in result:
+            new_key = new_key + "#"   # append more '#' until unique
+        result[new_key] = v          # preserves B’s order too
+
+    return result

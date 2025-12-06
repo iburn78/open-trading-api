@@ -63,12 +63,12 @@ async def handle_register_agent_card(client_request: ClientRequest, writer, **se
 
 # agent sync with server 
 async def handle_sync_order_history(client_request: ClientRequest, writer, **server_data_dict):
-    agent_id: str = client_request.get_request_data()
+    agent_id, sync_start_date = client_request.get_request_data()
     connected_agents: ConnectedAgents = server_data_dict.get('connected_agents')
     agent_card: AgentCard = connected_agents.get_agent_card_by_id(agent_id)
     order_manager: OrderManager = server_data_dict.get('order_manager')
 
-    sync: Sync = await order_manager.get_agent_sync(agent_card)
+    sync: Sync = await order_manager.get_agent_sync(agent_card, sync_start_date=sync_start_date)
 
     # return with sync data
     resp = ServerResponse(True, "sync request submitted")

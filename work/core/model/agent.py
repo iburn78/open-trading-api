@@ -51,6 +51,7 @@ class Agent:
     agent_initialized: bool = False
     agent_ready: bool = False # ready to start strategy
     agent_initial_price_set_up: asyncio.Event = field(default_factory=asyncio.Event) # wheather the first TNP is received (so that pm can be properly initialized)
+    sync_start_date: str | None = None # isoformat date ("yyyy-mm-dd")
     strict_API_check_required: bool = False # consume one API call
 
     def __post_init__(self):
@@ -80,10 +81,11 @@ class Agent:
     # has to be called on start-up
     # INITIAL STATE has to be defined carefully, as "sync" will be performed
     def initial_value_setup(self, init_cash_allocated = 0, init_holding_qty = 0, 
-                            init_avg_price = 0):
+                            init_avg_price = 0, sync_start_date = None):
         self.pm.init_cash_allocated = init_cash_allocated
         self.pm.init_holding_qty = init_holding_qty
         self.pm.init_avg_price = init_avg_price
+        self.sync_start_date = sync_start_date # default to be today (None)
         self.agent_initialized = True
     
     def on_orderbook_update(self, pending=False):
@@ -159,7 +161,7 @@ class Agent:
 
         # [Sync part - getting sync data]
         sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
-        sync_request.set_request_data(self.id)
+        sync_request.set_request_data((self.id, self.sync_start_date))
         sync_resp: ServerResponse = await self.client.send_client_request(sync_request)
         optlog.debug(f'[ServerResponse] {sync_resp}', name=self.id)
         sync: Sync = sync_resp.data_dict.get("sync_data") 

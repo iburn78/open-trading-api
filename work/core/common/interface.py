@@ -35,7 +35,11 @@ class ClientRequest:
             if not isinstance(request_data, list): 
                 log_raise('invalid request_data type')
         
-        elif self.command == RequestCommand.SYNC_ORDER_HISTORY or self.command == RequestCommand.SYNC_COMPLETE_NOTICE: 
+        elif self.command == RequestCommand.SYNC_ORDER_HISTORY:
+            if not isinstance(request_data, tuple): 
+                log_raise('invalid request_data type')
+        
+        elif self.command == RequestCommand.SYNC_COMPLETE_NOTICE: 
             if not isinstance(request_data, str): 
                 log_raise('invalid request_data type')
 
@@ -74,7 +78,28 @@ class ServerResponse:
 @dataclass
 class Sync:
     agent_id: str | None = None
+    # prev days
+    prev_incompleted_orders: dict | None = None
+    # today
     incompleted_orders: dict | None = None
+    # all days
     completed_orders: dict | None = None
+    # today
     pending_trns: dict | None = None
     trenv: KISEnv | None = None
+
+    def __str__(self):
+        res = ''
+        for k, v in (self.prev_incompleted_orders or {}).items():
+            res += f'prev incompleted {k}: {v}\n'
+        for k, v in (self.incompleted_orders or {}).items():
+            res += f'today incompleted {k}: {v}\n'
+        for k, v in (self.completed_orders or {}).items():
+            res += f'completed {k}: {v}\n'
+        for k, v in (self.pending_trns or {}).items():
+            res += f'pending trns {k}: {v}\n'
+        
+        if res: res = '\n'+res 
+        else: res = "sync data empty"
+
+        return res

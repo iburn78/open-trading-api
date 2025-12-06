@@ -91,6 +91,7 @@ or more modern way
 - agent manager to use multi threads or multi cmd/terminal 
 - sync with account
 - agent better to handle only one code (initial qty, price / sync), but if initial value assigned correctly, code can be changed (as sync will check first code and then id)
+- every day, agent clean-up is required, such as remaining incompleted order / pending trns has to be handled (STUDY HOW THE API TREATS THIS -- WHETHER IT SENDS SOME NOTICE ON CANCEL OR NOT)
 
 ### [long term strategy related]
 - review over-night behavior of server and agent: technically

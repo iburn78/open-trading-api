@@ -8,11 +8,13 @@ import time
 
 from core.common.setup import data_dir, disk_save_period, order_manager_keep_days
 from core.common.optlog import optlog, log_raise, LOG_INDENT
+from core.common.tools import merge_with_suffix_on_A
 from core.common.interface import Sync
 from core.model.agent import AgentCard, dispatch
 from core.model.order import Order
 from core.kis.ws_data import TransactionNotice, RCtype, AllYN
 from app.comm.conn_agents import ConnectedAgents
+
 
 # server side application
 # Orders placed by agents are managed here in a comphrehensive way
@@ -125,23 +127,38 @@ class OrderManager:
     async def get_agent_sync(self, agent: AgentCard, sync_start_date: str | None = None):
         lock = self._locks[agent.code]
         await lock.acquire()
-        date_=date.today().isoformat()
-        date_map = self.map.setdefault(date_, {})
-        code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
-        # incompleted_orders: only sync needed for today
-        ios = code_map[INCOMPLETED_ORDERS].setdefault(agent.id, {}) 
+
+        today_ = date.today().isoformat()
+        if sync_start_date is None: sync_start_date = today_
+
+        pios = {} # prev incompleted order 
+        ios = {} # for today
+        cos = {} # all days
+        ptrns = {} # for today
+
+        # incompleted_orders: multi-day sync needed (as an order can be partially executed)
         # completed_orders: multi-day sync needed
-        ###_
-        ###_
-        ###_ be careful order_no can be identical... across dates
-        ###_ during sync, only orders might be needed... change to list (as duplicate keys might not be allowed) 
-        ###_ sync should respect time orders
-        ###_
-        cos = code_map[COMPLETED_ORDERS].setdefault(agent.id, {})
-        # pending_trns: only sync needed for today
-        ptrns = code_map[PENDING_TRNS]
+        # pending_trns: should exist only for today, and today data will be sent
+        for d_ in sorted(self.map.keys()): # dates are isoformat "yyyy-mm-dd"
+            if d_ < sync_start_date: continue
+
+            date_map = self.map.get(d_)
+            if not date_map: continue
+
+            code_map = date_map.get(agent.code)
+            if not code_map: continue
+
+            if d_ < today_:
+                pios = merge_with_suffix_on_A(pios, code_map[INCOMPLETED_ORDERS].get(agent.id, {}))
+                cos = merge_with_suffix_on_A(cos, code_map[COMPLETED_ORDERS].get(agent.id, {}))
+                if code_map[PENDING_TRNS]: # if not empty for prev dates, log error
+                    optlog.error(f"[OrderManager] pending trns not empty: {code_map[PENDING_TRNS]} for date {d_} - check the validity of incompleted orders required", name=agent.id)
+            else: # d_ == today_
+                ios = code_map[INCOMPLETED_ORDERS].get(agent.id, {})
+                ptrns = code_map[PENDING_TRNS]
+
         optlog.debug(f"[OrderManager] agent sync data sent", name=agent.id)
-        return Sync(agent.id, ios, cos, ptrns)
+        return Sync(agent.id, pios, ios, cos, ptrns)
 
     def agent_sync_completed_lock_release(self, agent: AgentCard):
         lock = self._locks[agent.code]
