@@ -11,7 +11,7 @@ if system == "Windows": import winsound
 optlog: logging.Logger | None = None
 
 MAX_BYTES = 10_000_000 
-BACKUP_COUNT = 5 # num of files
+BACKUP_COUNT = 9 # num of files
 F_LEVEL = logging.DEBUG # file logging level
 S_LEVEL = logging.DEBUG # stream logging level
 
@@ -90,6 +90,9 @@ def set_logger(fname: str|None = None, flevel = F_LEVEL, slevel= S_LEVEL,
     """
     max_bytes: max size in bytes before rotation
     backup_count: number of backup files to keep
+    file names are automatically shifted
+    - .1 is the newest
+    - .n is the oldest
     """
     global optlog
 

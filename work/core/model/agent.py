@@ -8,7 +8,7 @@ from .order_book import OrderBook
 from .price import MarketPrices
 from .perf_metric import PerformanceMetric
 from .strategy_base import StrategyBase
-from ..common.tools import get_listed_market
+from ..common.tools import get_listed_market, get_df_krx_price
 from ..common.interface import RequestCommand, ClientRequest, ServerResponse, Sync
 from ..common.optlog import optlog, log_raise, notice_beep
 from ..model.strategy_util import StrategyRequest, StrategyCommand, StrategyResponse
@@ -65,6 +65,7 @@ class Agent:
         self.order_book.on_update = self.on_orderbook_update
 
         self.market_prices.code = self.code
+        self.market_prices.current_price = get_df_krx_price(self.code)
 
         self.client.agent_id = self.id
         self.client.on_dispatch = self.on_dispatch
@@ -149,17 +150,8 @@ class Agent:
         subs_resp: ServerResponse = await self.client.send_client_request(subs_request)
         optlog.info(f"[ServerResponse] {subs_resp}", name=self.id)
 
-        # [Price initialization part]
-        ###_ if not while market open, may initialize with last price data 
-        ###_ current method is too conservative anyway.... 
-        ###_ it stucks all actions following... and cannot initialize agent while out of market time
-        ###_ may intro logic that : strategy ensures it receives market price once while other pm / etc data update possible with latest data
-        optlog.debug(f'[Agent] waiting for initial market price', name=self.id)
-        await self.agent_initial_price_set_up.wait() # ensures that pm is set with latest market data
-        optlog.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", name=self.id)
-        self.pm.update()
-
         # [Sync part - getting sync data]
+        self.pm.update() # to set initial values to be calculated in pm 
         sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
         sync_request.set_request_data((self.id, self.sync_start_date))
         sync_resp: ServerResponse = await self.client.send_client_request(sync_request)
@@ -175,6 +167,12 @@ class Agent:
             optlog.debug(f'[ServerResponse] {release_resp}', name=self.id)
         else: 
             log_raise(f"lock release failed ---", name=self.id)
+
+        # [Price initialization part]
+        optlog.debug(f'[Agent] waiting for initial market price', name=self.id)
+        await self.agent_initial_price_set_up.wait() # ensures that pm is set with latest market data
+        optlog.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", name=self.id)
+        self.pm.update()
 
         # [Strategy enact part]
         asyncio.create_task(self.process_strategy_command())

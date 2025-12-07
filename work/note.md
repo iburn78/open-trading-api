@@ -18,7 +18,7 @@ intermediate applications to be used in scripts/
 - run in the root dir (e.g., work/) as a module ```python -m scripts.xxx```
 - for unbuffered terminal output: ```python -u -m scripts.xxx```
 
-or more modern way
+or more modern way (only for development situation)
 - Define pyproject.toml in the project root (see example pyproject.toml file).
     - It declares your project metadata, dependencies, and packages to be installed.
     - In [tool.setuptools.packages.find], you can use include = ["*"] to automatically include all packages.
@@ -29,6 +29,7 @@ or more modern way
     - After that, you can run scripts or modules without import errors — no need to manually adjust sys.path.
 - all subpackages have to be declared, and need to be accessed from the respective parent packages
 - now you can run py files independently in script folder
+- HOWEVER, WHEN IN PRODUCTION, don't do pip install -e . stuff... as, it pollutes pip freeze
 
 ## Notes 
 ### Market knowledge
@@ -113,12 +114,20 @@ or more modern way
 - when load/save pkl, may print status to log
 - make it multi day re-connection
 - need to make reset function of server status... etc 
+- three level reconnection: 1) kis_auth level (already in place, need to study/understand), 2) websocket_loop() level, 3) server level (entire off and on / should make data continuity seamless)
+
+- for example, following errors stop subsequent actions being correctly performed or suspend system
+    ```
+    1205_160813.367 [ERROR] sv> kis_auth> Connection exception >> no close frame received or sent 
+    1205_160822.854 [ERROR] sv> kis_auth> Connection exception >> [WinError 121] 세마포 제한 시간이 만료되었습니다
+    1207_141451.014 [ERROR] sv> A1> [Agent] agent A1 (port 54406) disconnected - dispatch msg failed: [WinError 10053] 현재 연결은 사용자의 호스트 시스템의 소프트웨어의 의해 중단되었습니다
+    ```
 
 ### [Trading Strategy related]
 - 유동주식수 and volume: use at the same time
 - try make a back tester
 - price/volume history: get / save / etc
-
+- develop random price simulator (use custom ones - should exist)
 
 
 

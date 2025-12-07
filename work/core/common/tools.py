@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
-import os
+import os, time
+import FinanceDataReader as fdr
 
 from .optlog import log_raise
+from .setup import data_dir
 
 # ----------------------------------------
 # Float precision adjust
@@ -20,15 +22,33 @@ def excel_round(x: float, ndigits=0):  # scaler
 # ----------------------------------------
 # Get external data
 # ----------------------------------------
-_df_krx_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))), 'trader/data_collection/data/df_krx.feather')
-df_krx = pd.read_feather(_df_krx_path)
+df_krx_path = os.path.join(data_dir,"df_krx.feather")
+df_krx_refresh_time = 12*60*60
+
+def get_df_krx():
+    if not os.path.exists(df_krx_path) or time.time() - os.path.getmtime(df_krx_path) > df_krx_refresh_time:
+        return _gen_df_krx()
+    return pd.read_feather(df_krx_path)
+
+def _gen_df_krx():
+    df_krx = fdr.StockListing('KRX')
+    df_krx.drop(columns=['Dept', 'ChangeCode', 'Changes', 'ChagesRatio'], inplace=True)
+    df_krx = df_krx[df_krx['MarketId'] != 'KNX']
+    df_krx = df_krx.set_index('Code')
+    df_krx.to_feather(df_krx_path)
+    return df_krx
 
 def get_listed_market(code):
+    df_krx = get_df_krx()
     if code not in df_krx.index: 
         log_raise(f'Code {code} not in df_krx ---')
     listed_market = df_krx.at[code, "Market"].strip()
     words = listed_market.replace("_", " ").split()
     return words[0].upper()
+
+def get_df_krx_price(code):
+    df_krx = get_df_krx()
+    return int(df_krx.loc[code, 'Close'])
 
 # indexed_listing = {key: item, key: item}
 # below not used anywhere... may delete

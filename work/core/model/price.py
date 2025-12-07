@@ -32,10 +32,11 @@ class MarketPrices:
 
     # internal control
     _deque_warning_shown: bool = False
+    _update_called: bool = False
 
     def __str__(self):
-        if not self.current_price:
-            return "price record not initialized"
+        if not self._update_called:
+            return f"price record not initialized and current_price set at {self.current_price}"
         return (
             f"[MarketPrices] {self.code}, current {self.current_price}, "
             f"l/h {self.low_price}/{self.high_price}, ma {self.moving_avg}, "
@@ -102,6 +103,9 @@ class MarketPrices:
             self.cumulative_amount += price * quantity
         self.moving_volume = self._sum_volume
         self.moving_amount = self._sum_amount
+
+        # initial value control
+        self._update_called = True
 
     def set_window_size(self, new_size: int): 
         """Change window size and refresh metrics using the last known record."""
