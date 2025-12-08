@@ -93,6 +93,7 @@ or more modern way (only for development situation)
 - sync with account
 - agent better to handle only one code (initial qty, price / sync), but if initial value assigned correctly, code can be changed (as sync will check first code and then id)
 - every day, agent clean-up is required, such as remaining incompleted order / pending trns has to be handled (STUDY HOW THE API TREATS THIS -- WHETHER IT SENDS SOME NOTICE ON CANCEL OR NOT)
+- agent / sever (initial data cleanup logic might be needed - may want to do fresh start: make this easier / can change agent id, but this seems roundabout)
 
 ### [long term strategy related]
 - review over-night behavior of server and agent: technically

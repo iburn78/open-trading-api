@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>Agent Dashboard</title>
+</head>
+<body style="margin:0;">
+<pre id="out" style="
+    font-family: monospace;
+    padding: 20px;
+    white-space: pre-wrap;
+"></pre>
+
+<script>
+// Agent 1 dashboard
+const ws = new WebSocket("ws://127.0.0.1:8001");
+const out = document.getElementById("out");
+
+ws.onopen = () => {
+    out.innerText = "[connected]\n";
+};
+
+ws.onmessage = (event) => {
+    out.innerText = event.data;
+};
+
+ws.onclose = () => {
+    out.innerText += "\n[connection closed]";
+};
+</script>
+
+</body>
+</html>

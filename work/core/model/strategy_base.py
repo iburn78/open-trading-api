@@ -143,7 +143,6 @@ class StrategyBase(ABC):
         - Sufficient holdings for sell orders  
         - Market price availability for market orders
         """
-        self.pm.update() # final check, so update
         if str_cmd.side == SIDE.BUY:
             if str_cmd.ord_dvsn == ORD_DVSN.MARKET:
                 # [check 1] check if agent has enough cash (stricter cond-check)

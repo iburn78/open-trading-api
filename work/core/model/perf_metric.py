@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from typing import Callable
+import asyncio
 
 from .order_book import OrderBook
 from .price import MarketPrices
@@ -19,6 +21,7 @@ class PerformanceMetric:
     market_prices: MarketPrices | None = None
     # - set after agent registration
     my_svr: str | None = None
+    broadcast_queue: asyncio.Queue | None = None
 
     # -------------------------------------------------------
     # initial value setup: set through agent
@@ -161,3 +164,4 @@ class PerformanceMetric:
 
         # logging (only when full update)
         optlog.debug(self, name=self.agent_id)
+        self.broadcast_queue.put_nowait(str(self))

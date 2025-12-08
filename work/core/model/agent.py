@@ -1,5 +1,7 @@
 import asyncio
+from asyncio import Queue
 from dataclasses import dataclass, field
+import websockets
 import pickle
 
 from .order import Order
@@ -33,6 +35,9 @@ class Agent:
     # id and code do not change for the lifetime
     id: str  # ID SHOULD BE UNIQUE ACROSS ALL AGENTS (should be managed centrally)
     code: str
+    dp: str # dashboard_port: 8010, 8011, ... etc
+    _dashboard_server: websockets.serve | None = None
+    broadcast_queue: Queue = field(default_factory=Queue)
     listed_market: str | None = None # KOSPI, KOSDAQ etc (used in tax calc) - determined by code / auto assigned
 
     # for server communication
@@ -46,6 +51,7 @@ class Agent:
     market_prices: MarketPrices = field(default_factory=MarketPrices)
     strategy: StrategyBase = field(default_factory=StrategyBase) 
     pm: PerformanceMetric = field(default_factory=PerformanceMetric)
+    dashboard_clients: set = field(default_factory=set)
 
     # other flags
     agent_initialized: bool = False
@@ -62,7 +68,7 @@ class Agent:
 
         self.order_book.agent_id = self.id
         self.order_book.code = self.code
-        self.order_book.on_update = self.on_orderbook_update
+        self.order_book.on_update = self.on_orderbook_update # callback func
 
         self.market_prices.code = self.code
         self.market_prices.current_price = get_df_krx_price(self.code)
@@ -75,6 +81,7 @@ class Agent:
         self.pm.listed_market = self.listed_market
         self.pm.order_book = self.order_book
         self.pm.market_prices = self.market_prices
+        self.pm.broadcast_queue = self.broadcast_queue 
 
         # link strategy with agent own data - market_prices, pm, etc
         self.strategy.link_agent_data(self.id, self.code, self.market_prices, self.pm)
@@ -174,15 +181,40 @@ class Agent:
         optlog.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", name=self.id)
         self.pm.update()
 
+        # [Dashboard enact part]
+        self._dashboard_server_task = asyncio.create_task(self.start_dashboard_server())
+        self._dashboard_broadcaster_task = asyncio.create_task(self.dashboard_broadcaster_loop())
+
         # [Strategy enact part]
         asyncio.create_task(self.process_strategy_command())
         asyncio.create_task(self.strategy.logic_run())
 
         try:
-            await self.hardstop_event.wait() 
+            await self.hardstop_event.wait()
+
         except asyncio.CancelledError:
             optlog.info(f"[Agent] agent {self.id} hardstopped.", name=self.id)
+
         finally:
+            # --- DASHBOARD CLEANUP ---
+            if self._dashboard_broadcaster_task:
+                self._dashboard_broadcaster_task.cancel()
+                try:
+                    await self._dashboard_broadcaster_task
+                except asyncio.CancelledError:
+                    pass
+
+            if self._dashboard_server_task:
+                self._dashboard_server_task.cancel()
+                try:
+                    await self._dashboard_server_task
+                except asyncio.CancelledError:
+                    pass
+
+            # This handles closing server + connections cleanly
+            await self.stop_dashboard_server()
+
+            # --- Client cleanup ---
             await self.client.close()
 
     # makes an order, not sent to server yet
@@ -271,6 +303,62 @@ class Agent:
         psbl_resp: ServerResponse = await self.client.send_client_request(psbl_request)
         (a_, q_, p_) = psbl_resp.data_dict['psbl_data'] # tuple should be returned, otherwise let it raise here
         return q_
+
+    async def start_dashboard_server(self):
+        """Start WS server for this agent"""
+        self._dashboard_server = await websockets.serve(
+            self.dashboard_handler,
+            "127.0.0.1",
+            self.dp
+        )
+
+        optlog.info(f"[Agent] Dashboard WS running on ws://127.0.0.1:{self.dp}", name=self.id)
+
+        try:
+            await asyncio.Future()  # run forever
+        except asyncio.CancelledError:
+            # task cancelled => clean exit
+            pass
+
+    async def dashboard_handler(self, ws):
+        """Handle browser connections to this agent's dashboard"""
+        self.dashboard_clients.add(ws)
+        try:
+            async for _ in ws:
+                pass  # just keep connection open
+        except (websockets.ConnectionClosed, asyncio.CancelledError):
+            pass
+        finally:
+            self.dashboard_clients.discard(ws)
+
+    async def dashboard_broadcaster_loop(self):
+        """Continuously broadcast text from queue to all connected clients."""
+        while True:
+            try:
+                text = await self.broadcast_queue.get()  # wait for next PM update
+                for ws in list(self.dashboard_clients):
+                    try:
+                        await ws.send(text)
+                    except:
+                        self.dashboard_clients.discard(ws)
+            except asyncio.CancelledError:
+                break
+
+    async def stop_dashboard_server(self):
+        # Close all active websocket connections
+        for ws in list(self.dashboard_clients):
+            try:
+                await ws.close()
+            except:
+                pass
+
+        self.dashboard_clients.clear()
+
+        # Close server if it exists
+        if self._dashboard_server is not None:
+            self._dashboard_server.close()
+            await self._dashboard_server.wait_closed()
+            self._dashboard_server = None
 
 # this function is used in the server side, so the logging is also on the server side
 async def dispatch(to: AgentCard | list[AgentCard], message: object):

@@ -18,9 +18,11 @@ class DoubleUpStrategy(StrategyBase):
     MAX_PURCHASE_QTY = 4
     DOUBLEUP_MULTIPLIER = 2
 
-    SELL_BEP_RETURN_RATE = 0.001 
-    BUY_BEP_RETURN_RATE = -0.002
+    SELL_BEP_RETURN_RATE = 0.003 
+    BUY_BEP_RETURN_RATE = -0.004
 
+
+    ###_ need to record strategy response
 
     async def on_update(self, update_event: UpdateEvent):
         optlog.debug(f"{self.code}-{update_event.name}: {self.pm.cur_price:,d} / {self.pm.bep_return_rate:.6f}", name=self.agent_id)
