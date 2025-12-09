@@ -129,6 +129,7 @@ or more modern way (only for development situation)
 - try make a back tester
 - price/volume history: get / save / etc
 - develop random price simulator (use custom ones - should exist)
+- SEC vs SEC preferred: check arbitrage opp.
 
 
 

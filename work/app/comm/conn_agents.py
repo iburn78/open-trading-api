@@ -1,14 +1,16 @@
 import asyncio
 from dataclasses import dataclass, field
 
-from core.common.optlog import log_raise, LOG_INDENT
+from core.common.optlog import optlog, log_raise
 from core.model.agent import AgentCard
+from core.model.dashboard import DashboardManager
 from core.kis.ws_data import TransactionPrices
 
 # used in server 
 @dataclass
 class ConnectedAgents:
     code_agent_card_dict: dict[str, list[AgentCard]]= field(default_factory=dict) 
+    dashboard_manager: DashboardManager = field(default_factory=DashboardManager)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
     def __str__(self): 
@@ -17,23 +19,27 @@ class ConnectedAgents:
                 "[ConnectedAgents]"
             ]
             for c, l in self.code_agent_card_dict.items():
-                parts.append(f'{LOG_INDENT}{c}: {[(a.id, a.client_port) for a in l]}')
+                parts.append(f'{c}: {[(a.id, a.client_port) for a in l]}')
             return '\n'.join(parts)
         else: 
             return '[ConnectedAgents] no agents connected'
 
     async def add(self, agent_card: AgentCard):
         async with self._lock:
-            if not agent_card.client_port:
-                log_raise(f'Client port is not assigned for agent {agent_card.id} --- ')
-
             if self.get_agent_card_by_id(agent_card.id):
                 return False, f'[ConnectedAgents-warning] agent_card {agent_card.id} already registered --- '
+
+            if not agent_card.client_port:
+                log_raise(f'Client port is not assigned for agent {agent_card.id} --- ')
 
             if self.get_agent_card_by_port(agent_card.client_port):
                 log_raise(f'Client port is {agent_card.client_port} is alreay in use --- ')
 
             self.code_agent_card_dict.setdefault(agent_card.code, []).append(agent_card)
+
+            # dashboard port handling - checking and adding
+            self.dashboard_manager.register_agent_dp(agent_card)
+
             return True, f'agent_card {agent_card.id} registered in the server'
 
     async def remove(self, agent_card: AgentCard):
@@ -49,6 +55,10 @@ class ConnectedAgents:
             target = next((x for x in agent_card_list if x.id == agent_card.id), None)
             if target:
                 agent_card_list.remove(target)
+
+                # dashboard port handling - removing
+                self.dashboard_manager.unregister_agent_dp(target)
+
                 # clean up emtpy code
                 if not agent_card_list:
                     del self.code_agent_card_dict[agent_card.code]

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>OPTRADER Dashboard</title>
+</head>
+<body style="margin:0; padding:0; font-family:monospace;">
+
+<div id="dashboards"></div>
+
+<script>
+const dashboards = document.getElementById("dashboards");
+
+// active websockets { port: WebSocket }
+const sockets = {};
+
+// HTML panels { port: <pre> }
+const panels = {};
+
+// -------- create or return panel ----------
+function ensurePanel(port, name) {
+    if (panels[port]) return panels[port];
+
+    const pre = document.createElement("pre");
+    pre.style = `
+        font-family: monospace;
+        margin: 0;
+        padding: 10px;
+        border-bottom: 1px solid #ccc;
+        white-space: pre-wrap;
+    `;
+    pre.id = `panel-${port}`;
+    dashboards.appendChild(pre);
+
+    panels[port] = pre;
+    return pre;
+}
+
+// -------- connect a websocket ----------
+function connectWS(port, name) {
+    if (sockets[port]) return;
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    const panel = ensurePanel(port, name);
+
+    ws.onopen = () => {
+        panel.textContent = `[${port} - ${name}] Connected\n`;
+    };
+
+    ws.onmessage = event => {
+        panel.textContent = `[${port} - ${name}]\n` + event.data;
+    };
+
+    ws.onclose = () => {
+        panel.textContent = `[${port} - ${name}] Connection closed\n`;
+    };
+
+    ws.onerror = () => {
+        panel.textContent = `[${port} - ${name}] Error\n`;
+    };
+
+    sockets[port] = ws;
+}
+
+// -------- remove WS + clear panel ----------
+function removePort(port) {
+    if (sockets[port]) {
+        try { sockets[port].close(); } catch(e){}
+        delete sockets[port];
+    }
+    if (panels[port]) {
+        panels[port].textContent = "";   // EMPTY, as requested
+    }
+}
+
+// -------- connect to dashboard manager (port 9000) --------
+const mgr = new WebSocket("ws://127.0.0.1:9000");
+
+mgr.onmessage = (event) => {
+    let endpoints;
+    try {
+        endpoints = JSON.parse(event.data);
+    } catch (e) {
+        return;
+    }
+
+    const ports = Object.keys(endpoints).map(Number);
+
+    // Add / update ports
+    ports.forEach(port => {
+        connectWS(port, endpoints[port]);
+    });
+
+    // Remove ports that no longer exist
+    for (const port of Object.keys(sockets)) {
+        if (!ports.includes(Number(port))) {
+            removePort(Number(port));
+        }
+    }
+};
+
+mgr.onopen = () => console.log("Connected to manager (9000)");
+mgr.onerror = () => console.log("Manager error");
+mgr.onclose = () => console.log("Manager closed");
+</script>
+
+</body>
+</html>

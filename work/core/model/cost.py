@@ -14,7 +14,12 @@ class CostCalculator:
             'maker': 0.0130527, 
             'taker': 0.0130527, 
             'settle': 0.0130527, 
-        } 
+        }
+    }
+
+    DEMO_FEE = {
+        'KRX': 0.0142, 
+        'NXT': 0.0142,
     }
 
     # 유관기관수수료
@@ -64,7 +69,7 @@ class CostCalculator:
         elif account == "auto":
             return cls.FEE, cls.RD_rule['FEE'], cls.RD_rule['TAX']
         elif account == "vps":
-            return cls.FEE, cls.RD_rule['FEE'], cls.RD_rule['TAX']
+            return cls.DEMO_FEE, cls.RD_rule['FEE'], cls.RD_rule['TAX']
         else:
             log_raise("Check in cost calculation: possibly trenv issue ---")
 

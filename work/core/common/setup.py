@@ -6,6 +6,9 @@ import os
 HOST = "127.0.0.1"   # Localhost
 PORT = 30001 # 1024–49151 → registered/user ports → safe for your server
 # 49152–65535 → ephemeral → usually assigned automatically to clients
+dashboard_manager_port = 9000 
+dashboard_server_port = 9001
+Server_Broadcast_Interval = 10 # sec
 
 smartSleep_ = 0.1 # min 0.05
 demoSleep_ = 0.5 # min 0.5

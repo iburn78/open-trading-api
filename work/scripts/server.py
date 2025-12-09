@@ -3,9 +3,10 @@ set_logger()
 
 import asyncio
 import datetime
-from core.common.optlog import optlog, log_raise, LOG_INDENT
-from core.common.setup import HOST, PORT
+from core.common.optlog import optlog, log_raise
+from core.common.setup import HOST, PORT, dashboard_server_port, Server_Broadcast_Interval 
 from core.model.agent import dispatch
+from core.model.dashboard import DashBoard
 import core.kis.kis_auth as ka
 from core.kis.domestic_stock_functions_ws import ccnl_notice
 from core.kis.ws_data import get_tr, TransactionNotice, TransactionPrices
@@ -37,6 +38,7 @@ ws_ready = asyncio.Event()
 connected_agents = ConnectedAgents() 
 subs_manager = SubscriptionManager()
 order_manager = OrderManager()
+dashboard = DashBoard(owner='server', port=dashboard_server_port) # server's own dashboard
 
 # ---------------------------------
 # Variables to be used in comm_handlers
@@ -155,7 +157,7 @@ async def start_server():
 
 async def broadcast(shutdown_event: asyncio.Event):
     await ws_ready.wait()
-    INTERVAL = 15
+    INTERVAL = Server_Broadcast_Interval
     while not shutdown_event.is_set():
         try:
             await asyncio.wait_for(shutdown_event.wait(), timeout=INTERVAL)
@@ -169,21 +171,29 @@ async def broadcast(shutdown_event: asyncio.Event):
 
 def _status_check(show=False, include_ka=True):
     if show:
-        optlog.debug('------------------------------------------------------------')
-        optlog.debug(connected_agents)
-        optlog.debug(subs_manager)
-        optlog.debug(order_manager)
+        text = (
+            f"[Server] dashboard\n"
+            f"----------------------------------------------------\n"
+            f"{connected_agents}\n"
+            f"{subs_manager}\n"
+            f"{order_manager}\n"
+            f"----------------------------------------------------\n"
+        )
         if include_ka:
-            logmsg = '[ka.open_map]'
+            text += "[ka.open_map]\n"
             for k, d in ka.open_map.items(): 
-                logmsg += f"\n{LOG_INDENT}{k}: {d['items']}"
-            optlog.debug(logmsg)
-            logmsg = f'[ka.data_map]: {list(ka.data_map.keys())}'
-            optlog.debug(logmsg)
-        optlog.debug('------------------------------------------------------------')
+                text += f"{k}: {d['items']}\n"
+            text += f"[ka.data_map]\n" 
+            text += f"{list(ka.data_map.keys())}\n"
+            text += f"----------------------------------------------------\n"
+        optlog.debug(text)
+        dashboard.enqueue(text)
 
 async def server(shutdown_event: asyncio.Event):
     async with asyncio.TaskGroup() as tg: 
+        await connected_agents.dashboard_manager.start()
+        await dashboard.start()
+
         tg.create_task(websocket_loop())
         tg.create_task(start_server())
         tg.create_task(broadcast(shutdown_event))
@@ -208,6 +218,8 @@ async def main():
         optlog.info("[Server] tasks cancelled cleanly" + sep)
         shutdown_event.set()
     finally:
+        await dashboard.stop()
+        await connected_agents.dashboard_manager.stop()
         saved_date = await order_manager.persist_to_disk(immediate = True)
         optlog.info(f"[Server] order_manager saved for {saved_date}")
         optlog.info("[Server] shutdown complete" + sep)

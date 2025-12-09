@@ -4,7 +4,6 @@ import asyncio
 
 from core.kis.kis_auth import KISWebSocket
 from core.model.agent import AgentCard
-from core.common.optlog import LOG_INDENT
 
 @dataclass
 class SubscriptionManager:
@@ -31,7 +30,7 @@ class SubscriptionManager:
                 "[SubsManager]"
             ]
             for f, d in self.map.items():
-                parts.append(f'{LOG_INDENT}{f.__name__}: {d}')
+                parts.append(f'{f.__name__}: {d}')
             return '\n'.join(parts)
         else: 
             return '[SubsManager] no agent-specific subscriptions'

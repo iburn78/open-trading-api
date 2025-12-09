@@ -1,6 +1,4 @@
 from dataclasses import dataclass
-from typing import Callable
-import asyncio
 
 from .order_book import OrderBook
 from .price import MarketPrices
@@ -8,6 +6,7 @@ from .cost import CostCalculator
 from ..common.setup import TradePrinciples
 from ..common.optlog import optlog, LOG_INDENT
 from ..common.tools import excel_round
+from ..model.dashboard import DashBoard
 
 @dataclass
 class PerformanceMetric:
@@ -21,7 +20,7 @@ class PerformanceMetric:
     market_prices: MarketPrices | None = None
     # - set after agent registration
     my_svr: str | None = None
-    broadcast_queue: asyncio.Queue | None = None
+    dashboard: DashBoard | None = None
 
     # -------------------------------------------------------
     # initial value setup: set through agent
@@ -146,6 +145,8 @@ class PerformanceMetric:
 
         self.holding_qty = self.init_holding_qty - self.initial_holding_sold_qty + self.orderbook_holding_qty
         self.max_sell_qty = self.holding_qty - self.pending_sell_qty
+
+        self.dashboard.enqueue(self)
         if pending: return
 
         self.holding_value = self.holding_qty*self.cur_price 
@@ -162,6 +163,4 @@ class PerformanceMetric:
         self.unrealized_gain = self.cur_value - self.init_value                      
         self.cap_return_rate = self.unrealized_gain / self.init_value if self.init_value > 0 else 0 
 
-        # logging (only when full update)
-        optlog.debug(self, name=self.agent_id)
-        self.broadcast_queue.put_nowait(str(self))
+        self.dashboard.enqueue(self)

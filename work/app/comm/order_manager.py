@@ -7,7 +7,7 @@ import os
 import time
 
 from core.common.setup import data_dir, disk_save_period, order_manager_keep_days
-from core.common.optlog import optlog, log_raise, LOG_INDENT
+from core.common.optlog import optlog, log_raise
 from core.common.tools import merge_with_suffix_on_A
 from core.common.interface import Sync
 from core.model.agent import AgentCard, dispatch
@@ -107,18 +107,18 @@ class OrderManager:
             return "(no map initialized)"
         date_ = max(self.map.keys())
         res = '[OrderManager]\n'
-        res = res + f'{LOG_INDENT}codes: {list(self.map[date_].keys())}\n'
+        res = res + f'codes: {list(self.map[date_].keys())}\n'
         for code, code_map in self.map[date_].items():
-            res = res + f'{LOG_INDENT}- {code}\n'
-            res = res + f'{LOG_INDENT}  {PENDING_TRNS}: {list(code_map[PENDING_TRNS].keys())}\n'
-            res = res + f'{LOG_INDENT}  {INCOMPLETED_ORDERS}: { {agent_id: len(orders_dict) for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items()} }\n'
+            res = res + f'- {code}\n'
+            res = res + f'  {PENDING_TRNS}: {list(code_map[PENDING_TRNS].keys())}\n'
+            res = res + f'  {INCOMPLETED_ORDERS}: { {agent_id: len(orders_dict) for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items()} }\n'
             for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items():
                 for k, o in orders_dict.items():
-                    res = res + f'{LOG_INDENT}  - {agent_id}: {o}\n'
-            res = res + f'{LOG_INDENT}  {COMPLETED_ORDERS}: { {agent_id: len(orders_dict) for agent_id, orders_dict in code_map[COMPLETED_ORDERS].items()} }\n'
+                    res = res + f'  - {agent_id}: {o}\n'
+            res = res + f'  {COMPLETED_ORDERS}: { {agent_id: len(orders_dict) for agent_id, orders_dict in code_map[COMPLETED_ORDERS].items()} }\n'
             for agent_id, orders_dict in code_map[COMPLETED_ORDERS].items():
                 for k, o in orders_dict.items():
-                    res = res + f'{LOG_INDENT}  - {agent_id}: {o}\n'
+                    res = res + f'  - {agent_id}: {o}\n'
         return res.strip()
 
     # sync is based first by code, and then by checking if agent.id exists

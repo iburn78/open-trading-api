@@ -30,7 +30,7 @@ async def main(sw=None): # switch
     if sw == "1":
         # A = Agent(id = 'A1', code = '000660', strategy=NullStr())
         A = Agent(id = 'A10', code = '000660', dp = 8001, strategy=DoubleUpStrategy())
-        A.initial_value_setup(init_cash_allocated=100000000, init_holding_qty=20, init_avg_price=550000, sync_start_date='2025-12-01')
+        A.initial_value_setup(init_cash_allocated=100000000, init_holding_qty=0, init_avg_price=0, sync_start_date='2025-12-09')
         # A.initial_value_setup(init_cash_allocated=100000000)
         task1 = asyncio.create_task(A.run())  
 

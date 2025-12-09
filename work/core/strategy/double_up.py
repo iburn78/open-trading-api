@@ -18,7 +18,7 @@ class DoubleUpStrategy(StrategyBase):
     MAX_PURCHASE_QTY = 4
     DOUBLEUP_MULTIPLIER = 2
 
-    SELL_BEP_RETURN_RATE = 0.003 
+    SELL_BEP_RETURN_RATE = 0.002 
     BUY_BEP_RETURN_RATE = -0.004
 
 
