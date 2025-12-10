@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import os, time
 import FinanceDataReader as fdr
+from collections.abc import Iterable
 
 from .optlog import log_raise
 from .setup import data_dir
@@ -102,3 +103,8 @@ def merge_with_suffix_on_B(A: dict, B: dict) -> dict:
         result[new_key] = v          # preserves B’s order too
 
     return result
+
+def list_str(l):
+    if isinstance(l, Iterable) and l:
+        return "[" + ", ".join(str(x) for x in l) + "]"
+    return "[]"

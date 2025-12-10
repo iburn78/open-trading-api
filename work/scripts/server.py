@@ -5,6 +5,7 @@ import asyncio
 import datetime
 from core.common.optlog import optlog, log_raise
 from core.common.setup import HOST, PORT, dashboard_server_port, Server_Broadcast_Interval 
+from core.common.tools import list_str
 from core.model.agent import dispatch
 from core.model.dashboard import DashBoard
 import core.kis.kis_auth as ka
@@ -25,6 +26,9 @@ from app.comm.order_manager import OrderManager
 # ---------------------------------
 # auth and set-up
 # ---------------------------------
+sep = "\n======================================================================================"
+optlog.info("[Server] connecting to KIS and loading history..."+sep)
+
 svr = 'vps' # prod, auto, vps
 if svr != 'vps':
     cfm_message = input("Running real trading mode, sure? (Enter svr name): ")
@@ -74,6 +78,8 @@ async def async_on_result(ws, tr_id, result, data_info):
     # to add more tr_id ...
     else:
         log_raise(f"Unexpected tr_id {tr_id} received ---")
+    
+    get_status()
 
 def on_result(ws, tr_id, result, data_info):
     asyncio.create_task(async_on_result(ws, tr_id, result, data_info))
@@ -165,29 +171,30 @@ async def broadcast(shutdown_event: asyncio.Event):
         except asyncio.TimeoutError:
             message = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
             message += ' ping from the server --- '
-            optlog.info(message)
             await dispatch(connected_agents.get_all_agents(), message)
-            _status_check(True)
+            optlog.info(get_status())
 
-def _status_check(show=False, include_ka=True):
-    if show:
-        text = (
-            f"[Server] dashboard\n"
-            f"----------------------------------------------------\n"
-            f"{connected_agents}\n"
-            f"{subs_manager}\n"
-            f"{order_manager}\n"
-            f"----------------------------------------------------\n"
-        )
-        if include_ka:
-            text += "[ka.open_map]\n"
-            for k, d in ka.open_map.items(): 
-                text += f"{k}: {d['items']}\n"
-            text += f"[ka.data_map]\n" 
-            text += f"{list(ka.data_map.keys())}\n"
-            text += f"----------------------------------------------------\n"
-        optlog.debug(text)
-        dashboard.enqueue(text)
+def get_status(include_ka=True):
+    text = (
+        f"[Server] dashboard\n"
+        f"----------------------------------------------------\n"
+        f"{connected_agents}\n"
+        f"{subs_manager}\n"
+        f"{order_manager}\n"
+        f"----------------------------------------------------\n"
+    )
+    if include_ka:
+        ka_text = "[ka.open_map]\n"
+        for k, d in ka.open_map.items(): 
+            ka_text += f"  - {k}: {list_str(d['items'])}\n"
+        ka_text += f"[ka.data_map]\n" 
+        ka_text += f"  - {list_str(ka.data_map.keys())}\n"
+        ka_text += f"----------------------------------------------------\n"
+        text += ka_text
+
+    # automatic relay to dashboard
+    dashboard.enqueue(text)
+    return text
 
 async def server(shutdown_event: asyncio.Event):
     async with asyncio.TaskGroup() as tg: 
@@ -205,7 +212,6 @@ async def server(shutdown_event: asyncio.Event):
         await shutdown_event.wait() # the task group doesn't exit instantly
 
 async def main():
-    sep = "\n======================================================================================"
     optlog.info("[Server] server initiated..."+sep)
 
     shutdown_event = asyncio.Event()

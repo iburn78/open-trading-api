@@ -21,8 +21,9 @@ class DoubleUpStrategy(StrategyBase):
     SELL_BEP_RETURN_RATE = 0.002 
     BUY_BEP_RETURN_RATE = -0.004
 
-
     ###_ need to record strategy response
+    ###_ handle order-cancel strategy command // handle dispatch type error
+    ###_ study what happens to limit orders that is overtime...
 
     async def on_update(self, update_event: UpdateEvent):
         optlog.debug(f"{self.code}-{update_event.name}: {self.pm.cur_price:,d} / {self.pm.bep_return_rate:.6f}", name=self.agent_id)

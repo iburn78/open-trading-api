@@ -78,7 +78,11 @@ class ServerResponse:
 @dataclass
 class Sync:
     agent_id: str | None = None
-    # prev days
+    # -----------------------------------------------------
+    # for below dicts, keys may be duplicated, in such a case, keys will have trailing "#" marks... so if needed take them out.
+    # -----------------------------------------------------
+    # prev days - has to be dealt like completed orders; i.e., need to set order.quantity == order.processed
+    # more fundamentally, prev_ios shouldn't exist if handled well, but this allows more flexibility
     prev_incompleted_orders: dict | None = None
     # today
     incompleted_orders: dict | None = None
@@ -91,13 +95,13 @@ class Sync:
     def __str__(self):
         res = ''
         for k, v in (self.prev_incompleted_orders or {}).items():
-            res += f'prev incompleted {k}: {v}\n'
+            res += f'p-inc {v}\n'
         for k, v in (self.incompleted_orders or {}).items():
-            res += f'today incompleted {k}: {v}\n'
+            res += f't-inc {v}\n'
         for k, v in (self.completed_orders or {}).items():
-            res += f'completed {k}: {v}\n'
+            res += f'comp  {v}\n'
         for k, v in (self.pending_trns or {}).items():
-            res += f'pending trns {k}: {v}\n'
+            res += f'ptrns {k}: {v}\n'
         
         if res: res = '\n'+res 
         else: res = "sync data empty"

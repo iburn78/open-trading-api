@@ -15,7 +15,7 @@ BACKUP_COUNT = 9 # num of files
 F_LEVEL = logging.DEBUG # file logging level
 S_LEVEL = logging.DEBUG # stream logging level
 
-LOG_INDENT = "                        "
+LOG_INDENT = "    "
 
 LEVEL_MAP = {
     'DEBUG': 'D',

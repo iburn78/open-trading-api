@@ -8,7 +8,7 @@ import time
 
 from core.common.setup import data_dir, disk_save_period, order_manager_keep_days
 from core.common.optlog import optlog, log_raise
-from core.common.tools import merge_with_suffix_on_A
+from core.common.tools import merge_with_suffix_on_A, list_str
 from core.common.interface import Sync
 from core.model.agent import AgentCard, dispatch
 from core.model.order import Order
@@ -104,21 +104,22 @@ class OrderManager:
 
     def __str__(self):
         if not self.map:
-            return "(no map initialized)"
+            return "[OrderManager] no map initialized"
         date_ = max(self.map.keys())
-        res = '[OrderManager]\n'
-        res = res + f'codes: {list(self.map[date_].keys())}\n'
+        res = f'[OrderManager] for {date_}, codes: ' + list_str(self.map[date_].keys()) +'\n'
         for code, code_map in self.map[date_].items():
-            res = res + f'- {code}\n'
-            res = res + f'  {PENDING_TRNS}: {list(code_map[PENDING_TRNS].keys())}\n'
-            res = res + f'  {INCOMPLETED_ORDERS}: { {agent_id: len(orders_dict) for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items()} }\n'
+            res += f'- {code}\n'
+            res += f'  {PENDING_TRNS}: ' + list_str(code_map[PENDING_TRNS].keys()) +'\n'
+            res += f'  {INCOMPLETED_ORDERS}: \n'
             for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items():
+                res += f'  - {agent_id}: total {len(orders_dict)} orders\n'
                 for k, o in orders_dict.items():
-                    res = res + f'  - {agent_id}: {o}\n'
-            res = res + f'  {COMPLETED_ORDERS}: { {agent_id: len(orders_dict) for agent_id, orders_dict in code_map[COMPLETED_ORDERS].items()} }\n'
+                    res += f'    - {o}\n'
+            res += f'  {COMPLETED_ORDERS}: \n'
             for agent_id, orders_dict in code_map[COMPLETED_ORDERS].items():
+                res += f'  - {agent_id}: total {len(orders_dict)} orders\n'
                 for k, o in orders_dict.items():
-                    res = res + f'  - {agent_id}: {o}\n'
+                    res += f'    - {o}\n'
         return res.strip()
 
     # sync is based first by code, and then by checking if agent.id exists
@@ -155,6 +156,7 @@ class OrderManager:
                     optlog.error(f"[OrderManager] pending trns not empty: {code_map[PENDING_TRNS]} for date {d_} - check the validity of incompleted orders required", name=agent.id)
             else: # d_ == today_
                 ios = code_map[INCOMPLETED_ORDERS].get(agent.id, {})
+                cos = merge_with_suffix_on_A(cos, code_map[COMPLETED_ORDERS].get(agent.id, {}))
                 ptrns = code_map[PENDING_TRNS]
 
         optlog.debug(f"[OrderManager] agent sync data sent", name=agent.id)
@@ -171,48 +173,48 @@ class OrderManager:
             return False
 
     async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order], trenv, date_=None):
-        if len([o for o in orders if o.submitted]) > 0: log_raise('Orders should have not been submitted ---', name=agent.id)
-        if date_ is None: date_=date.today().isoformat()
+        if any(o.submitted for o in orders):
+            log_raise('Orders should not be already submitted ---', name=agent.id)
+        if date_ is None:
+            date_ = date.today().isoformat()
 
-        # below is sequential submission 
-        # may consider to concurrently submit: API might not allow this
-        # tasks = []
-        # for o in orders:
-        #     task = asyncio.create_task(...)  
-        #     tasks.append(task)
-        # await asyncio.gather(*tasks, return_exceptions=True)
-        for order in orders: 
-            # submit part
+        for order in orders:
+            # submit
             try:
                 await asyncio.to_thread(order.submit, trenv)
             except Exception as e:
-                optlog.error(f"[OrderManager] error in order submission {order.unique_id}: {e}", name=agent.id, exc_info=True) 
-            finally: 
-                # send back submission result (order status updated) to the agent right away
-                # less likely that order object itself will be corrupt after .submit
-                await dispatch(agent, order)  
+                optlog.error(f"[OrderManager] submission error {order.unique_id}: {e}", name=agent.id, exc_info=True)
+            # send back submission result (order status updated) to the agent right away
+            # less likely that order object itself will be corrupt after .submit
+            await dispatch(agent, order)
 
-            # registration
-            if order.submitted: # when order_no is assigned successfully by API
-                async with self._locks[order.code]:
-                    date_map = self.map.setdefault(date_, {})
-                    code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
-                    code_map[INCOMPLETED_ORDERS].setdefault(agent.id, {})[order.order_no] = order
+            if not order.submitted:
+                optlog.error(f"[OrderManager] order submission failed: uid {order.unique_id}", name=agent.id)
+                continue
 
-                    # catch notices that are delivered before order submission is completed
-                    to_process = code_map[PENDING_TRNS].get(order.order_no, None)
-                    if to_process:
-                        for notice in to_process:
-                            order.update(notice, trenv)
-                            # send back notice to the agent right away
-                            await dispatch(agent, notice)  
+            # lock and register
+            async with self._locks[order.code]:
+                date_map = self.map.setdefault(date_, {})
+                code_map = date_map.setdefault(agent.code, {
+                    PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}
+                })
+                # register incompleted order
+                code_map[INCOMPLETED_ORDERS].setdefault(agent.id, {})[order.order_no] = order
 
-                        code_map[PENDING_TRNS].pop(order.order_no) 
-            
-            # no registration
-            else:
-                optlog.error(f"[OrderManager] order submission failed: {order.unique_id}", name=agent.id) 
+                # process pending notices
+                # - catch notices that are delivered before order submission is completed
+                for notice in code_map[PENDING_TRNS].pop(order.order_no, []):
+                    order.update(notice, trenv)
+                    # send back notice to the agent right away
+                    await dispatch(agent, notice)
+
+                # move to completed if finished
+                if order.completed or order.cancelled:
+                    code_map[INCOMPLETED_ORDERS][agent.id].pop(order.order_no, None)
+                    code_map[COMPLETED_ORDERS].setdefault(agent.id, {})[order.order_no] = order
+
             await asyncio.sleep(trenv.sleep)
+
 
     async def process_tr_notice(self, notice: TransactionNotice, connected_agents: ConnectedAgents, trenv, date_=None):
         # reroute notice to the corresponding order
@@ -225,21 +227,20 @@ class OrderManager:
             code_map = date_map.setdefault(notice.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
 
             order = None
-            for order_dict in code_map[INCOMPLETED_ORDERS].values(): 
-                order: Order | None = order_dict.get(notice.oder_no)
-                if order is not None: break
+            # find order by notice.order_no (which doesn't have agent id)
+            for agent_id, order_dict in code_map[INCOMPLETED_ORDERS].items(): 
+                order = order_dict.get(notice.oder_no)
+                if order: 
+                    if order.agent_id != agent_id: 
+                        optlog.error(f'order.agent_id {order.agent_id} inconsistent with notice.oder_no {notice.oder_no} ---', name=order.agent_id) 
+                    break # stop finding
 
             if order: 
                 order.update(notice, trenv)
                 # if order is completed or canceled, move to completed_orders
                 if order.completed or order.cancelled:
                     # remove from incompleted_orders 
-                    try:
-                        code_map[INCOMPLETED_ORDERS].get(order.agent_id).pop(order.order_no) 
-                    except:
-                        # let it raise
-                        log_raise(f'order.agent_id {order.agent_id} and notice.oder_no {notice.oder_no} mismatches ---', name=order.agent_id) 
-                    # add to completed_orders
+                    code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).pop(order.order_no, None)
                     code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[order.order_no] = order
 
                 agent = connected_agents.get_agent_card_by_id(order.agent_id)

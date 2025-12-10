@@ -67,19 +67,21 @@ class Order:
             log_raise("Check the market of the stock: KOSPI or KOSDAQ ---", name=self.agent_id)
         
     def __str__(self):
+        ordn = f"{int(self.order_no):>6d}" if self.order_no else f"  none"
         return (
-            f"[Order] {self.code}, agent {self.agent_id}, odno: {self.order_no}, "
-            f"{self.side.name}, {self.ord_dvsn.name}, {self.exchange.name}, "
-            f"Q {self.quantity}, P {self.price}, processed {self.processed}, "
-            f"{'submitted' if self.submitted else 'not_submitted'}, "
-            f"{'accepted' if self.accepted else 'not_accepted'}, "
-            f"{'completed' if self.completed else 'not_completed'}, "
-            f"{'cancelled' if self.cancelled else 'not_cancelled'}, "
-            f"uid {self.unique_id[-12:]}, "
-            f"fee: {self.fee_}, "
-            f"tax: {self.tax_}, "
-            f"amount: {self.amount}, "
-            f"avg_price: {self.avg_price:.2f} "
+            f"[O] {self.code} {self.agent_id:>5s} {ordn} "
+            f"{self.unique_id[6:15]} " # ddhhmmssf upto 1/10 sec
+            f"P{self.price:>8,d} Q{self.quantity:>5,d} pr{self.processed:>5,d} "
+            f"{self.side.name[:3]} {self.ord_dvsn.name[:3]} {self.exchange.name[:3]} "
+            f"{'S' if self.submitted else '_'}"
+            f"{'A' if self.accepted else '_'}"
+            f"{'CP' if self.completed else '__'}"
+            f"{'CL' if self.cancelled else '__'} "
+            f"ftap:"
+            f"{self.fee_:>6,d} "
+            f"{self.tax_:>7,d} "
+            f"{self.amount:>11,d} "
+            f"{self.avg_price:>8,.0f}"
         )
 
     def __eq__(self, other):
@@ -96,7 +98,7 @@ class Order:
         res = order_cash(env_dv=trenv.env_dv, ord_dv=self.side, cano=trenv.my_acct, acnt_prdt_cd=trenv.my_prod, pdno=self.code, ord_dvsn=self.ord_dvsn, ord_qty=ord_qty, ord_unpr=ord_unpr, excg_id_dvsn_cd=self.exchange)
 
         if res.empty:
-            optlog.error('[Order] order submit response empty', name=self.agent_id)
+            optlog.error(f'[Order] order submit response empty, uid {self.unique_id}', name=self.agent_id)
         else: 
             if pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
                 log_raise("Check submission response ---", name=self.agent_id)
@@ -226,7 +228,7 @@ class ReviseCancelOrder(Order):
             excg_id_dvsn_cd=self.exchange
         )
         if res.empty:
-            log_raise(f'Order {self.order_no} revise-cancel failed ---', name=self.agent_id)
+            optlog.error(f'[ReviseCancelOrder] order submit response empty, uid {self.unique_id}', name=self.agent_id)
         else: 
             if pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
                 log_raise("Check revise-cancel response ---", name=self.agent_id)

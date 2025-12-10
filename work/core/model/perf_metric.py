@@ -109,27 +109,27 @@ class PerformanceMetric:
     
     # this lets Strategy to use data from pm only
     # should reflect changes in the variables defined above
-    def _feed_in_ob_managed_data(self, pending=False):
+    def _feed_in_ob_managed_data(self, pending_orders=False):
         # get data from order_book
         self.pending_buy_qty = self.order_book.pending_buy_qty
         self.pending_limit_buy_amt = self.order_book.pending_limit_buy_amt
         self.pending_market_buy_qty = self.order_book.pending_market_buy_qty
         self.pending_sell_qty = self.order_book.pending_sell_qty
-        if pending: return
 
-        self.orderbook_holding_qty = self.order_book.orderbook_holding_qty
-        self.orderbook_holding_avg_price = self.order_book.orderbook_holding_avg_price
-        self.initial_holding_sold_qty= self.order_book.initial_holding_sold_qty
-        self.cumul_buy_qty = self.order_book.cumul_buy_qty
-        self.cumul_sell_qty = self.order_book.cumul_sell_qty
-        self.net_cash_used= self.order_book.net_cash_used
-        self.cumul_cost = self.order_book.cumul_cost
-        self.total_cash_used = self.order_book.total_cash_used
+        if not pending_orders: 
+            self.orderbook_holding_qty = self.order_book.orderbook_holding_qty
+            self.orderbook_holding_avg_price = self.order_book.orderbook_holding_avg_price
+            self.initial_holding_sold_qty= self.order_book.initial_holding_sold_qty
+            self.cumul_buy_qty = self.order_book.cumul_buy_qty
+            self.cumul_sell_qty = self.order_book.cumul_sell_qty
+            self.net_cash_used= self.order_book.net_cash_used
+            self.cumul_cost = self.order_book.cumul_cost
+            self.total_cash_used = self.order_book.total_cash_used
 
     # called highly frequently, so has to be light O(1)
     # - called only in strategy (to prevent double access from multiple coroutines)
-    def update(self, pending=False):
-        self._feed_in_ob_managed_data(pending)
+    def update(self, pending_orders=False):
+        self._feed_in_ob_managed_data(pending_orders)
 
         # get data from market_prices
         self.cur_price = self.market_prices.current_price
@@ -146,21 +146,19 @@ class PerformanceMetric:
         self.holding_qty = self.init_holding_qty - self.initial_holding_sold_qty + self.orderbook_holding_qty
         self.max_sell_qty = self.holding_qty - self.pending_sell_qty
 
-        self.dashboard.enqueue(self)
-        if pending: return
-
-        self.holding_value = self.holding_qty*self.cur_price 
-        self.cash_balance = self.init_cash_allocated - self.total_cash_used
+        if not pending_orders: 
+            self.holding_value = self.holding_qty*self.cur_price 
+            self.cash_balance = self.init_cash_allocated - self.total_cash_used
     
-        self.avg_price = ((self.init_holding_qty-self.initial_holding_sold_qty)*self.init_avg_price + self.orderbook_holding_qty*self.orderbook_holding_avg_price)/self.holding_qty if self.holding_qty > 0 else 0
-        _, self.bep_price = CostCalculator.bep_cost_calculate(self.holding_qty, self.avg_price, self.listed_market, self.my_svr)
+            self.avg_price = ((self.init_holding_qty-self.initial_holding_sold_qty)*self.init_avg_price + self.orderbook_holding_qty*self.orderbook_holding_avg_price)/self.holding_qty if self.holding_qty > 0 else 0
+            _, self.bep_price = CostCalculator.bep_cost_calculate(self.holding_qty, self.avg_price, self.listed_market, self.my_svr)
 
-        self.return_rate = (self.cur_price-self.avg_price)/self.avg_price if self.avg_price > 0 else 0
-        self.bep_return_rate = (self.cur_price-self.bep_price)/self.bep_price if self.bep_price > 0 else 0
+            self.return_rate = (self.cur_price-self.avg_price)/self.avg_price if self.avg_price > 0 else 0
+            self.bep_return_rate = (self.cur_price-self.bep_price)/self.bep_price if self.bep_price > 0 else 0
 
-        self.init_value = self.init_cash_allocated + self.init_holding_qty*self.init_avg_price
-        self.cur_value = self.cash_balance + self.holding_value
-        self.unrealized_gain = self.cur_value - self.init_value                      
-        self.cap_return_rate = self.unrealized_gain / self.init_value if self.init_value > 0 else 0 
+            self.init_value = self.init_cash_allocated + self.init_holding_qty*self.init_avg_price
+            self.cur_value = self.cash_balance + self.holding_value
+            self.unrealized_gain = self.cur_value - self.init_value                      
+            self.cap_return_rate = self.unrealized_gain / self.init_value if self.init_value > 0 else 0 
 
         self.dashboard.enqueue(self)

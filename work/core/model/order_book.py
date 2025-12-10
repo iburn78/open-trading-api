@@ -118,8 +118,7 @@ class OrderBook:
             self._pending_trns_from_server_on_sync = sync.pending_trns
 
             self._parse_orders_and_update_stats()
-            optlog.info("sync completed", name=self.agent_id)
-            optlog.info(self, name=self.agent_id)
+            optlog.info(f"sync completed: {self}", name=self.agent_id)
     
     def _check_if_start_from_empty(self):
         # this is to be called when connected to the server
@@ -140,25 +139,25 @@ class OrderBook:
     def _parse_orders_and_update_stats(self):
         # from completed to sent
         for _, v in self._indexed_completed_orders.items():
-            self.stat_update_to_pending_orders(v)
-            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0)
+            self.stat_update_to_pending_orders(v, initial_sync=True)
+            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0, initial_sync=True)
 
         for _, v in self._indexed_prev_incompleted_orders.items():
-            self.stat_update_to_pending_orders(v, prev_incomplete=True)
-            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0)
+            self.stat_update_to_pending_orders(v, prev_incomplete=True, initial_sync=True)
+            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0, initial_sync=True)
 
         for _, v in self._indexed_incompleted_orders.items():
-            self.stat_update_to_pending_orders(v)
-            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0)
+            self.stat_update_to_pending_orders(v, initial_sync=True)
+            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0, initial_sync=True)
 
         for _, v in self._indexed_sent_for_submit.items():
-            self.stat_update_to_pending_orders(v)
+            self.stat_update_to_pending_orders(v, initial_sync=True)
 
     # executed order portion stat update (체결된 사항에 대한 update)
     # - prev_qty = order.processed 
     # - prev_cost = order.fee_ + order.tax_ 
     # - prev_amount = order.amount 
-    def stat_update(self, updated_order: Order, prev_qty, prev_cost, prev_amount):
+    def stat_update(self, updated_order: Order, prev_qty, prev_cost, prev_amount, initial_sync=False):
         delta_qty = updated_order.processed - prev_qty
         if delta_qty == 0:
             return # nothing to update
@@ -200,12 +199,12 @@ class OrderBook:
 
         self.cumul_cost += delta_cost
         self.total_cash_used = self.net_cash_used + self.cumul_cost
-        self.on_update()
+        self.on_update(initial_sync=initial_sync)
 
     # count in orders that are not yet submtted
     # revert: API refused order portion stat update (각종 오류로, API 에서 submit 실패한 사항에 대한 update)
     # note: cash is not yet used
-    def stat_update_to_pending_orders(self, order: Order, revert=False, prev_incomplete=False):
+    def stat_update_to_pending_orders(self, order: Order, revert=False, prev_incomplete=False, initial_sync=False):
         if revert: m = -1
         else: m = 1
 
@@ -220,7 +219,7 @@ class OrderBook:
                 self.pending_market_buy_qty += to_process
         else:
             self.pending_sell_qty += to_process
-        self.on_update(pending=True)
+        self.on_update(pending_orders=True, initial_sync=initial_sync)
 
     async def process_tr_notice(self, notice: TransactionNotice):
         # reroute notice to corresponding order

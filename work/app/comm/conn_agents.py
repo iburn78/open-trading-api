@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 from core.common.optlog import optlog, log_raise
+from core.common.tools import list_str
 from core.model.agent import AgentCard
 from core.model.dashboard import DashboardManager
 from core.kis.ws_data import TransactionPrices
@@ -19,7 +20,8 @@ class ConnectedAgents:
                 "[ConnectedAgents]"
             ]
             for c, l in self.code_agent_card_dict.items():
-                parts.append(f'{c}: {[(a.id, a.client_port) for a in l]}')
+                tl = [f'{a.id} ({a.dp}, {a.client_port})' for a in l]
+                parts.append(f'{c}: ' + list_str(tl))
             return '\n'.join(parts)
         else: 
             return '[ConnectedAgents] no agents connected'

@@ -80,8 +80,8 @@ class TransactionNotice: # 국내주식 실시간체결통보
     def __str__(self):
         return (
             f"[TR notice] {self.code}, "
-            f"odno {self.oder_no}, oodno {self.ooder_no}, {self.rfus_yn}{self.cntg_yn}{self.acpt_yn}, cond {self.oder_cond}, {self.traded_exchange}, "
-            f"{self.seln_byov_cls.name}, {self.oder_kind.name}, processed {self.cntg_qty} at P {self.cntg_unpr}, Q {self.oder_qty}"
+            f"no {self.oder_no}/{self.ooder_no} {self.rfus_yn}{self.cntg_yn}{self.acpt_yn} cnd {self.oder_cond} {self.traded_exchange.name} "
+            f"{self.seln_byov_cls.name} {self.oder_kind.name} P:{self.cntg_unpr} Q:{self.oder_qty} pr:{self.cntg_qty}"
         )
 
     def _set_data(self, res):

@@ -97,8 +97,10 @@ class Agent:
         self.sync_start_date = sync_start_date # default to be today (None)
         self.agent_initialized = True
     
-    def on_orderbook_update(self, pending=False):
-        self.pm.update(pending)
+    def on_orderbook_update(self, pending_orders=False, initial_sync=False):
+        self.pm.update(pending_orders)
+        if not initial_sync:
+            optlog.info(self.pm, name=self.id)
 
     async def process_strategy_command(self): 
         while not self.hardstop_event.is_set():
@@ -184,10 +186,6 @@ class Agent:
         await self.agent_initial_price_set_up.wait() # ensures that pm is set with latest market data
         optlog.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", name=self.id)
         self.pm.update()
-
-        ###_ STUDY WHERE TO PUT MORE LOGGING OF PM FOR LOGGING
-        ###_ Should be places where startegy is run and result is on.... 
-        ###_ Also, where to put broadcast pm... although it is not costly... 
         optlog.info(self.pm, name=self.id)
 
         # [Strategy enact part]
@@ -258,7 +256,8 @@ class Agent:
         if handler:
             await handler(data)
         else:
-            optlog.error("[Agent] unhandled dispatch type:", type(data), name=self.id)
+            optlog.error(f"[Agent] unhandled dispatch type: {type(data)}", name=self.id)
+            optlog.debug(data, name=self.id)
 
     # handlers for dispatched msg types ---
     async def handle_str(self, msg):
