@@ -20,6 +20,6 @@ class BruteForceRandStrategy(StrategyBase):
             sc = StrategyCommand(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
         else:
             sc = StrategyCommand(side=SIDE.SELL, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
-        sent = await self.order_submit(sc)
+        sent = await self.execute(sc)
         await asyncio.sleep(random.randint(0, 5))
         return

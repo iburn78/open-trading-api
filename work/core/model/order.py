@@ -22,7 +22,6 @@ class Order:
 
     # auto gen
     unique_id: str = field(default_factory=lambda: pd.Timestamp.now().strftime('%Y%m%d%H%M%S%f'))
-    str_id: str | None = None # strategy command id, which generated this order
 
     # to be filled by server upon submission
     org_no: str | None = None
@@ -70,7 +69,7 @@ class Order:
         ordn = f"{int(self.order_no):>6d}" if self.order_no else f"  none"
         return (
             f"[O] {self.code} {self.agent_id:>5s} {ordn} "
-            f"{self.unique_id[6:15]} " # ddhhmmssf upto 1/10 sec
+            f"{self.unique_id[6:14]}.{self.unique_id[14:16]} " # ddhhmmss.ff upto 1/100 sec
             f"P{self.price:>8,d} Q{self.quantity:>5,d} pr{self.processed:>5,d} "
             f"{self.side.name[:3]} {self.ord_dvsn.name[:3]} {self.exchange.name[:3]} "
             f"{'S' if self.submitted else '_'}"
@@ -201,6 +200,13 @@ class ReviseCancelOrder(Order):
     - partial: 주식정정취소가능주문조회 상 정정취소가능수량(psbl_qty)을 Check 하라고 권고
     - 단, 해당 기능 모의투자 미지원
     - Race condition could occur (해당 기능 이용해도 역시 발생가능)
+
+    ###_ 
+    record what are the API response: 
+    ###_ note cancel request does not receive server response ??? TRNS?
+    ###_ REMOVE REVISE.... 
+
+
     """
     rc: RCtype = None # '01': revise, '02': cancel
     all_yn: AllYN = None # 잔량 전부 주문 - Y:전부, N: 일부 

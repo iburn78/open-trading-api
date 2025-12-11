@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import dataclass, field
 import pickle
 
-from .order import Order
+from .order import Order, ReviseCancelOrder
 from .client import PersistentClient
 from .order_book import OrderBook
 from .price import MarketPrices
@@ -14,7 +14,7 @@ from ..common.optlog import optlog, log_raise, notice_beep
 from ..model.strategy_util import StrategyRequest, StrategyCommand, StrategyResponse
 from ..model.dashboard import DashBoard
 from ..kis.kis_auth import KISEnv
-from ..kis.ws_data import TransactionPrices, TransactionNotice, ORD_DVSN
+from ..kis.ws_data import TransactionPrices, TransactionNotice, ORD_DVSN, RCtype
 
 @dataclass
 class AgentCard: # an agent's business card (e.g., agents submit their business cards in registration)
@@ -56,7 +56,6 @@ class Agent:
     agent_ready: bool = False # ready to start strategy
     agent_initial_price_set_up: asyncio.Event = field(default_factory=asyncio.Event) # wheather the first TNP is received (so that pm can be properly initialized)
     sync_start_date: str | None = None # isoformat date ("yyyy-mm-dd")
-    strict_API_check_required: bool = False # consume one API call
 
     def __post_init__(self):
         # initialize
@@ -85,7 +84,7 @@ class Agent:
         self.pm.dashboard = self.dashboard
 
         # link strategy with agent own data - market_prices, pm, etc
-        self.strategy.link_agent_data(self.id, self.code, self.market_prices, self.pm)
+        self.strategy.link_agent_data(self.id, self.code, self.market_prices, self.pm, self.check_psbl_buy_amount)
 
     # has to be called on start-up
     # INITIAL STATE has to be defined carefully, as "sync" will be performed
@@ -97,33 +96,10 @@ class Agent:
         self.sync_start_date = sync_start_date # default to be today (None)
         self.agent_initialized = True
     
-    def on_orderbook_update(self, pending_orders=False, initial_sync=False):
+    def on_orderbook_update(self, pending_orders=False):
         self.pm.update(pending_orders)
-        if not initial_sync:
+        if self.agent_ready: # to avoid excessive logging
             optlog.info(self.pm, name=self.id)
-
-    async def process_strategy_command(self): 
-        while not self.hardstop_event.is_set():
-            str_command: StrategyCommand = await self.strategy._command_queue.get()
-
-            if str_command.request == StrategyRequest.ORDER:
-                order = self.create_an_order(str_command)
-                if self._check_connected('submit'):
-                    optlog.info(f"[submitting new order] {order}", name=self.id)
-                    await self.order_book.submit_new_order(self.client, order)
-                    response = StrategyResponse(request=str_command.request, response_data=True)
-                else: 
-                    optlog.error(f'str command {str_command} not processed', name=self.id)
-                    response = StrategyResponse(request=str_command.request, response_data=False)
-
-            elif str_command.request == StrategyRequest.PSBL_QUANTITY:
-                q_ = await self.check_psbl_buy_amount(ord_dvsn=str_command.ord_dvsn, price = str_command.price)
-                response = StrategyResponse(request=str_command.request, response_data=q_)
-
-            else: 
-                response = None
-
-            await self.strategy._response_queue.put(response) 
 
     async def run(self, **kwargs):
         """  
@@ -202,46 +178,63 @@ class Agent:
             # --- client cleanup ---
             await self.client.close()
 
-    # makes an order, not sent to server yet
+    # ----------------------------------------------------------------------------------
+    # str processing and order creation
+    # ----------------------------------------------------------------------------------
+    async def process_strategy_command(self): 
+        while not self.hardstop_event.is_set():
+            str_command: StrategyCommand = await self.strategy._command_queue.get()
+
+            order = self.create_an_order(str_command)
+            if self.client.is_connected: 
+                optlog.info(f"[submitting new order] {order}", name=self.id)
+                await self.order_book.submit_new_order(self.client, order)
+                response = StrategyResponse(request=str_command.request)
+            else: 
+                optlog.error(f'str command {str_command} not processed - client not connected', name=self.id)
+                response = None
+
+            await self.strategy._response_queue.put(response) 
+
     def create_an_order(self, strategy_command: StrategyCommand): 
-        ''' Create an order and add to new_orders (which is not yet sent to server for submission) '''
-        # agent data (getting from agent)
-        # - agent_id, code, listed_market
+        if strategy_command.request == StrategyRequest.ORDER:
+            side = strategy_command.side
+            ord_dvsn = strategy_command.ord_dvsn
+            quantity = strategy_command.quantity or 0
+            price = strategy_command.price or 0
+            exchange = strategy_command.exchange
 
-        # strategy data
-        side = strategy_command.side
-        ord_dvsn = strategy_command.ord_dvsn
-        quantity = strategy_command.quantity
-        price = strategy_command.price
-        exchange = strategy_command.exchange
-        str_id = strategy_command.id
+            return Order(
+                agent_id=self.id, 
+                code=self.code, 
+                listed_market=self.listed_market, 
+                side=side, 
+                ord_dvsn=ord_dvsn, 
+                quantity=quantity, 
+                price=price, 
+                exchange=exchange, 
+                )
 
-        return Order(
-            agent_id=self.id, 
-            code=self.code, 
-            listed_market=self.listed_market, 
-            side=side, 
-            ord_dvsn=ord_dvsn, 
-            quantity=quantity, 
-            price=price, 
-            exchange=exchange, 
-            str_id=str_id
-            )
-    
-    def cancel_all_orders(self):
-        if self._check_connected('cancel'):
-            cancel_request = ClientRequest(command=RequestCommand.CANCEL_ALL_ORDERS_BY_AGENT)
-            # note cancel request does not receive server response - if needed, make this as async cancel_all_orders(self), etc
-            asyncio.create_task(self.client.send_client_request(cancel_request))
-        else:
-            optlog.error(f'cancel all order command not processed', name=self.id)
+        elif strategy_command.request == StrategyRequest.RC_ORDER:
+            original_order: Order = strategy_command.original_order
+            rc = strategy_command.rc
+            all_yn = strategy_command.all_yn
+
+            ord_dvsn = strategy_command.ord_dvsn or original_order.ord_dvsn
+            if rc == RCtype.CANCEL:
+                quantity = original_order.quantity - original_order.processed
+            else: 
+                quantity = strategy_command.quantity or original_order.quantity - original_order.processed
+            price = strategy_command.price or original_order.price
+
+            return original_order.make_revise_cancel_order(rc, ord_dvsn, quantity, price, all_yn)
         
-    def _check_connected(self, msg: str = ""): 
-        if not self.client.is_connected:
-            optlog.error(f"[Agent] client not connected - cannot ({msg}) orders for agent {self.id} ---", name=self.id)
-            return False
-        return True
-
+        else:
+            return None
+    
+    # ----------------------------------------------------------------------------------
+    # on dispatch handling
+    # ----------------------------------------------------------------------------------
     # msg can be 1) str, 2) Order, 3) TransactionPrices, 4) TransactionNotice
     # should be careful when datatype is dict (could be response to certain request, and captured before getting here)
     async def on_dispatch(self, data):
@@ -249,6 +242,7 @@ class Agent:
             str: self.handle_str,
             dict: self.handle_dict, 
             Order: self.handle_order,
+            ReviseCancelOrder: self.handle_order,
             TransactionPrices: self.handle_prices,
             TransactionNotice: self.handle_notice,
         }
@@ -267,8 +261,9 @@ class Agent:
         optlog.info(f"[Agent] dispatched dict: {dict_data}", name=self.id)
 
     async def handle_order(self, order: Order):
-        optlog.info(f"[submit result received] {order}", name=self.id) 
-        await self.order_book.handle_order_dispatch(order)
+        optlog.info(f"[Agent] dispatched order: {order}", name=self.id) 
+        matched_order = await self.order_book.handle_order_dispatch(order)
+        self.strategy.latest_sc_order = matched_order 
         self.strategy._order_receipt_event.set() 
 
     async def handle_prices(self, trp: TransactionPrices):
@@ -283,6 +278,9 @@ class Agent:
         await self.order_book.process_tr_notice(trn)
         self.strategy._trn_receive_event.set()
 
+    # ----------------------------------------------------------------------------------
+    # tools
+    # ----------------------------------------------------------------------------------
     async def check_psbl_buy_amount(self, ord_dvsn: ORD_DVSN, price: int):
         psbl_request = ClientRequest(command=RequestCommand.GET_PSBL_ORDER)
         psbl_request.set_request_data((self.code, ord_dvsn, price)) 
@@ -291,6 +289,9 @@ class Agent:
         return q_
 
 
+# ----------------------------------------------------------------------------------
+# server tools
+# ----------------------------------------------------------------------------------
 # this function is used in the server side, so the logging is also on the server side
 async def dispatch(to: AgentCard | list[AgentCard], message: object):
     if not to:

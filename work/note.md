@@ -40,11 +40,11 @@ or more modern way (only for development situation)
 ### Design notes
 - Race conditions could occur when getting responses from API server: e.g., 1) direct response of the command, 2) websocket response 
 - Cancelled order is only progressed up to order.processed quantity
-- Each agent is a client (one to one)
+- Each agent has a client instance (one to one)
 - Agent registration is done by AgentCard
-- A client can send command but the corresponding agent has to be registered already
+- A client can send a command but the corresponding agent has to be registered already
 - let's use "###(underbar_)" to mark places that need attention / fix / develop
-- Order submission: Strategy-Agent/Client-OrderBook: single order communication, Client-Server: List[Order] communication, Server-API: single order communication
+- Order submission: Strategy-Agent(Client)-OrderBook: single order communication, Client-Server: List[Order] communication, Server-API: single order communication
 
 ### Python knowledge
 - variables are just references to objects, and everything is passed by reference (i.e., passing variables)

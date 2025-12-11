@@ -1,27 +1,32 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
-import uuid
 
-from ..kis.ws_data import SIDE, ORD_DVSN, EXCHANGE
+from ..model.order import Order
+from ..kis.ws_data import SIDE, ORD_DVSN, EXCHANGE, RCtype, AllYN
 
 class StrategyRequest(Enum):   
-    ORDER = auto() # create an order and submit
-    PSBL_QUANTITY = auto() # API check for psbl buy quantity through agent
+    ORDER = auto() 
+    RC_ORDER = auto()
 
 @dataclass
 class StrategyCommand:
-    # set default to StrategyRequest.ORDER
-    request: StrategyRequest = field(default_factory=lambda: StrategyRequest.ORDER)
+    request: StrategyRequest 
 
-    # incase of StrategyRequest.ORDER and PSBL_QUANTITY
+    # [StrategyRequest.ORDER]
     side: SIDE | None = None 
-    ord_dvsn: ORD_DVSN | None = None
-    quantity: int = 0
-    price: int = 0 
     exchange: EXCHANGE = EXCHANGE.SOR # optional
 
-    # uid
-    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    # in case of ORDER, but also used in RC_ORDER if needed
+    ord_dvsn: ORD_DVSN | None = None
+    quantity: int | None = None
+    price: int | None = None  
+
+    # [StrategyRequest.RC_ORDER]
+    rc: RCtype = None # '01': revise, '02': cancel
+    all_yn: AllYN = None # 잔량 전부 주문 - Y:전부, N: 일부 
+    original_order: Order = None  
+    # - if ord_dvsn, quantity, price are None, they are assigned by agent as in the original_order
+    # - refer to the agent.create_an_order()
 
     def __str__(self):
         parts = [f"[StrategyCommand] {self.request.name}:"]
@@ -29,6 +34,9 @@ class StrategyCommand:
         if self.ord_dvsn: parts.append(self.ord_dvsn.name)
         if self.quantity: parts.append(f"q: {self.quantity}")
         if self.price: parts.append(f"p: {self.price}")
+        if self.rc: parts.append(self.rc)
+        if self.all_yn: parts.append(self.all_yn)
+        if self.original_order: parts.append(self.original_order.order_no) 
         return " ".join(parts)
 
 @dataclass

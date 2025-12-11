@@ -1,5 +1,5 @@
 from ..model.strategy_base import StrategyBase
-from ..model.strategy_util import StrategyCommand, UpdateEvent
+from ..model.strategy_util import StrategyRequest, StrategyCommand, UpdateEvent
 from ..common.optlog import optlog
 from ..kis.ws_data import SIDE, ORD_DVSN 
 
@@ -22,11 +22,14 @@ class DoubleUpStrategy(StrategyBase):
     BUY_BEP_RETURN_RATE = -0.004
 
     ###_ need to record strategy response
-    ###_ handle order-cancel strategy command // handle dispatch type error
     ###_ study what happens to limit orders that is overtime...
 
     async def on_update(self, update_event: UpdateEvent):
-        optlog.debug(f"{self.code}-{update_event.name}: {self.pm.cur_price:,d} / {self.pm.bep_return_rate:.6f}", name=self.agent_id)
+        if update_event != UpdateEvent.PRICE_UPDATE:
+            optlog.debug(f"{self.code}-{update_event.name}", name=self.agent_id)
+
+        # sc = StrategyCommand(request=StrategyRequest.ORDER, side=SIDE.BUY, ord_dvsn=ORD_DVSN.LIMIT, price=550000, quantity=10)
+        # sent = await self.execute(sc)
 
         # ensure no action while pending
         if self.pm.pending_buy_qty > 0 or self.pm.pending_sell_qty > 0: return
@@ -35,8 +38,8 @@ class DoubleUpStrategy(StrategyBase):
             # buy once
             q = self.INITIAL_BUY_QTY
             optlog.info(f"INITIAL BUY {q}", name=self.agent_id)
-            sc = StrategyCommand(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
-            sent = await self.order_submit(sc)
+            sc = StrategyCommand(request=StrategyRequest.ORDER, side=SIDE.BUY, ord_dvsn=ORD_DVSN.LIMIT, price=550000, quantity=10)
+            sent = await self.execute(sc)
             return
 
         # pending sell quantity 
@@ -44,16 +47,15 @@ class DoubleUpStrategy(StrategyBase):
             # sell all
             q = self.pm.holding_qty  # quantity to sell
             optlog.info(f"SELL ALLL {q}", name=self.agent_id) 
-            sc = StrategyCommand(side=SIDE.SELL, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
-            sent = await self.order_submit(sc)
+            sc = StrategyCommand(request=StrategyRequest.ORDER, side=SIDE.SELL, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
+            sent = await self.execute(sc)
             return
 
         if self.pm.bep_return_rate is not None and self.pm.bep_return_rate <= self.BUY_BEP_RETURN_RATE:
             # buy double up to max buy amount
-
             q = min(self.pm.holding_qty*self.DOUBLEUP_MULTIPLIER, self.MAX_PURCHASE_QTY)
             optlog.info(f"DOUBLE-UP BUY {q}", name=self.agent_id)
-            sc = StrategyCommand(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
-            sent = await self.order_submit(sc)
+            sc = StrategyCommand(request=StrategyRequest.ORDER, side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, quantity=q)
+            sent = await self.execute(sc)
             return
 

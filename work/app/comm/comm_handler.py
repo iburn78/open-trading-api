@@ -146,15 +146,15 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
         try:
             client_request: ClientRequest = pickle.loads(client_bytes)
-            logmsg = f"[request received] {client_request}\n"
+            logmsg = f"[request received] {client_request}"
 
             rd = client_request.get_request_data()
             if rd and isinstance(rd, list): 
-                logmsg += f"{LOG_INDENT}request data: list ({len(rd)} items)"
+                logmsg += f"\n{LOG_INDENT}request data: list ({len(rd)} items)"
                 for o in rd: 
                     logmsg += f"\n{LOG_INDENT}{o}"
             elif rd:
-                logmsg += f"{LOG_INDENT}request data: {rd}"
+                logmsg += f"\n{LOG_INDENT}request data: {rd}"
             optlog.info(logmsg, name=cid)
 
             handler = COMMAND_HANDLERS.get(client_request.command)

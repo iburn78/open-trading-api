@@ -2,12 +2,12 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .order import Order
+from .order import Order, ReviseCancelOrder
 from .client import PersistentClient
 from ..common.optlog import optlog, log_raise, LOG_INDENT
 from ..common.interface import RequestCommand, ClientRequest, Sync
 from ..kis.kis_auth import KISEnv
-from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice
+from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice, RCtype
 
 @dataclass
 class OrderBook: 
@@ -20,8 +20,6 @@ class OrderBook:
     on_update: Callable | None  = None
 
     # private order lists - should use setter/getter functions to calculate dashboard info real time
-    _indexed_submission_failure_orders: dict["str_id": str, Order] = field(default_factory=dict)
-    _non_strategy_related_failure_orders: list[Order] =field(default_factory=list)
     _indexed_sent_for_submit: dict["unique_id": str, Order] = field(default_factory=dict) # order sent to the server; once the server sent it to API, the submitted order will be sent back through on_dispatch
     _indexed_incompleted_orders: dict["order_no": str, Order] = field(default_factory=dict)
     _indexed_prev_incompleted_orders: dict["order_no": str, Order] = field(default_factory=dict) # only used when sync
@@ -46,10 +44,10 @@ class OrderBook:
     initial_holding_sold_qty: int = 0 # when initial holding qty is sold, this records it
 
     # 주문 상태
-    pending_buy_qty: int = 0 # quantity, counted from _indexed_sent_for_submit and _indexed_incompleted_orders 
+    pending_buy_qty: int = 0 # quantity, counted from _indexed_incompleted_orders 
     pending_limit_buy_amt: int = 0 # amount
     pending_market_buy_qty: int = 0 # quantity
-    pending_sell_qty: int = 0 # qauntity, counted from _indexed_sent_for_submit and _indexed_incompleted_orders 
+    pending_sell_qty: int = 0 # qauntity, counted from _indexed_incompleted_orders 
 
     # 체결된 사항
     cumul_buy_qty: int = 0 # cumulative quantity
@@ -100,6 +98,9 @@ class OrderBook:
             return "[OrderBook] no orders under processing"
         return "\n".join(sections)
 
+    # ----------------------------------------------------------------------------------
+    # sync on initialization
+    # ----------------------------------------------------------------------------------
     async def process_sync(self, sync: Sync):
         if self.agent_id != sync.agent_id: log_raise(f'[OrderBook] sync error - agent {self.agent_id}, received {sync.agent_id}')
         async with self._lock:
@@ -123,12 +124,10 @@ class OrderBook:
     def _check_if_start_from_empty(self):
         # this is to be called when connected to the server
         # therefore, the order_book initial state expected to be empty 
-        if self._indexed_submission_failure_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 1", name=self.agent_id) 
-        if self._non_strategy_related_failure_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 2", name=self.agent_id) 
-        if self._indexed_sent_for_submit: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 3", name=self.agent_id) 
-        if self._indexed_incompleted_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 4", name=self.agent_id) 
-        if self._indexed_completed_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 5", name=self.agent_id) 
-        if self._unhandled_trns: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 6", name=self.agent_id) 
+        if self._indexed_sent_for_submit: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 1", name=self.agent_id) 
+        if self._indexed_incompleted_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 2", name=self.agent_id) 
+        if self._indexed_completed_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 3", name=self.agent_id) 
+        if self._unhandled_trns: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 4", name=self.agent_id) 
 
         # checking representative ones
         if self.orderbook_holding_qty != 0: optlog.error(f"[OrderBook] key_stat is not zero - 1", name=self.agent_id)
@@ -137,27 +136,24 @@ class OrderBook:
         if self.total_cash_used != 0: optlog.error(f"[OrderBook] key_stat is not zero - 4", name=self.agent_id)
 
     def _parse_orders_and_update_stats(self):
-        # from completed to sent
+        ###_ fix
         for _, v in self._indexed_completed_orders.items():
-            self.stat_update_to_pending_orders(v, initial_sync=True)
-            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0, initial_sync=True)
+            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0)
 
         for _, v in self._indexed_prev_incompleted_orders.items():
-            self.stat_update_to_pending_orders(v, prev_incomplete=True, initial_sync=True)
-            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0, initial_sync=True)
+            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0)
 
         for _, v in self._indexed_incompleted_orders.items():
-            self.stat_update_to_pending_orders(v, initial_sync=True)
-            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0, initial_sync=True)
+            self.stat_update_to_pending_orders(v)
+            self.stat_update(v, prev_qty = 0, prev_cost = 0, prev_amount = 0)
 
-        for _, v in self._indexed_sent_for_submit.items():
-            self.stat_update_to_pending_orders(v, initial_sync=True)
-
+    # ----------------------------------------------------------------------------------
     # executed order portion stat update (체결된 사항에 대한 update)
+    # ----------------------------------------------------------------------------------
     # - prev_qty = order.processed 
     # - prev_cost = order.fee_ + order.tax_ 
     # - prev_amount = order.amount 
-    def stat_update(self, updated_order: Order, prev_qty, prev_cost, prev_amount, initial_sync=False):
+    def stat_update(self, updated_order: Order, prev_qty, prev_cost, prev_amount):
         delta_qty = updated_order.processed - prev_qty
         if delta_qty == 0:
             return # nothing to update
@@ -199,17 +195,33 @@ class OrderBook:
 
         self.cumul_cost += delta_cost
         self.total_cash_used = self.net_cash_used + self.cumul_cost
-        self.on_update(initial_sync=initial_sync)
+        self.on_update()
 
     # count in orders that are not yet submtted
     # revert: API refused order portion stat update (각종 오류로, API 에서 submit 실패한 사항에 대한 update)
     # note: cash is not yet used
-    def stat_update_to_pending_orders(self, order: Order, revert=False, prev_incomplete=False, initial_sync=False):
-        if revert: m = -1
-        else: m = 1
+    # multiple orders can be also accounted
+    def stat_update_to_pending_orders(self, order: Order | ReviseCancelOrder):
+        ###_ fix
+        ###_ below temporary
+        ###_ REVISE CACNEL HOW TRNS ARE ARRIVED 
+        ###_ HOW THEY ARE PROCSSED IN ORDER MANAGER MAP 
+        ###_ HOW THEY ARE PROCSSED IN ORDER BOOK RECORDS
 
-        if prev_incomplete: to_process = m*order.processed 
-        else: to_process = m*order.quantity 
+        rc = None
+        if isinstance(order, ReviseCancelOrder):
+            rc = order.rc
+
+        if rc == RCtype.REVISE:
+            # original order cancel 
+            # making a new order
+            to_process = order.quantity-(order.original_order.quantity-order.original_order.processed)
+
+        elif rc == RCtype.CANCEL:
+            to_process = order.quantity-order.processed
+
+        else:
+            to_process = order.quantity 
 
         if order.side == SIDE.BUY:
             self.pending_buy_qty += to_process
@@ -219,7 +231,8 @@ class OrderBook:
                 self.pending_market_buy_qty += to_process
         else:
             self.pending_sell_qty += to_process
-        self.on_update(pending_orders=True, initial_sync=initial_sync)
+
+        self.on_update(pending_orders=True)
 
     async def process_tr_notice(self, notice: TransactionNotice):
         # reroute notice to corresponding order
@@ -247,54 +260,53 @@ class OrderBook:
                 # just in case race condition occurs
                 self._unhandled_trns.append(notice)
     
-    async def submit_new_order(self, client: PersistentClient, order: Order):
+    # ----------------------------------------------------------------------------------
+    # order handling
+    # ----------------------------------------------------------------------------------
+    async def submit_new_order(self, client: PersistentClient, order: Order | ReviseCancelOrder):
         async with self._lock:
-            # note the dashboard has to be reverted if order fails in the server: implemented in handle_order_dispatch()
-            self.stat_update_to_pending_orders(order)
             self._indexed_sent_for_submit[order.unique_id] = order
-
             submit_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
             submit_request.set_request_data([order]) # submit as a list (a list required)
 
         # fire and forget: Server will send back individual order updates via on_dispatch
         await client.send_client_request(submit_request)
 
+    def cancel_all_orders(self, client: PersistentClient):
+        if client.is_connected:
+            cancel_request = ClientRequest(command=RequestCommand.CANCEL_ALL_ORDERS_BY_AGENT)
+            ###_ note cancel request does not receive server response (check??)
+            asyncio.create_task(client.send_client_request(cancel_request))
+        else:
+            optlog.error(f'cancel all order command not processed', name=self.id)
+
+    # ----------------------------------------------------------------------------------
+    # order dispatch handling
+    # ----------------------------------------------------------------------------------
     async def handle_order_dispatch(self, dispatched_order: Order): 
         async with self._lock:
-            # caution: dispatched order is not the same object in local: match it with unique_id
-            matched_order = self._indexed_sent_for_submit.get(dispatched_order.unique_id)
+            # caution: dispatched order is not the same object in agent: match it with unique_id
+            matched_order = self._indexed_sent_for_submit.pop(dispatched_order.unique_id, None)
+            ###_
             if not matched_order:
                 log_raise(f"Dispatched order not found in orders_sent_for_submit: {dispatched_order} ---", name=self.agent_id)
-            self._indexed_sent_for_submit.pop(matched_order.unique_id)
-
-            # order submission failure - revert and return
-            if not dispatched_order.submitted: # this has to be checking with dispatched_order, but need to revert with matched_order
-                # revert the dashboard 
-                self.stat_update_to_pending_orders(matched_order, revert=True)
-
-                # save dispatched_order for record keeping by strategy id
-                if dispatched_order.str_id:
-                    self._indexed_submission_failure_orders[dispatched_order.str_id] = dispatched_order
-                else: 
-                    self._non_strategy_related_failure_orders.append(dispatched_order)
-                return
 
             # order successfully submitted to the API
-            self._indexed_incompleted_orders[dispatched_order.order_no] = dispatched_order
+            if dispatched_order.submitted: # this has to be checking with dispatched_order
+                self._indexed_incompleted_orders[dispatched_order.order_no] = dispatched_order
 
-            # handle notices that are synced from the server
-            to_process = self._pending_trns_from_server_on_sync.get(dispatched_order.order_no, None)
-            if to_process:
+                # handle notices that are synced from the server
+                to_process = self._pending_trns_from_server_on_sync.pop(dispatched_order.order_no, [])
                 for notice in to_process:
                     dispatched_order.update(notice, self.trenv)
 
-                self._pending_trns_from_server_on_sync.pop(dispatched_order.order_no)
-
-            # processing unhandled trns here
-            # empty the list, otherwise trns stay (still unmatched trns will be add back to the list)
-            unhandled = self._unhandled_trns.copy()
-            self._unhandled_trns.clear()
+                # processing unhandled trns here
+                # empty the list, otherwise trns stay (still unmatched trns will be add back to the list)
+                unhandled = self._unhandled_trns.copy()
+                self._unhandled_trns.clear()
 
         # as process_tr_notice requires _lock, take this out from _lock
         for trn in unhandled:
             await self.process_tr_notice(trn)
+            
+        return matched_order

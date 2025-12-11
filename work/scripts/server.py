@@ -134,11 +134,11 @@ async def _safe_run(desc, coro, timeout_key, agent_id=None):
     try:
         async with asyncio.timeout(CLEANUP_TIMEOUTS[timeout_key]):
             msg = await coro
-            optlog.info(f"    {desc}: {msg}", name=agent_id)
+            optlog.info(f"  - {desc}: {msg}", name=agent_id)
     except asyncio.TimeoutError:
-        optlog.error(f"    {desc} timeout", name=agent_id)
+        optlog.error(f"  - {desc} timeout", name=agent_id)
     except Exception as e:
-        optlog.error(f"    {desc} failed: {e}", name=agent_id, exc_info=True)
+        optlog.error(f"  - {desc} failed: {e}", name=agent_id, exc_info=True)
 
 async def _safe_close_writer(writer, agent_id=None):
     """Safely close an asyncio StreamWriter with timeout and log suppression."""
@@ -217,9 +217,6 @@ async def main():
     shutdown_event = asyncio.Event()
     try:
         await server(shutdown_event)
-    except KeyboardInterrupt:
-        optlog.info("[Server] server stopped by user (Ctrl+C)"+sep)
-        shutdown_event.set()
     except asyncio.CancelledError:
         optlog.info("[Server] tasks cancelled cleanly" + sep)
         shutdown_event.set()
@@ -231,4 +228,7 @@ async def main():
         optlog.info("[Server] shutdown complete" + sep)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        optlog.info("[Server] server stopped by user (Ctrl+C)" + sep)
