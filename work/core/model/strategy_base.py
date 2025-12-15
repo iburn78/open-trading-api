@@ -3,11 +3,10 @@ import asyncio
 
 from ..common.tools import excel_round
 from ..common.optlog import optlog, LOG_INDENT
-from ..kis.ws_data import SIDE, ORD_DVSN
-from ..model.order import Order, ReviseCancelOrder
-from .price import MarketPrices
+from ..kis.ws_data import SIDE, ORD_DVSN, EXCHANGE
+from ..model.order import Order, CancelOrder
 from .perf_metric import PerformanceMetric
-from .strategy_util import StrategyRequest, StrategyCommand, UpdateEvent, StrategyResponse
+from .strategy_util import UpdateEvent
 
 class StrategyBase(ABC):
     """
@@ -19,25 +18,17 @@ class StrategyBase(ABC):
     def __init__(self):
         self.agent_id = None
         self.code = None
+        self.submit_order = None # callback
 
         # snapshot data to use in making strategy
         # -----------------------------------------------------------------
-        self.mprice: MarketPrices | None = None
-        # - can safely assume market price is initialized
         self.pm: PerformanceMetric | None = None 
         # - through pm, access to initial data of the agent possible
+        # - also, access to market_prices and order_book possible
         # - self.update_pm() is called on every on_update through on_update_shell
         # -----------------------------------------------------------------
 
-        # -----------------------------------------------------------------
-        # most recently executed (latest) strategy command
-        # -----------------------------------------------------------------
-        self.latest_sc: StrategyCommand | None = None 
-        self.latest_sc_order: Order | ReviseCancelOrder | None = None 
-
         # Strategy - Agent communication channel (only used in StrategyBase and Agent - internal for both)
-        self._command_queue: asyncio.Queue[StrategyCommand | bool] = asyncio.Queue() 
-        self._response_queue: asyncio.Queue[StrategyCommand | bool] = asyncio.Queue() 
         self._order_receipt_event: asyncio.Event = asyncio.Event()
         self._price_update_event: asyncio.Event = asyncio.Event()
         self._trn_receive_event: asyncio.Event = asyncio.Event()
@@ -45,48 +36,59 @@ class StrategyBase(ABC):
         # others
         self.str_name = self.__class__.__name__ # subclass name
         self._on_update_lock: asyncio.Lock = asyncio.Lock()
-        self.strict_API_check_required: bool = False # consume one API call
-
-    def link_agent_data(self, agent_id, code, market_prices: MarketPrices, perf_metric: PerformanceMetric, check_psbl_buy_amount: callable):
-        self.agent_id = agent_id
-        self.code = code
-        self.mprice = market_prices  
-        self.pm = perf_metric
-        self.check_psbl_buy_amount = check_psbl_buy_amount
 
     async def logic_run(self):
         # initial run
         await self.on_update_shell(UpdateEvent.INITIATE)
 
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(self.on_price_update())
-            tg.create_task(self.on_trn_receive())
-            tg.create_task(self.on_order_receive())
-
-    async def on_price_update(self):
         while True:
-            await self._price_update_event.wait()
-            await self.on_update_shell(UpdateEvent.PRICE_UPDATE)
-            self._price_update_event.clear()
+            tasks = [
+                asyncio.create_task(self._price_update_event.wait()),
+                asyncio.create_task(self._trn_receive_event.wait()),
+                asyncio.create_task(self._order_receipt_event.wait()),
+            ]
 
-    async def on_trn_receive(self):
-        while True:
-            await self._trn_receive_event.wait()
-            await self.on_update_shell(UpdateEvent.TRN_RECEIVE)
-            self._trn_receive_event.clear()
+            done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
 
-    async def on_order_receive(self): # include both order and rc_order
-        while True:
-            # submission result already reflected in OrderBook
-            await self._order_receipt_event.wait()
-            optlog.info(f"[Strategy] order submitted feedback:\n{LOG_INDENT}{self.latest_sc_order}", name=self.agent_id)
-            await self.on_update_shell(UpdateEvent.ORDER_RECEIVE)
-            self._order_receipt_event.clear()
-    
+            for t in pending:
+                t.cancel()
+
+            try:
+                if self._price_update_event.is_set():
+                    self._price_update_event.clear()
+                    await self.on_update_shell(UpdateEvent.PRICE_UPDATE)
+
+                if self._trn_receive_event.is_set():
+                    self._trn_receive_event.clear()
+                    await self.on_update_shell(UpdateEvent.TRN_RECEIVE)
+
+                if self._order_receipt_event.is_set():
+                    self._order_receipt_event.clear()
+                    await self.on_update_shell(UpdateEvent.ORDER_RECEIVE)
+
+            except Exception:
+                optlog.critical(
+                    "[Strategy] logic_run crashed",
+                    name=self.agent_id,
+                    exc_info=True,
+                )
+                raise
+
     async def on_update_shell(self, update_event: UpdateEvent):
-        async with self._on_update_lock:
-            self.pm.update() # for market price update and corresponding data
-            await self.on_update(update_event)
+        try:
+            async with self._on_update_lock:
+                await self.on_update(update_event)
+        except asyncio.CancelledError:
+            raise  # re-raise
+        except Exception as e:
+            optlog.error(
+                f"[Strategy] on_update failed ({update_event.name}): {e}",
+                name=self.agent_id,
+                exc_info=True,   # <<< THIS IS KEY
+            )
+            raise  
 
     @abstractmethod
     async def on_update(self, update_event: UpdateEvent):
@@ -98,8 +100,8 @@ class StrategyBase(ABC):
             * if two trns received almost same time (e.g., 011, 022), event/wait/clear mechanism may not trigger twice
             * on_update runs frequently anyway
         ----------------------------------------------------------------------------------------------------------------
-        - strategy should be based on the snapshot(states) of the agent: pm and mprice
-            * pm.cur_price can be an (weighted) average price (if trp sends multiple lines of transaction records)
+        - strategy should be based on the snapshot(states) of the agent: pm 
+            # pm has market_prices and order_book
         ----------------------------------------------------------------------------------------------------------------
         - on_update should not await inside; fast deterministic decisions should be made 
             * if it takes time, pm could not be correct anymore (outdated)
@@ -110,55 +112,39 @@ class StrategyBase(ABC):
         '''
         pass
 
-    # True if order submitted, False if not (either at the validation level, or from the API level)
-    # failed to sent orders are saved too
-    async def execute(self, str_command: StrategyCommand):
-        valid: bool = await self.validate_strategy_order(str_command)
-        if valid:
-            self.latest_sc = str_command
-            await self._command_queue.put(str_command)
-            response: StrategyResponse = await self._response_queue.get()
-            if response:
-                return True
-        return False
+    async def execute(self, order: Order | CancelOrder):
+        if not isinstance(order, CancelOrder):
+            if not self.validate_strategy_order(order): 
+                return False
+
+        await self.submit_order(order)
 
     # -----------------------------------------------------------------
     # validators
     # -----------------------------------------------------------------
-    # internal logic checking before sending a strategy command to the API server
-    async def validate_strategy_order(self, str_cmd: StrategyCommand) -> bool:
-        """
-        Validates a strategy command before execution
-    
-        Checks:
-
-        [StrategyRequest.ORDER]
-        - Sufficient cash for buy orders
-        - Sufficient holdings for sell orders  
-        - Market price availability for market orders
-        """
-        if str_cmd.request == StrategyRequest.ORDER:
-            if str_cmd.side == SIDE.BUY:
-                if str_cmd.ord_dvsn == ORD_DVSN.MARKET:
-                    # [check 1] check if agent has enough cash (stricter cond-check)
-                    exp_amount = excel_round(str_cmd.quantity*self.mprice.current_price) # best guess with current price, and approach conservatively with margin
-                    if exp_amount > self.pm.max_market_buy_amt:
-                        return False
-
-                    # [check 2] check if the account API allows it 
-                    if self.strict_API_check_required:
-                        q_ = await self.check_psbl_buy_amount(ord_dvsn=str_cmd.ord_dvsn, price=str_cmd.price)
-                        if str_cmd.quantity > q_:
-                            return False
-
-                else: # LIMIT buy
-                    if str_cmd.quantity*str_cmd.price > self.pm.max_limit_buy_amt:
-                        return False
-            else: # str_cmd.side == SIDE.SELL:
-                if str_cmd.quantity > self.pm.max_sell_qty:
+    def validate_strategy_order(self, order: Order) -> bool:
+        if order.side == SIDE.BUY:
+            if order.ord_dvsn == ORD_DVSN.LIMIT:
+                if order.quantity*order.price > self.pm.max_limit_buy_amt:
                     return False
-            return True
+            else: # MARKET or MIDDLE
+                exp_amount = excel_round(order.quantity*self.pm.market_prices.current_price) # check with current price
+                if exp_amount > self.pm.max_market_buy_amt:
+                    return False
 
-        else: # Expand other validation logic 
-            return True
-        
+        else: # str_cmd.side == SIDE.SELL:
+            if order.quantity > self.pm.max_sell_qty:
+                return False
+        return True
+
+    def create_an_order(self, side, ord_dvsn, quantity, price, exchange=EXCHANGE.SOR) -> Order:
+        return Order(
+            agent_id=self.agent_id, 
+            code=self.code, 
+            listed_market=self.pm.listed_market, 
+            side=side, 
+            ord_dvsn=ord_dvsn, 
+            quantity=quantity, 
+            price=price, 
+            exchange=exchange, 
+            )

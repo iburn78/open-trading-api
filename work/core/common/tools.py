@@ -4,7 +4,6 @@ import os, time
 import FinanceDataReader as fdr
 from collections.abc import Iterable
 
-from .optlog import log_raise
 from .setup import data_dir
 
 # ----------------------------------------
@@ -41,11 +40,12 @@ def _gen_df_krx():
 
 def get_listed_market(code):
     df_krx = get_df_krx()
-    if code not in df_krx.index: 
-        log_raise(f'Code {code} not in df_krx ---')
-    listed_market = df_krx.at[code, "Market"].strip()
-    words = listed_market.replace("_", " ").split()
-    return words[0].upper()
+    if code in df_krx.index: 
+        listed_market = df_krx.at[code, "Market"].strip()
+        words = listed_market.replace("_", " ").split()
+        return words[0].upper()
+    else: 
+        return None
 
 def get_df_krx_price(code):
     df_krx = get_df_krx()

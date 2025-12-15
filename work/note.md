@@ -122,6 +122,7 @@ or more modern way (only for development situation)
     1205_160813.367 [ERROR] sv> kis_auth> Connection exception >> no close frame received or sent 
     1205_160822.854 [ERROR] sv> kis_auth> Connection exception >> [WinError 121] 세마포 제한 시간이 만료되었습니다
     1207_141451.014 [ERROR] sv> A1> [Agent] agent A1 (port 54406) disconnected - dispatch msg failed: [WinError 10053] 현재 연결은 사용자의 호스트 시스템의 소프트웨어의 의해 중단되었습니다
+    취소할 수량이 없습니다. 등
     ```
 
 ### [Trading Strategy related]

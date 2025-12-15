@@ -12,36 +12,27 @@ from core.strategy.null_str import NullStr
 
 async def main(sw=None): # switch
     if sw == "1":
-        # A = Agent(id = 'A1', code = '000660', dp = 8001, strategy=DoubleUpStrategy())
-        A = Agent(id = 'A1', code = '000660', dp = 8001, strategy=NullStr())
-        A.initial_value_setup(init_cash_allocated=100000000, init_holding_qty=0, init_avg_price=0, sync_start_date='2025-12-09')
-        # A.initial_value_setup(init_cash_allocated=100000000)
+        A = Agent(id = 'A1', code = '000660', dp = 8001, strategy=DoubleUpStrategy())
+        # A = Agent(id = 'A1', code = '000660', dp = 8001, strategy=NullStr())
+
+        A.initial_value_setup(init_cash_allocated=100_000_000, init_holding_qty=72, init_avg_price=586629, sync_start_date='2025-12-15')
         task1 = asyncio.create_task(A.run())  
 
-        # B = Agent(id = 'B1', code = '001440', strategy=NullStr())
-        # B.initial_value_setup(init_cash_allocated=10000000)
-        # task2 = asyncio.create_task(B.run())  
-
-        await asyncio.sleep(10)
-        A.order_book.cancel_all_orders(A.client)
         await asyncio.sleep(1000)
 
         A.hardstop_event.set()
-        # B.hardstop_event.set()
-        # await asyncio.gather(task1, task2)
+        await asyncio.gather(task1)
 
     elif sw == "2":
-        C = Agent(id = 'B1', code = '099440', dp = 8002, strategy=DoubleUpStrategy())
-        C.initial_value_setup(init_cash_allocated=100000000)
-        task3 = asyncio.create_task(C.run())  
+        B = Agent(id = 'B1', code = '099440', dp = 8002, strategy=DoubleUpStrategy())
+        B.initial_value_setup(init_cash_allocated=100000000)
+        task2 = asyncio.create_task(B.run())  
 
         await asyncio.sleep(1000)
 
-        C.hardstop_event.set()
-        await asyncio.gather(task3)
+        B.hardstop_event.set()
+        await asyncio.gather(task2)
     
-    elif sw == "3": 
-        pass
 
 if __name__ == "__main__":
     try:

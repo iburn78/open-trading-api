@@ -1,9 +1,6 @@
 from dataclasses import dataclass, field
-import asyncio
 
-from .cost import CostCalculator
 from ..common.optlog import optlog
-from ..common.tools import get_listed_market, excel_round
 from ..kis.domestic_stock_functions import inquire_balance
 
 @dataclass
@@ -24,15 +21,10 @@ class Holding: # Stock Holding / data is filled from the API server (e.g., actua
     code: str
     quantity: int
     amount: int # 수량*체결가
-    avg_price: float = 0  # fee/tax not considered
-    bep_cost: int = 0 # cost if gain is 0 after fee/tax
-    bep_price: float = 0  # fee/tax considered
-    listed_market: str = None  # to assign later (for fee calculation), e.g., KOSPI, KOSDAQ... 
 
     def __str__(self):
         return (
-            f"({self.code}), Q {self.quantity:,}, P {self.avg_price:,}, "
-            f"bep price {self.bep_price:,}, total amount {self.amount:,}, {self.name}"
+            f"({self.code}) {self.name}: Q {self.quantity:,}, Amt {self.amount:,}"
         )
 
 @dataclass
@@ -46,31 +38,22 @@ class Account:
         return "\n".join(parts)
 
     async def acc_load(self, trenv):
-        max_retry = 5
-        for i in range(max_retry):
-            ptf, acc = inquire_balance(
-                cano=trenv.my_acct,
-                env_dv=trenv.env_dv,
-                acnt_prdt_cd=trenv.my_prod,
-                afhr_flpr_yn="N",
-                inqr_dvsn="01",
-                unpr_dvsn="01",
-                fund_sttl_icld_yn="N",
-                fncg_amt_auto_rdpt_yn="N",
-                prcs_dvsn="00"
-            )
+        ptf, acc = inquire_balance(
+            cano=trenv.my_acct,
+            env_dv=trenv.env_dv,
+            acnt_prdt_cd=trenv.my_prod,
+            afhr_flpr_yn="N",
+            inqr_dvsn="01",
+            unpr_dvsn="01",
+            fund_sttl_icld_yn="N",
+            fncg_amt_auto_rdpt_yn="N",
+            prcs_dvsn="00"
+        )
 
-            if ptf.empty or acc.empty:
-                if i < max_retry - 1: 
-                    optlog.warning("[Account] Inquire balance failed - retry")
-                    await asyncio.sleep(trenv.sleep*(i+1)) # waighted sleep
-                else:
-                    optlog.error("[Account] Inquire balance failed - max_try reached")
-                    return
-            else: 
-                break
+        if ptf.empty or acc.empty:
+            optlog.error("[Account] Inquire balance failed - max_try reached")
 
-        # 예수금 할당
+        # 예수금 update
         self.cash = self.cash or CashBalance()
         self.cash.cash_t0 = int(acc["dnca_tot_amt"].iat[0])
         self.cash.cash_t1 = int(acc["nxdy_excc_amt"].iat[0])
@@ -80,30 +63,20 @@ class Account:
         # 보유 종목 
         # 있으면 update, 없으면 add
         new_holdings = {} 
-        for _, row in ptf.iterrows():  # DataFrame에서 row 반복
+        for _, row in ptf.iterrows():  
             code = row.pdno
             holding = self.holdings.get(code)
             quantity = int(row.hldg_qty) 
             amount = int(row.pchs_amt)
-            avg_price = amount/quantity
-            listed_market = get_listed_market(code)
-            bep_cost, bep_price = CostCalculator.bep_cost_calculate(quantity, avg_price, listed_market, trenv.my_svr)
             if holding:
                 holding.quantity = quantity
                 holding.amount = amount
-                holding.avg_price = excel_round(avg_price)
-                holding.bep_cost = excel_round(bep_cost)
-                holding.bep_price = excel_round(bep_price)
             else: 
                 holding = Holding(
                         name = row.prdt_name, 
                         code = row.pdno,
                         quantity = quantity,
                         amount = amount,
-                        avg_price = excel_round(avg_price),
-                        bep_cost = excel_round(bep_cost), 
-                        bep_price = excel_round(bep_price), 
-                        listed_market = listed_market,
                 )
             new_holdings[code] = holding
         self.holdings = new_holdings

@@ -1,12 +1,10 @@
-import json
 import pandas as pd
 from dataclasses import dataclass, field 
 
 from .cost import CostCalculator
 from ..common.optlog import optlog, log_raise, LOG_INDENT
-from ..common.tools import get_listed_market
 from ..kis.domestic_stock_functions import order_cash, order_rvsecncl
-from ..kis.ws_data import SIDE, ORD_DVSN, EXCHANGE, RCtype, AllYN, TransactionNotice
+from ..kis.ws_data import SIDE, ORD_DVSN, EXCHANGE, TransactionNotice
 
 @dataclass
 class Order:
@@ -18,7 +16,7 @@ class Order:
     quantity: int
     price: int # price sent for order submission
     exchange: EXCHANGE # KRX, NXT
-    listed_market: str = None # KOSPI, KOSDAQ, etc (should be assigned from the agent data)
+    listed_market: str | None = None # KOSPI, KOSDAQ, etc 
 
     # auto gen
     unique_id: str = field(default_factory=lambda: pd.Timestamp.now().strftime('%Y%m%d%H%M%S%f'))
@@ -56,14 +54,11 @@ class Order:
             log_raise("Limit orders require a price", name=self.agent_id)
         if self.ord_dvsn == ORD_DVSN.MARKET and self.price != 0: # for market orders, price has to be set to 0
             log_raise("Market orders should not have a price ---", name=self.agent_id)
+        if self.ord_dvsn == ORD_DVSN.MIDDLE and self.price != 0: # for middle orders, price has to be set to 0
+            log_raise("Middle orders should not have a price ---", name=self.agent_id)
 
         if not self.ord_dvsn.is_allowed_in(self.exchange):
             log_raise(f"Order type {self.ord_dvsn.name} not allowed on exchange {self.exchange} ---", name=self.agent_id)
-
-        self.listed_market = get_listed_market(self.code) if self.listed_market is None else self.listed_market # if not assigned by the agent, get independently (avoid using frequently)
-
-        if self.listed_market not in ['KOSPI', 'KOSDAQ']:
-            log_raise("Check the market of the stock: KOSPI or KOSDAQ ---", name=self.agent_id)
         
     def __str__(self):
         ordn = f"{int(self.order_no):>6d}" if self.order_no else f"  none"
@@ -94,15 +89,23 @@ class Order:
 
         ord_qty = str(self.quantity)
         ord_unpr = str(self.price)
-        res = order_cash(env_dv=trenv.env_dv, ord_dv=self.side, cano=trenv.my_acct, acnt_prdt_cd=trenv.my_prod, pdno=self.code, ord_dvsn=self.ord_dvsn, ord_qty=ord_qty, ord_unpr=ord_unpr, excg_id_dvsn_cd=self.exchange)
+        res = order_cash(
+            env_dv=trenv.env_dv, 
+            ord_dv=self.side, 
+            cano=trenv.my_acct, 
+            acnt_prdt_cd=trenv.my_prod, 
+            pdno=self.code, 
+            ord_dvsn=self.ord_dvsn, 
+            ord_qty=ord_qty, 
+            ord_unpr=ord_unpr, 
+            excg_id_dvsn_cd=self.exchange
+            )
 
         if res.empty:
-            optlog.error(f'[Order] order submit response empty, uid {self.unique_id}', name=self.agent_id)
-        else: 
-            if pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
-                log_raise("Check submission response ---", name=self.agent_id)
-            elif not isinstance(res.ODNO.iloc[0], str) or len(res.ODNO.iloc[0]) == 0: 
-                log_raise(f"Check submission response (ODNO) {res.ODNO.iloc[0]}---", name=self.agent_id)
+            optlog.error(f"[Order] order submit response empty, uid {self.unique_id}", name=self.agent_id)
+        elif pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
+            optlog.error(f"[Order] check response {res}", name=self.agent_id)
+        else:
             self.order_no = res.ODNO.iloc[0]
             self.submitted_time = res.ORD_TMD.iloc[0]
             self.org_no = res.KRX_FWDG_ORD_ORGNO.iloc[0]
@@ -139,8 +142,8 @@ class Order:
                     side = notice.seln_byov_cls,
                     quantity = notice.cntg_qty, 
                     price = notice.cntg_unpr,
-                    listed_market = self.listed_market, 
                     svr = trenv.my_svr,
+                    listed_market = self.listed_market, 
                     traded_exchange = notice.traded_exchange
                 )
                 # 개별 체결건에 대해 fee, tax가 누적됨
@@ -156,29 +159,16 @@ class Order:
                 log_raise("Check logic ---", name=self.agent_id)
 
     def update_rc_specific(self):
-        # to be overrided by ReviseCancelOrder
-        # no need to define any here
+        # to be overrided by CancelOrder
         pass
 
-    def make_revise_cancel_order(self, rc, ord_dvsn, qty, pr, all_yn): # ord_dvsn could changed, e.g., from a limit to a market order
-        if not self.submitted:
-            log_raise(f"Order {self.order_no} is not submitted yet but revise-cancel tried / instead modify order itself ---", name=self.agent_id)
-        return ReviseCancelOrder(
-            agent_id=self.agent_id, 
-            code=self.code, 
-            side=self.side, 
-            ord_dvsn=ord_dvsn, 
-            quantity=qty, 
-            price=pr, 
-            exchange=self.exchange, 
-            listed_market=self.listed_market, 
-            rc=rc, 
-            all_yn=all_yn, 
-            original_order=self
-            )
+    def make_a_cancel_order(self): 
+        if not self.submitted or self.completed or self.cancelled:
+            optlog.error(f"Cannot make a cancel order for {self}", name=self.agent_id)
+        return CancelOrder(original_order=self)
 
 @dataclass
-class ReviseCancelOrder(Order):
+class CancelOrder(Order):
     """
     revise is cancel + re-order
     new order_no is assigned both for revise and cancel
@@ -187,12 +177,12 @@ class ReviseCancelOrder(Order):
     - check revise or cancel
     - check all or partial 
     - if all and revise:
-    -     check ord_dvsn (market or limit etc)
+    -     check ord_dvsn (market/middle or limit etc)
     -     check price (quantity can be any, at least "0" required)
     - if all and cancel:
     -     nothing matters (can be any, at least "0" required)
     - if partial and revise:
-    -     check ord_dvsn (market or limit etc)
+    -     check ord_dvsn (market/middle or limit etc)
     -     check price and quantity 
     - if partial and cancel:
     -     check quantity (price can be any, at least "0" required)
@@ -200,26 +190,16 @@ class ReviseCancelOrder(Order):
     - partial: 주식정정취소가능주문조회 상 정정취소가능수량(psbl_qty)을 Check 하라고 권고
     - 단, 해당 기능 모의투자 미지원
     - Race condition could occur (해당 기능 이용해도 역시 발생가능)
-
-    ###_ 
-    record what are the API response: 
-    ###_ note cancel request does not receive server response ??? TRNS?
-    ###_ REMOVE REVISE.... 
-
-
     """
-    rc: RCtype = None # '01': revise, '02': cancel
-    all_yn: AllYN = None # 잔량 전부 주문 - Y:전부, N: 일부 
-    original_order: Order = None
+    # for simplicity and clarity, only cancel / all is implemented
+    original_order: Order | None = None
 
     def __post_init__(self):
         super().__post_init__()  # need to call explicitly 
         if self.original_order is None: 
-            log_raise("Check revise-cancel original order ---", name=self.agent_id)
+            optlog.error(f"[CancelOrder] original order is missing {self}", name=self.agent_id)
 
     def submit(self, trenv):
-        ord_qty = str(self.quantity)
-        ord_unpr = str(self.price)
         res = order_rvsecncl(
             env_dv=trenv.env_dv,
             cano=trenv.my_acct,
@@ -227,42 +207,27 @@ class ReviseCancelOrder(Order):
             krx_fwdg_ord_orgno=self.original_order.org_no,
             orgn_odno=self.original_order.order_no,
             ord_dvsn=self.ord_dvsn, 
-            rvse_cncl_dvsn_cd=self.rc, 
-            ord_qty=ord_qty,
-            ord_unpr=ord_unpr, 
-            qty_all_ord_yn=self.all_yn, 
+            rvse_cncl_dvsn_cd='02', # cancel
+            ord_qty='0',
+            ord_unpr='0', 
+            qty_all_ord_yn='Y', # all (잔량전부)
             excg_id_dvsn_cd=self.exchange
         )
         if res.empty:
-            optlog.error(f'[ReviseCancelOrder] order submit response empty, uid {self.unique_id}', name=self.agent_id)
-        else: 
-            if pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
-                log_raise("Check revise-cancel response ---", name=self.agent_id)
+            # maybe the case that fails to cancel
+            optlog.warning(f'[CancelOrder] order submit response empty, uid {self.unique_id}', name=self.agent_id)
+        elif pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
+            # maybe the case that fails to cancel
+            optlog.warning(f"[CancelOrder] check response: {res}", name=self.agent_id)
+        else:
             self.order_no = res.ODNO.iloc[0]
             self.submitted_time = res.ORD_TMD.iloc[0]
             self.org_no = res.KRX_FWDG_ORD_ORGNO.iloc[0]
             self.submitted = True
+            optlog.info(f"[CancelOrder] a cancel-order {self.order_no} submitted to cancel order {self.original_order.order_no}", name=self.agent_id)
 
-            if self.rc == RCtype.REVISE:
-                optlog.info(f"[Order] order {self.original_order.order_no}'s revise order {self.order_no} submitted", name=self.agent_id)
-            else: # cancel
-                optlog.info(f"[Order] order {self.original_order.order_no}'s {'full' if self.all_yn == AllYN.ALL else 'partial'} cancellation order {self.order_no} submitted", name=self.agent_id)
-
-    # internal update logic for revise-cancel order
     def update_rc_specific(self):
-        if self.original_order.completed or self.original_order.cancelled: 
-            log_raise("Check update_original, as original order is completed or cancelled ---", name=self.agent_id)
-
-        if self.all_yn == AllYN.ALL: 
-            self.quantity = self.original_order.quantity - self.original_order.processed
-            self.original_order.quantity = self.original_order.processed
-            self.original_order.completed = True
-        else: 
-            self.original_order.quantity = self.original_order.quantity - self.quantity
-            if self.original_order.quantity == self.original_order.processed:
-                self.original_order.completed = True
-            elif self.original_order.quantity < self.original_order.processed:
-                log_raise('Check partial order revise-cancel logic ---', name=self.agent_id)
-        
-        if self.rc == RCtype.CANCEL: 
-            self.cancelled = True
+        self.original_order.cancelled = True
+        self.original_order.completed = True # consider it completed
+        self.completed = True
+        optlog.info(f"[CancelOrder] {self.order_no} completed: original order {self.original_order.order_no} cancelled", name=self.agent_id)

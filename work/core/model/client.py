@@ -15,7 +15,7 @@ class PersistentClient:
         self.writer: asyncio.StreamWriter | None = None
         self.listen_task: asyncio.Task | None = None
         self.pending_requests: dict[str, asyncio.Future] = {}
-        self.on_dispatch = on_dispatch  # callback for unsolicited server messages
+        self.on_dispatch = on_dispatch  # callback for server messages
         self._closing = False
         self.agent_id = None
 
@@ -46,39 +46,28 @@ class PersistentClient:
                 # read message
                 data = await self.reader.readexactly(length)
                 msg = pickle.loads(data)
-                # msg can be 1) ServerResponse, 2) TRN, 3) TRP, 4) Order, 5) etc
+                # msg can be 1) ServerResponse, 2) TRN, 3) TRP, 4) Order or CancelOrder, 5) etc
                 
                 # route to the correct pending client_request
                 if isinstance(msg, ServerResponse):
-                    req_id = msg.get_id()
-                    if req_id is None:
-                        optlog.error(f"[Client] server response received with no request_id {msg}", name=self.agent_id)
-                    elif req_id in self.pending_requests:
-                        fut = self.pending_requests.pop(req_id)
-                        fut.set_result(msg) # if fut.done() == True, then this will throw anyway
-                        continue
-                    else:
-                        optlog.error(f"[Client] server response received for non exist (or not anymore) request_id {req_id}: {msg}", name=self.agent_id)
+                    if not msg.fire_forget:
+                        fut = self.pending_requests.pop(msg.request_id)
+                        fut.set_result(msg) 
                         continue
 
-                # handle dispatch message for non ServerResponse objects
-                if self.on_dispatch:   
-                    # listner should not block listening
-                    asyncio.create_task(self.on_dispatch(msg))
-                else:
-                    optlog.error(f"[Client] dispatched msg received but no receiver: {msg}", name=self.agent_id)
+                # listner should not block listening
+                asyncio.create_task(self.on_dispatch(msg))
 
         except (asyncio.CancelledError, ConnectionAbortedError, ConnectionResetError, OSError) as e: # client-cancelled situation (cancelld by the event loop in the client side)
             optlog.info(f"[Client] listen task cancelled {e}", name=self.agent_id)  # intentional
-            raise  # usually propagate cancellation
+            raise  # to propagate cancellation
         except asyncio.IncompleteReadError:
             if self._closing:
                 pass
             elif not self.listen_task.cancelled(): # if not keyboard-interrupt
                 optlog.warning("[Client] server closed connection", name=self.agent_id)  # actual EOF / disconnect
         except Exception as e:
-            # this is a local server-client communication
-            # has to be perfeclty reliable, so no auto reconnection necessary
+            # this is a local server-client communication: to be reliable
             log_raise(f"Error in listening: {e}", name=self.agent_id)
 
     async def send_client_request(self, client_request: ClientRequest):
@@ -90,14 +79,17 @@ class PersistentClient:
         req_bytes = pickle.dumps(client_request)
         msg = len(req_bytes).to_bytes(4, "big") + req_bytes
 
-        # create a future and store it for response matching
-        # future: a tool that makes a coroutine wait
-        fut = asyncio.get_running_loop().create_future()
-        self.pending_requests[client_request.get_id()] = fut
-
         # send request
         self.writer.write(msg)
         await self.writer.drain()
+
+        # if no need to wait for return, then
+        if client_request.fire_forget: return None
+
+        # create a future and store it for response matching
+        # future: a tool that makes a coroutine wait
+        fut = asyncio.get_running_loop().create_future()
+        self.pending_requests[client_request.request_id] = fut
 
         # wait for the specific response
         response: ServerResponse = await fut  

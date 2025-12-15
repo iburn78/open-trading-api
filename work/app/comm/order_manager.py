@@ -11,12 +11,11 @@ from core.common.optlog import optlog, log_raise
 from core.common.tools import merge_with_suffix_on_A, list_str
 from core.common.interface import Sync
 from core.model.agent import AgentCard, dispatch
-from core.model.order import Order
-from core.kis.ws_data import TransactionNotice, RCtype, AllYN
+from core.model.order import Order, CancelOrder
+from core.kis.ws_data import TransactionNotice
 from app.comm.conn_agents import ConnectedAgents
 
-
-# server side application
+# this is a server side application
 # Orders placed by agents are managed here in a comphrehensive way
 # all order records are kept
 
@@ -30,10 +29,11 @@ class OrderManager:
     """
     # To be used in the server side application 
     # Organize orders from each agent in a structured way
-    - keeps only the last `keep_days` worth of data
+    - keeps the last `keep_days` worth of data
     - within a day, it keeps increaing and records everything about orders
     - pending trns are due to race condition between order submission and getting the trn (order_no not yet assigned from the server)
     - when new orders are added, need to check if there are any pending trn for the order
+    - handles Order and CancelOrder the same way (order means cancel_order included)
     
     # Communication with the API server 
     - order submitted: order itself send back (with order_no etc filled) 
@@ -139,7 +139,7 @@ class OrderManager:
 
         # incompleted_orders: multi-day sync needed (as an order can be partially executed)
         # completed_orders: multi-day sync needed
-        # pending_trns: should exist only for today, and today data will be sent
+        # pending_trns: should exist only for today, and only today data will be sent
         for d_ in sorted(self.map.keys()): # dates are isoformat "yyyy-mm-dd"
             if d_ < sync_start_date: continue
 
@@ -172,33 +172,45 @@ class OrderManager:
             log_raise(f"[OrderManager] agent sync lock released FAILED for code {agent.code}", name=agent.id)
             return False
 
-    async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order], trenv, date_=None):
-        if any(o.submitted for o in orders):
-            log_raise('Orders should not be already submitted ---', name=agent.id)
+    def _get_code_map(self, code, date_=None):
         if date_ is None:
             date_ = date.today().isoformat()
+        date_map = self.map.setdefault(date_, {})
+        code_map = date_map.setdefault(code, {
+            PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}
+        })
+        return code_map
 
+    def _update_map(self, code_map, order: Order | CancelOrder):
+        # move to completed if finished ... 
+        if order.completed:
+            code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).pop(order.order_no, None)
+            code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[order.order_no] = order
+
+            if isinstance(order, CancelOrder):
+                # in case of CancelOrder, also handle the original_order
+                code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).pop(order.original_order.order_no)
+                code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[order.original_order.order_no] = order.original_order
+
+    async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order | CancelOrder], trenv, date_=None):
+        if any(o.submitted for o in orders):
+            optlog.warning('Orders should not be already submitted: no actions taken', name=agent.id)
+            return
+        
         for order in orders:
-            # submit
             try:
                 await asyncio.to_thread(order.submit, trenv)
             except Exception as e:
                 optlog.error(f"[OrderManager] submission error {order.unique_id}: {e}", name=agent.id, exc_info=True)
             # send back submission result (order status updated) to the agent right away
-            # less likely that order object itself will be corrupt after .submit
             await dispatch(agent, order)
 
             if not order.submitted:
-                optlog.error(f"[OrderManager] order submission failed: uid {order.unique_id}", name=agent.id)
                 continue
 
-            # lock and register
+            # lock and register incompleted order
             async with self._locks[order.code]:
-                date_map = self.map.setdefault(date_, {})
-                code_map = date_map.setdefault(agent.code, {
-                    PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}
-                })
-                # register incompleted order
+                code_map = self._get_code_map(agent.code, date_)
                 code_map[INCOMPLETED_ORDERS].setdefault(agent.id, {})[order.order_no] = order
 
                 # process pending notices
@@ -206,26 +218,19 @@ class OrderManager:
                 for notice in code_map[PENDING_TRNS].pop(order.order_no, []):
                     order.update(notice, trenv)
                     # send back notice to the agent right away
-                    await dispatch(agent, notice)
-
-                # move to completed if finished
-                if order.completed or order.cancelled:
-                    code_map[INCOMPLETED_ORDERS][agent.id].pop(order.order_no, None)
-                    code_map[COMPLETED_ORDERS].setdefault(agent.id, {})[order.order_no] = order
+                    # can assume agent is still connected (otherwise, dispatch will log error) right after the order.submit
+                    await dispatch(agent, notice) 
+                self._update_map(code_map, order)
 
             await asyncio.sleep(trenv.sleep)
 
-
     async def process_tr_notice(self, notice: TransactionNotice, connected_agents: ConnectedAgents, trenv, date_=None):
         # reroute notice to the corresponding order
-        # notice content handling logic resides in Order class
+        # notice content handling logic resides in Order | CancelOrder class
         # notice could arrive faster than order submit result - should not use order_no (race condition)
         # trn: order = N : 1 relationship
-        if date_ is None: date_=date.today().isoformat()
         async with self._locks[notice.code]:
-            date_map = self.map.setdefault(date_, {})
-            code_map = date_map.setdefault(notice.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
-
+            code_map = self._get_code_map(notice.code, date_)
             order = None
             # find order by notice.order_no (which doesn't have agent id)
             for agent_id, order_dict in code_map[INCOMPLETED_ORDERS].items(): 
@@ -234,59 +239,15 @@ class OrderManager:
                     if order.agent_id != agent_id: 
                         optlog.error(f'order.agent_id {order.agent_id} inconsistent with notice.oder_no {notice.oder_no} ---', name=order.agent_id) 
                     break # stop finding
-
-            if order: 
+            if order:  
                 order.update(notice, trenv)
-                # if order is completed or canceled, move to completed_orders
-                if order.completed or order.cancelled:
-                    # remove from incompleted_orders 
-                    code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).pop(order.order_no, None)
-                    code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[order.order_no] = order
-
+                self._update_map(code_map, order)
                 agent = connected_agents.get_agent_card_by_id(order.agent_id)
                 if agent: # if agent is still connected
                     await dispatch(agent, notice)
-
             else:
                 # otherwise save it to pending_trns
                 code_map[PENDING_TRNS].setdefault(notice.oder_no, []).append(notice)
-
-    # agent specific cancel orders
-    async def cancel_all_outstanding_for_agent(self, agent: AgentCard, trenv, date_=None):
-        if date_ is None: date_=date.today().isoformat()
-
-        async with self._locks[agent.code]:
-            date_map = self.map.setdefault(date_, {})
-            code_map = date_map.setdefault(agent.code, {PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}})
-            incompleted_orders: dict[str, Order] = code_map[INCOMPLETED_ORDERS].get(agent.id, {})
-            if not incompleted_orders:
-                optlog.info(f"[OrderManager] no incompleted orders to cancel for agent {agent.id} ---", name=agent.id)
-                return 
-
-            rc_orders = [] 
-            for o in incompleted_orders.values():
-                cancel_order = o.make_revise_cancel_order(rc=RCtype.CANCEL, ord_dvsn=o.ord_dvsn, qty=o.quantity-o.processed, pr=o.price, all_yn=AllYN.ALL) 
-                # quantity doesn't matter anyway when cancel all
-                rc_orders.append(cancel_order)
-
-            await self.submit_orders_and_register(agent, rc_orders, trenv, date_)
-            optlog.info(f'[OrderManager] cancelling all outstanding {len(rc_orders)} orders for agent {agent.id}...', name=agent.id)
-
-    async def closing_checker(self, agent, delay=5, date_=None):
-        await asyncio.sleep(delay)
-        if date_ is None: date_=date.today().isoformat()
-        agent_incomplete_orders: dict = self.map.get(date_, {}).get(agent.code, {}).get(INCOMPLETED_ORDERS, {}).get(agent.id, {})
-
-        if agent_incomplete_orders:
-            optlog.error(f"[OrderManager-ClosingCheck] {len(agent_incomplete_orders)} orders not yet completed for agent {agent.id}:", name=agent.id)
-
-            not_accepted = [o for k, o in agent_incomplete_orders.items() if not o.accepted]
-            if not_accepted:
-                optlog.error(f"[OrderManager-ClosingCheck] ---- {len(not_accepted)} orders not yet accepted", name=agent.id)
-
-            # may add more checks here ...
-
-        optlog.info("[OrderManager-ClosingCheck] closing check done", name=agent.id)
 
     # checks if pending trns persist for a specific code
     # runs as an independent coroutine on the server

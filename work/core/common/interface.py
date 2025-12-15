@@ -7,7 +7,6 @@ from ..kis.kis_auth import KISEnv
 
 class RequestCommand(Enum):
     SUBMIT_ORDERS = auto()
-    CANCEL_ALL_ORDERS_BY_AGENT = auto() # sepcial kind of submit_orders in fact - no need to provide RC orders instead (logic implemented)
     REGISTER_AGENT_CARD = auto()
     SYNC_ORDER_HISTORY = auto()
     SYNC_COMPLETE_NOTICE = auto()
@@ -18,10 +17,11 @@ class RequestCommand(Enum):
 class ClientRequest:
     command: RequestCommand
     data_dict: dict = field(default_factory=dict)
-    _request_id: str | None = None
+    fire_forget: bool = False
+    request_id: str | None = None
 
     def __post_init__(self):
-        self._request_id = str(uuid.uuid4())
+        self.request_id = str(uuid.uuid4())
         self.data_dict.setdefault('request_data', None) # must have 'request_data' key
 
     def __str__(self):
@@ -43,37 +43,26 @@ class ClientRequest:
             if not isinstance(request_data, str): 
                 log_raise('invalid request_data type')
 
-        elif self.command == RequestCommand.GET_PSBL_ORDER: 
-            if not isinstance(request_data, tuple): 
-                log_raise('invalid request_data type')
-
     def get_request_data(self):
         return self.data_dict['request_data']
-
-    def set_additional_data(self, additional_data: dict):
-        self.data_dict.update(additional_data)  # append dict
-    
-    def get_id(self): 
-        return self._request_id
 
 @dataclass
 class ServerResponse:
     success: bool
     status: str
     data_dict: object = field(default_factory=dict)
-    _request_id: str | None = None
+    fire_forget: bool = False
+    request_id: str | None = None
 
     def __str__(self):
         if self.success:
-            return '[Success] '+ self.status
+            return '[Success] '+ self.status 
         else:
-            return '[Fail] ' + self.status
+            return '[Fail] '+ self.status
     
-    def set_id(self, client_request: ClientRequest):
-        self._request_id = client_request.get_id()
-
-    def get_id(self): 
-        return self._request_id
+    def set_attr(self, client_request: ClientRequest):
+        self.fire_forget = client_request.fire_forget
+        self.request_id = client_request.request_id
 
 @dataclass
 class Sync:

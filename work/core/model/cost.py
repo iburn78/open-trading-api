@@ -7,6 +7,19 @@ from ..kis.ws_data import SIDE, EXCHANGE
 # ----------------------------------------
 class CostCalculator:
     # all data: percent
+
+    # 유관기관수수료
+    # KRX fee to changes from 0.0023% to the same as NXT 0.00134% (maker) 0.00182% (taker): temporary two months until Feb
+    # below from KIS 
+    MIN_FEE = {
+        'KRX': 0.0036396, 
+        'NXT': {
+            'maker': 0.0031833, 
+            'taker': 0.0031833, 
+            'settle': 0.0031833, 
+        } 
+    }  
+
     # 한투수수료 (유관기관수수료 포함)
     FEE = {
         'KRX': 0.0140527, 
@@ -22,17 +35,6 @@ class CostCalculator:
         'NXT': 0.0142,
     }
 
-    # 유관기관수수료
-    # from December 2025, KRX fee changes from 0.0023% to 0.00134% (maker) 0.00182% (taker): need to check
-    MIN_FEE = {
-        'KRX': 0.0036396, 
-        'NXT': {
-            'maker': 0.0031833, 
-            'taker': 0.0031833, 
-            'settle': 0.0031833, 
-        } 
-    }  
-
     # percent
     TAX = {  
         # On-exchange (장내)
@@ -44,8 +46,9 @@ class CostCalculator:
             'TransactionTax': 0.15, # to increase to 0.20 (2026.1.1)
             'RuralDevTax': 0,
         },
+
         # OTC (장외) including 비상장
-        # Below is not allowed in this code yet... 
+        # - below is not implemented yet... 
         'OTC': {
             'TransactionTax': 0.35, 
             'RuralDevTax': 0,
@@ -54,11 +57,11 @@ class CostCalculator:
     }
 
     # rounding rule 
+    # 0: # 1원 미만 rounding
+    # -1: # 10원 미만 rounding 
     RD_rule = { 
-        # 0: # 1원 미만 rounding
-        # -1: # 10원 미만 rounding 
-        'FEE': 0, # maybe -1; need check (seems better tracking with 0)
         'MIN_FEE': 0, 
+        'FEE': 0, # maybe -1; need check (seems better tracking with 0)
         'TAX': 0, 
     }
 
@@ -77,9 +80,12 @@ class CostCalculator:
     # 완료되거나 중단될 경우, rounded 값 사용
     # 보수적 접근으로 실제 증권사 Logic을 정확히 알 수 없으므로 근사치임 (체결간 시간 간격등 추가 Rule이 있을 수 있음)
     @classmethod
-    def calculate(cls, side: SIDE, quantity, price, listed_market, svr, traded_exchange=None, maker_taker="taker"): # default to be conservative
+    def calculate(cls, side: SIDE, quantity, price, svr, listed_market=None, traded_exchange=None, maker_taker="taker"): 
+        # default to be conservative
+        if listed_market is None:
+            listed_market = 'KOSPI'
         if traded_exchange is None: 
-            traded_exchange = EXCHANGE.KRX # default to be conservative
+            traded_exchange = EXCHANGE.KRX
 
         fee_table, fee_rd_rule, tax_rd_rule = cls.get_fee_table(svr)
         if traded_exchange == EXCHANGE.KRX:
@@ -99,10 +105,14 @@ class CostCalculator:
 
     # 매각시 수익이 0 이 되는 total cost의 계산
     @classmethod
-    def bep_cost_calculate(cls, quantity, avg_price, listed_market, svr): 
-        exchange = "KRX"  # default to be conservative
+    def bep_cost_calculate(cls, quantity, avg_price, svr, listed_market=None):
+        # default to be conservative
+        traded_exchange = EXCHANGE.KRX 
+        if listed_market is None:
+            listed_market = 'KOSPI'
+
         fee_table, fee_rd_rule, tax_rd_rule = cls.get_fee_table(svr)
-        fee_percent = fee_table[exchange]
+        fee_percent = fee_table[traded_exchange.value]
         tax_percent = cls.TAX[listed_market]['TransactionTax'] + cls.TAX[listed_market]['RuralDevTax']
 
         bep_rate = (1+fee_percent/100)/(1-(fee_percent/100+tax_percent/100))

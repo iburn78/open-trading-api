@@ -42,14 +42,6 @@ class ORD_DVSN(str, Enum):
         }
         return exchange.value in allowed[self.name]
 
-class RCtype(str, Enum):
-    REVISE = '01'
-    CANCEL = '02'
-
-class AllYN(str, Enum):
-    ALL = 'Y'
-    PARTIAL = 'N'
-
 class SIDE(str, Enum):
     BUY = 'buy'
     SELL = 'sell'

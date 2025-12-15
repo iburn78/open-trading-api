@@ -7,7 +7,7 @@ from .domestic_stock_functions import inquire_psbl_order
 
 # this takes API usage frequency limit, so use with care
 async def get_psbl_order(trenv, code: str, ord_dvsn: ORD_DVSN, price: int):
-    if ord_dvsn == ORD_DVSN.MARKET:
+    if ord_dvsn != ORD_DVSN.LIMIT: # MARKET or MIDDLE
         price = 0
     if code is None or code == '':
         code = ' ' # empty space is requried
