@@ -83,6 +83,12 @@ class PerformanceMetric:
     unrealized_gain: int | None = None # after cumulative cost since initialization (시작시점부터의 평가 이익)
     cap_return_rate: float | None = None # after cumulative cost since initialization (시작가치 대비, 시작시점부터의 평가 이익률)
 
+    # -------------------------------------------------------
+    # price only update control
+    # -------------------------------------------------------
+    initialized: bool = False
+    _pending_limit_order_amount: int | None = None
+    _pending_market_order_amount: int | None = None 
 
     def __str__(self):
         try: 
@@ -109,8 +115,19 @@ class PerformanceMetric:
         finally: 
             return text
     
-    def update(self):
-        # get data from order_book
+    def update(self, price_update_only=False):
+        if not self.initialized: 
+            price_update_only=False
+            self.initialized = True 
+
+        if not price_update_only:
+            self._get_data_from_orderbook()
+
+        self._get_data_from_market_prices()
+        self._calculate_stats_on_price_update()
+        self.dashboard.enqueue(self)
+
+    def _get_data_from_orderbook(self):
         self.pending_buy_qty = self.order_book.pending_buy_qty
         self.pending_limit_buy_amt = self.order_book.pending_limit_buy_amt
         self.pending_market_buy_qty = self.order_book.pending_market_buy_qty
@@ -125,34 +142,43 @@ class PerformanceMetric:
         self.cumul_cost = self.order_book.cumul_cost
         self.total_cash_used = self.order_book.total_cash_used
 
-        # get data from market_prices
-        self.current_price = self.market_prices.current_price
-
-        # calcualtions
-        _pending_limit_order_amount = excel_round(self.pending_limit_buy_amt*(1+TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN))
-        _pending_market_order_amount = excel_round(self.pending_market_buy_qty*self.current_price*(1+TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)) # MARKET or MIDDLE
-
-        self.cash_on_hold = _pending_limit_order_amount + _pending_market_order_amount
-        self.cash_available = self.init_cash_allocated - self.total_cash_used - self.cash_on_hold
-
-        self.max_market_buy_amt = excel_round(self.cash_available*(1-TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)) # MARKET or MIDDLE
-        self.max_limit_buy_amt = excel_round(self.cash_available*(1-TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN))
-
+        # no current price related calc / ordering is important
+        self._pending_limit_order_amount = excel_round(self.pending_limit_buy_amt*(1+TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN))
         self.holding_qty = self.init_holding_qty - self.initial_holding_sold_qty + self.orderbook_holding_qty
         self.max_sell_qty = self.holding_qty - self.pending_sell_qty
 
-        self.holding_value = self.holding_qty*self.current_price 
-        self.cash_balance = self.init_cash_allocated - self.total_cash_used
-    
         self.avg_price = ((self.init_holding_qty-self.initial_holding_sold_qty)*self.init_avg_price + self.orderbook_holding_qty*self.orderbook_holding_avg_price)/self.holding_qty if self.holding_qty > 0 else 0
         _, self.bep_price = CostCalculator.bep_cost_calculate(self.holding_qty, self.avg_price, self.my_svr, self.listed_market)
 
+        self.cash_balance = self.init_cash_allocated - self.total_cash_used
+        self.init_value = self.init_cash_allocated + self.init_holding_qty*self.init_avg_price
+
+    def _get_data_from_market_prices(self):
+        self.current_price = self.market_prices.current_price
+
+    # on price update / ordering is important
+    def _calculate_stats_on_price_update(self):
+        if self.pending_market_buy_qty > 0:
+            self._pending_market_order_amount = excel_round(self.pending_market_buy_qty*self.current_price*(1+TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)) # MARKET or MIDDLE
+        else: 
+            self._pending_market_order_amount = 0
+
+        self.cash_on_hold = self._pending_limit_order_amount + self._pending_market_order_amount
+        self.cash_available = self.init_cash_allocated - self.total_cash_used - self.cash_on_hold
+
+        self.holding_value = self.holding_qty*self.current_price 
+    
         self.return_rate = (self.current_price-self.avg_price)/self.avg_price if self.avg_price > 0 else 0
         self.bep_return_rate = (self.current_price-self.bep_price)/self.bep_price if self.bep_price > 0 else 0
 
-        self.init_value = self.init_cash_allocated + self.init_holding_qty*self.init_avg_price
         self.cur_value = self.cash_balance + self.holding_value
         self.unrealized_gain = self.cur_value - self.init_value                      
         self.cap_return_rate = self.unrealized_gain / self.init_value if self.init_value > 0 else 0 
 
-        self.dashboard.enqueue(self)
+    def get_max_market_buy_amt(self):
+        self.max_market_buy_amt = excel_round(self.cash_available*(1-TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)) # MARKET or MIDDLE
+        return self.max_market_buy_amt
+
+    def get_max_limit_buy_amt(self):
+        self.max_limit_buy_amt = excel_round(self.cash_available*(1-TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN))
+        return self.max_limit_buy_amt

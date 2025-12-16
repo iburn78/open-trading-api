@@ -53,7 +53,7 @@ class PersistentClient:
                     if not msg.fire_forget:
                         fut = self.pending_requests.pop(msg.request_id)
                         fut.set_result(msg) 
-                        continue
+                    continue
 
                 # listner should not block listening
                 asyncio.create_task(self.on_dispatch(msg))
@@ -79,21 +79,24 @@ class PersistentClient:
         req_bytes = pickle.dumps(client_request)
         msg = len(req_bytes).to_bytes(4, "big") + req_bytes
 
+        if not client_request.fire_forget: 
+            # create a future and store it for response matching
+            # future: a tool that makes a coroutine wait
+            # make sure when response should arrive after future creation
+            fut = asyncio.get_running_loop().create_future()
+            self.pending_requests[client_request.request_id] = fut
+
         # send request
         self.writer.write(msg)
         await self.writer.drain()
 
-        # if no need to wait for return, then
-        if client_request.fire_forget: return None
-
-        # create a future and store it for response matching
-        # future: a tool that makes a coroutine wait
-        fut = asyncio.get_running_loop().create_future()
-        self.pending_requests[client_request.request_id] = fut
-
-        # wait for the specific response
-        response: ServerResponse = await fut  
-        return response
+        if client_request.fire_forget: 
+            # if no need to wait for return, then return None
+            return None
+        else: 
+            # wait for the specific response
+            response: ServerResponse = await fut  
+            return response
 
     # no need to check if already closed
     async def close(self):

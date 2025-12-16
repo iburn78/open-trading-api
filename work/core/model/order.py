@@ -164,8 +164,16 @@ class Order:
 
     def make_a_cancel_order(self): 
         if not self.submitted or self.completed or self.cancelled:
-            optlog.error(f"Cannot make a cancel order for {self}", name=self.agent_id)
-        return CancelOrder(original_order=self)
+            optlog.error(f"cannot make a cancel order for {self}", name=self.agent_id)
+        return CancelOrder(
+            agent_id=self.agent_id, 
+            code = self.code,
+            side = self.side,
+            ord_dvsn = self.ord_dvsn,
+            quantity = self.quantity,
+            price = self.price,
+            exchange = self.exchange,
+            original_order=self)
 
 @dataclass
 class CancelOrder(Order):
@@ -191,7 +199,9 @@ class CancelOrder(Order):
     - 단, 해당 기능 모의투자 미지원
     - Race condition could occur (해당 기능 이용해도 역시 발생가능)
     """
+
     # for simplicity and clarity, only cancel / all is implemented
+    # cancelled original orders are also set to "COMPLETED"
     original_order: Order | None = None
 
     def __post_init__(self):

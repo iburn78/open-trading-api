@@ -21,22 +21,12 @@ class DoubleUpStrategy(StrategyBase):
     SELL_BEP_RETURN_RATE = 0.002 
     BUY_BEP_RETURN_RATE = -0.004
 
-    ###_ need to record strategy response
     ###_ study what happens to limit orders that is overtime...
 
     async def on_update(self, update_event: UpdateEvent):
-        print('on-update')
         if update_event != UpdateEvent.PRICE_UPDATE:
             optlog.debug(f"{self.code}-{update_event.name}", name=self.agent_id)
 
-        q = 4
-        optlog.info(f"DOUBLE-UP BUY {q}", name=self.agent_id)
-        sc = self.create_an_order(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, price=0, quantity=q)
-        await self.execute(sc)
-
-        return
-
-        # ensure no action while pending
         if self.pm.pending_buy_qty > 0 or self.pm.pending_sell_qty > 0: return
 
         if self.pm.holding_qty == 0:

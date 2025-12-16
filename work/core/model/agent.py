@@ -51,7 +51,8 @@ class Agent:
     pm: PerformanceMetric = field(default_factory=PerformanceMetric)
 
     # other flags
-    agent_initialized: bool = False
+    agent_initial_value_assigned: bool = False
+    agent_ready_to_run_strategy: bool = False
     agent_initial_price_set_up: asyncio.Event = field(default_factory=asyncio.Event) # wheather the first TNP is received (so that pm can be properly initialized)
     sync_start_date: str | None = None # isoformat date ("yyyy-mm-dd")
 
@@ -93,7 +94,7 @@ class Agent:
         self.pm.init_holding_qty = init_holding_qty
         self.pm.init_avg_price = init_avg_price
         self.sync_start_date = sync_start_date # default to be today (if None: today)
-        self.agent_initialized = True
+        self.agent_initial_value_assigned = True
     
     async def run(self, **kwargs):
         """  
@@ -104,7 +105,7 @@ class Agent:
         - does 1) connect to server, 2) register itself, 3) subscribe to trp by code, 4) wait until stopped
         - orders can be made afterward
         """
-        if not self.agent_initialized: 
+        if not self.agent_initial_value_assigned: 
             optlog.error(f'agent not initialized - agent run aborted', name = self.id)
             return 
 
@@ -153,6 +154,7 @@ class Agent:
         # [Price initialization part]
         optlog.debug(f'[Agent] waiting for initial market price', name=self.id)
         await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
+        self.agent_ready_to_run_strategy = True
         optlog.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", name=self.id)
 
         # [Strategy enact part]
@@ -172,15 +174,17 @@ class Agent:
     # ----------------------------------------------------------------------------------
     # order handling
     # ----------------------------------------------------------------------------------
-    async def submit_order(self, order: Order | CancelOrder):
+    async def submit_order(self, order_list: list[Order | CancelOrder]):
         if self.client.is_connected:
             # fire and forget: Server will send back individual order updates via on_dispatch
             submit_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
-            submit_request.set_request_data([order]) # submit as a list (a list required)
-            submit_request.fire_forget = True
-            await self.client.send_client_request(submit_request)
+            submit_request.set_request_data(order_list) # submit as a list (a list required)
+            sres: ServerResponse | None = await self.client.send_client_request(submit_request) 
+            if isinstance(sres, ServerResponse):
+                return sres.success
         else:
             optlog.error(f'[Agent] submit new order not processed - client not connected', name=self.id)
+        return False
 
     # ----------------------------------------------------------------------------------
     # on dispatch handling
@@ -204,15 +208,16 @@ class Agent:
         optlog.info(f"[Agent] dispatched message: {msg}", name=self.id)
 
     async def handle_order(self, order: Order | CancelOrder):
-        optlog.info(f"[Agent] dispatched order: {order}", name=self.id) 
+        # optlog.info(f"[Agent] dispatched order: no {order.order_no} uid {order.unique_id}", name=self.id) 
         await self.order_book.handle_order_dispatch(order)
-        self.pm.update()
+        self.pm.update() 
+        self.strategy.handle_order_dispatch(order)
         self.strategy._order_receipt_event.set() 
 
     async def handle_prices(self, trp: TransactionPrices):
         self.market_prices.update_from_trp(trp)
-        self.pm.update()
-        self.agent_initial_price_set_up.set() 
+        self.pm.update(price_update_only=True) 
+        if not self.agent_ready_to_run_strategy: self.agent_initial_price_set_up.set() 
         self.strategy._price_update_event.set()
         
     async def handle_notice(self, trn: TransactionNotice):

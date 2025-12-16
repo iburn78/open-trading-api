@@ -110,8 +110,11 @@ class OrderBook:
             # _pending_trns_from_server_on_sync value assigned only here
             self._pending_trns_from_server_on_sync = sync.pending_trns
 
-            self._parse_orders_and_update_stats()
+            unhandled = await self._parse_orders_and_update_stats()
             optlog.info(f"sync completed: {self}", name=self.agent_id)
+
+        for trn in unhandled: # if any
+            await self.process_tr_notice(trn)
     
     def _check_if_start_from_empty(self):
         # checking representative ones
@@ -120,16 +123,18 @@ class OrderBook:
         if self.orderbook_holding_qty != 0: optlog.error(f"[OrderBook] key_stat is not zero - 1", name=self.agent_id)
         if self.total_cash_used != 0: optlog.error(f"[OrderBook] key_stat is not zero - 2", name=self.agent_id)
 
-    def _parse_orders_and_update_stats(self):
+    async def _parse_orders_and_update_stats(self):
         for _, v in self._indexed_completed_orders.items():
             self._stat_update(v, on_sync=True)
 
         for _, v in self._indexed_prev_incompleted_orders.items():
             self._stat_update(v, on_sync=True)
 
+        unhandled = [] 
         for _, v in self._indexed_incompleted_orders.items():
-            self.handle_order_dispatch(v)
+            unhandled = self._handle_order_dispatch(v) # to avoid deadlock
             self._stat_update(v)
+        return unhandled
 
     # ----------------------------------------------------------------------------------
     # executed order portion stat update (체결된 사항에 대한 update)
@@ -229,32 +234,35 @@ class OrderBook:
     # order dispatch handling
     # ----------------------------------------------------------------------------------
     async def handle_order_dispatch(self, dispatched_order: Order | CancelOrder):
-        unhandled = []
         async with self._lock:
-            # order successfully submitted to the API
-            if dispatched_order.submitted: # this has to be checking with dispatched_order
-                self._indexed_incompleted_orders[dispatched_order.order_no] = dispatched_order
-
-                if not isinstance(dispatched_order, CancelOrder):
-                    # pending order status update
-                    if dispatched_order.side == SIDE.BUY:
-                        self.pending_buy_qty += dispatched_order.quantity
-                        if dispatched_order.ord_dvsn == ORD_DVSN.LIMIT:
-                            self.pending_limit_buy_amt += dispatched_order.quantity*dispatched_order.price
-                        else:  # MARKET or MIDDLE
-                            self.pending_market_buy_qty += dispatched_order.quantity
-                    else:  # sell
-                        self.pending_sell_qty += dispatched_order.quantity
-
-                # handle notices that are synced from the server
-                sync_trns = self._pending_trns_from_server_on_sync.pop(dispatched_order.order_no, [])
-
-                # processing unhandled trns here
-                # - empty the list, otherwise trns stay (still unmatched trns will be add back to the list)
-                # - unhandled will be processed outside of _lock (as process_tr_notice requires _lock)
-                unhandled = sync_trns + self._unhandled_trns.copy()
-                self._unhandled_trns.clear() # might be shared 
+            unhandled = self._handle_order_dispatch(dispatched_order)
 
         for trn in unhandled:
             await self.process_tr_notice(trn)
-            
+        
+    def _handle_order_dispatch(self, dispatched_order: Order | CancelOrder):
+        # order successfully submitted to the API
+        if dispatched_order.submitted: # this has to be checking with dispatched_order
+            self._indexed_incompleted_orders[dispatched_order.order_no] = dispatched_order
+
+            if not isinstance(dispatched_order, CancelOrder):
+                # pending order status update
+                if dispatched_order.side == SIDE.BUY:
+                    self.pending_buy_qty += dispatched_order.quantity
+                    if dispatched_order.ord_dvsn == ORD_DVSN.LIMIT:
+                        self.pending_limit_buy_amt += dispatched_order.quantity*dispatched_order.price
+                    else:  # MARKET or MIDDLE
+                        self.pending_market_buy_qty += dispatched_order.quantity
+                else:  # sell
+                    self.pending_sell_qty += dispatched_order.quantity
+
+            # handle notices that are synced from the server
+            sync_trns = self._pending_trns_from_server_on_sync.pop(dispatched_order.order_no, [])
+
+            # processing unhandled trns here
+            # - empty the list, otherwise trns stay (still unmatched trns will be add back to the list)
+            # - unhandled will be processed outside of _lock (as process_tr_notice requires _lock)
+            unhandled = sync_trns + self._unhandled_trns.copy()
+            self._unhandled_trns.clear() # might be shared 
+            return unhandled
+        return []

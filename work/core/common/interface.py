@@ -17,6 +17,7 @@ class RequestCommand(Enum):
 class ClientRequest:
     command: RequestCommand
     data_dict: dict = field(default_factory=dict)
+    # if fire_forget is set True, ClientRequest does not wait for ServerResponse
     fire_forget: bool = False
     request_id: str | None = None
 

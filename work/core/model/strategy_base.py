@@ -19,6 +19,8 @@ class StrategyBase(ABC):
         self.agent_id = None
         self.code = None
         self.submit_order = None # callback
+        self.pending_strategy_orders: dict[str, asyncio.Future] = {}
+        self.fresh_start_over: bool = False
 
         # snapshot data to use in making strategy
         # -----------------------------------------------------------------
@@ -42,13 +44,18 @@ class StrategyBase(ABC):
         await self.on_update_shell(UpdateEvent.INITIATE)
 
         while True:
+            self._price_update_event.clear() # does not run on every price change
+            # choose which to start fresh waiting 
+            if self.fresh_start_over:
+                self._trn_receive_event.clear() 
+                self._order_receipt_event.clear() 
             tasks = [
                 asyncio.create_task(self._price_update_event.wait()),
                 asyncio.create_task(self._trn_receive_event.wait()),
                 asyncio.create_task(self._order_receipt_event.wait()),
             ]
 
-            done, pending = await asyncio.wait(
+            _, pending = await asyncio.wait(
                 tasks, return_when=asyncio.FIRST_COMPLETED
             )
 
@@ -62,6 +69,7 @@ class StrategyBase(ABC):
 
                 if self._trn_receive_event.is_set():
                     self._trn_receive_event.clear()
+                    optlog.info(self.pm, name=self.agent_id)
                     await self.on_update_shell(UpdateEvent.TRN_RECEIVE)
 
                 if self._order_receipt_event.is_set():
@@ -69,11 +77,7 @@ class StrategyBase(ABC):
                     await self.on_update_shell(UpdateEvent.ORDER_RECEIVE)
 
             except Exception:
-                optlog.critical(
-                    "[Strategy] logic_run crashed",
-                    name=self.agent_id,
-                    exc_info=True,
-                )
+                optlog.critical("[Strategy] logic_run crashed", name=self.agent_id, exc_info=True)
                 raise
 
     async def on_update_shell(self, update_event: UpdateEvent):
@@ -83,11 +87,7 @@ class StrategyBase(ABC):
         except asyncio.CancelledError:
             raise  # re-raise
         except Exception as e:
-            optlog.error(
-                f"[Strategy] on_update failed ({update_event.name}): {e}",
-                name=self.agent_id,
-                exc_info=True,   # <<< THIS IS KEY
-            )
+            optlog.error(f"[Strategy] on_update failed ({update_event.name}): {e}", name=self.agent_id, exc_info=True)
             raise  
 
     @abstractmethod
@@ -95,7 +95,7 @@ class StrategyBase(ABC):
         '''
         ----------------------------------------------------------------------------------------------------------------
         this runs on events: initiate / price / trn / order_receive
-        - however, this does not run on every single event 
+        - important: this does run on every trn and order receipt event, but not on price (default, but can choose)
         - this is intended behavior as update only needs to be called once
             * if two trns received almost same time (e.g., 011, 022), event/wait/clear mechanism may not trigger twice
             * on_update runs frequently anyway
@@ -115,9 +115,31 @@ class StrategyBase(ABC):
     async def execute(self, order: Order | CancelOrder):
         if not isinstance(order, CancelOrder):
             if not self.validate_strategy_order(order): 
+                optlog.error(f"[Strategy] order validation failed: no {order.order_no} uid {order.unique_id}", name=self.agent_id)
                 return False
 
-        await self.submit_order(order)
+        fut = asyncio.get_running_loop().create_future()
+        self.pending_strategy_orders[order.unique_id] = fut
+        if await self.submit_order([order]): # submit as a list - may expand later to process the list of orders
+            processed_order = await fut  
+        else:
+            # this ensures furture exists in pending strategy order dict as the dispatch_order could arrive faster
+            self.pending_strategy_orders.pop(order.unique_id) # remove failed order future
+            optlog.error(f"[Strategy] order submission to KIS failed at server: no {order.order_no} uid {order.unique_id}", name=self.agent_id)
+            return False
+        
+        if processed_order.submitted:
+            optlog.info(f"[Strategy] order submit success: no {processed_order.order_no} uid {processed_order.unique_id}", name=self.agent_id)
+        else: 
+            optlog.error(f"[Strategy] order not processed at KIS: no {processed_order.order_no}) uid {processed_order.unique_id}", name=self.agent_id)
+            return False
+
+        return processed_order  ###_ make it more clean
+
+    def handle_order_dispatch(self, dispatched_order: Order | CancelOrder):
+        # should exist
+        fut = self.pending_strategy_orders.pop(dispatched_order.unique_id)
+        fut.set_result(dispatched_order)
 
     # -----------------------------------------------------------------
     # validators
@@ -125,11 +147,11 @@ class StrategyBase(ABC):
     def validate_strategy_order(self, order: Order) -> bool:
         if order.side == SIDE.BUY:
             if order.ord_dvsn == ORD_DVSN.LIMIT:
-                if order.quantity*order.price > self.pm.max_limit_buy_amt:
+                if order.quantity*order.price > self.pm.get_max_limit_buy_amt():
                     return False
             else: # MARKET or MIDDLE
                 exp_amount = excel_round(order.quantity*self.pm.market_prices.current_price) # check with current price
-                if exp_amount > self.pm.max_market_buy_amt:
+                if exp_amount > self.pm.get_max_market_buy_amt():
                     return False
 
         else: # str_cmd.side == SIDE.SELL:
