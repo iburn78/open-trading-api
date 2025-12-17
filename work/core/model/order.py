@@ -1,10 +1,11 @@
 import pandas as pd
 from dataclasses import dataclass, field 
+import uuid
 
 from .cost import CostCalculator
 from ..common.optlog import optlog, log_raise, LOG_INDENT
-from ..kis.domestic_stock_functions import order_cash, order_rvsecncl
 from ..kis.ws_data import SIDE, ORD_DVSN, EXCHANGE, TransactionNotice
+from ..kis.custom_functions import order_cash_async, order_rvsecncl_async
 
 @dataclass
 class Order:
@@ -19,7 +20,8 @@ class Order:
     listed_market: str | None = None # KOSPI, KOSDAQ, etc 
 
     # auto gen
-    unique_id: str = field(default_factory=lambda: pd.Timestamp.now().strftime('%Y%m%d%H%M%S%f'))
+    unique_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    gen_time: str = field(default_factory=lambda: pd.Timestamp.now().strftime('%m%d%H%M%S.%f'))
 
     # to be filled by server upon submission
     org_no: str | None = None
@@ -64,7 +66,7 @@ class Order:
         ordn = f"{int(self.order_no):>6d}" if self.order_no else f"  none"
         return (
             f"[O] {self.code} {self.agent_id:>5s} {ordn} "
-            f"{self.unique_id[6:14]}.{self.unique_id[14:16]} " # ddhhmmss.ff upto 1/100 sec
+            f"{self.gen_time[2:14]} " # ddhhmmss.ff upto 1/10   00 sec
             f"P{self.price:>8,d} Q{self.quantity:>5,d} pr{self.processed:>5,d} "
             f"{self.side.name[:3]} {self.ord_dvsn.name[:3]} {self.exchange.name[:3]} "
             f"{'S' if self.submitted else '_'}"
@@ -83,13 +85,14 @@ class Order:
         return self.unique_id == other.unique_id and self.order_no == other.order_no and self.processed == other.processed
 
     # async submit is handled in order_manager in the server side (so logging is in the server side)
-    def submit(self, trenv):
+    async def submit(self, trenv, _http):
         if self.completed or self.cancelled:
             log_raise('A completed or cancelled order is submitted ---', name=self.agent_id)
 
         ord_qty = str(self.quantity)
         ord_unpr = str(self.price)
-        res = order_cash(
+        res = await order_cash_async(
+            _http=_http,
             env_dv=trenv.env_dv, 
             ord_dv=self.side, 
             cano=trenv.my_acct, 
@@ -113,6 +116,12 @@ class Order:
             optlog.info(f"[Order] order {self.order_no} submitted", name=self.agent_id)
 
     # internal update logic 
+    # notice:
+    # - oder_kind set to '00'(LIMIT) in 체결확인(022) reponses even when the order is otherwise 
+    # rfus_yn / cntg_yn / acpt_yn 
+    # - 011: order accepted
+    # - 012: cancel or revise completed
+    # - 022: order processed
     def update(self, notice: TransactionNotice, trenv):
         if self.order_no != notice.oder_no: # checking order_no (or double-checking)
             log_raise(f"Notice does not match with order {self.order_no} ---", name=self.agent_id)
@@ -162,18 +171,28 @@ class Order:
         # to be overrided by CancelOrder
         pass
 
-    def make_a_cancel_order(self): 
-        if not self.submitted or self.completed or self.cancelled:
-            optlog.error(f"cannot make a cancel order for {self}", name=self.agent_id)
+    def make_a_cancel_order(self, partial: bool = False, new_qty: int = 0): 
+        if self.completed or self.cancelled:
+            optlog.warning(f"tried to make a cancel order for completed or cancelled: {self}", name=self.agent_id)
+            return None
+        # if original order is not yet submitted==True, once it is processed before the cancel order, it can be processed due to the sequential processing
+
+        if partial: 
+            qty_all_yn = "N"
+        else: 
+            qty_all_yn = "Y"
+
         return CancelOrder(
             agent_id=self.agent_id, 
             code = self.code,
             side = self.side,
             ord_dvsn = self.ord_dvsn,
-            quantity = self.quantity,
+            quantity = new_qty,
             price = self.price,
             exchange = self.exchange,
-            original_order=self)
+            original_order=self, 
+            qty_all_yn=qty_all_yn, 
+            )
 
 @dataclass
 class CancelOrder(Order):
@@ -194,23 +213,33 @@ class CancelOrder(Order):
     -     check price and quantity 
     - if partial and cancel:
     -     check quantity (price can be any, at least "0" required)
+
     # Note: 
     - partial: 주식정정취소가능주문조회 상 정정취소가능수량(psbl_qty)을 Check 하라고 권고
     - 단, 해당 기능 모의투자 미지원
     - Race condition could occur (해당 기능 이용해도 역시 발생가능)
+
+    # revise is only meaningful in 수량 축소 
+    - this is the same as partial cancel
+    가격을 정정하면 → 새 주문으로 간주, 해당 가격대의 맨 뒤(가장 늦은 순위)로 이동
+    수량만 줄이는 정정이면 → 기존 순위 유지, 시간 우선 원칙이 그대로 유지
+    수량을 늘리는 정정이면 → 새 주문 취급, 역시 전체가 맨 뒤로 이동
     """
 
+    ###_
     # for simplicity and clarity, only cancel / all is implemented
     # cancelled original orders are also set to "COMPLETED"
     original_order: Order | None = None
+    qty_all_yn: str = "Y"
 
     def __post_init__(self):
         super().__post_init__()  # need to call explicitly 
         if self.original_order is None: 
             optlog.error(f"[CancelOrder] original order is missing {self}", name=self.agent_id)
 
-    def submit(self, trenv):
-        res = order_rvsecncl(
+    async def submit(self, trenv, _http):
+        res = await order_rvsecncl_async(
+            _http=_http,
             env_dv=trenv.env_dv,
             cano=trenv.my_acct,
             acnt_prdt_cd=trenv.my_prod,
@@ -218,9 +247,9 @@ class CancelOrder(Order):
             orgn_odno=self.original_order.order_no,
             ord_dvsn=self.ord_dvsn, 
             rvse_cncl_dvsn_cd='02', # cancel
-            ord_qty='0',
+            ord_qty=str(self.quantity),
             ord_unpr='0', 
-            qty_all_ord_yn='Y', # all (잔량전부)
+            qty_all_ord_yn=self.qty_all_yn, 
             excg_id_dvsn_cd=self.exchange
         )
         if res.empty:

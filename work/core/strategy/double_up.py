@@ -21,7 +21,8 @@ class DoubleUpStrategy(StrategyBase):
     SELL_BEP_RETURN_RATE = 0.002 
     BUY_BEP_RETURN_RATE = -0.004
 
-    ###_ study what happens to limit orders that is overtime...
+    ###_ study what happens to limit orders that is overtime... => overnight handling of all orders
+    ###_ handling of server order manager map is also necessary 
 
     async def on_update(self, update_event: UpdateEvent):
         if update_event != UpdateEvent.PRICE_UPDATE:

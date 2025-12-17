@@ -68,7 +68,11 @@ class TransactionNotice: # 국내주식 실시간체결통보
     crdt_cls: str | None = None # 신용구분 
     oder_prc: int | None = None # order price    
 
-    # note: oder_kind seems set to '00'(LIMIT) in 체결확인(022) reponses even when the order is otherwise 
+    # note: oder_kind set to '00'(LIMIT) in 체결확인(022) reponses even when the order is otherwise 
+    # {self.rfus_yn}{self.cntg_yn}{self.acpt_yn} 
+    # - 011: order accepted
+    # - 012: cancel or revise completed
+    # - 022: order processed
     def __str__(self):
         return (
             f"[TR notice] {self.code}, "

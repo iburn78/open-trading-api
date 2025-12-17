@@ -14,9 +14,9 @@ async def main(sw=None): # switch
     if sw == "1":
         # A = Agent(id = 'A4', code = '000660', dp = 8001, strategy=DoubleUpStrategy())
         # A = Agent(id = 'A1', code = '000660', dp = 8001, strategy=NullStr())
-        A = Agent(id = 'A5', code = '000660', dp = 8001, strategy=BruteForceRandStrategy())
+        A = Agent(id = 'A5', code = '000660', dp = 8001, strategy=DoubleUpStrategy())
 
-        A.initial_value_setup(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2025-12-15')
+        A.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2025-12-15')
         task1 = asyncio.create_task(A.run())  
 
         await asyncio.sleep(1000)
@@ -25,8 +25,8 @@ async def main(sw=None): # switch
         await asyncio.gather(task1)
 
     elif sw == "2":
-        B = Agent(id = 'B1', code = '055490', dp = 8002, strategy=BruteForceRandStrategy())
-        B.initial_value_setup(init_cash_allocated=100000000)
+        B = Agent(id = 'B1_', code = '000660', dp = 8002, strategy=BruteForceRandStrategy())
+        B.initialize(init_cash_allocated=100000000, sync_start_date=None)
         task2 = asyncio.create_task(B.run())  
 
         await asyncio.sleep(1000)

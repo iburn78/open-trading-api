@@ -112,39 +112,69 @@ class StrategyBase(ABC):
         '''
         pass
 
-    async def execute(self, order: Order | CancelOrder):
-        if not isinstance(order, CancelOrder):
-            if not self.validate_strategy_order(order): 
-                optlog.error(f"[Strategy] order validation failed: no {order.order_no} uid {order.unique_id}", name=self.agent_id)
-                return False
+    async def execute(self, orders: list[Order | CancelOrder]):
+        if not isinstance(orders, list):
+            orders = [orders]
 
-        fut = asyncio.get_running_loop().create_future()
-        self.pending_strategy_orders[order.unique_id] = fut
-        if await self.submit_order([order]): # submit as a list - may expand later to process the list of orders
-            processed_order = await fut  
-        else:
-            # this ensures furture exists in pending strategy order dict as the dispatch_order could arrive faster
-            self.pending_strategy_orders.pop(order.unique_id) # remove failed order future
-            optlog.error(f"[Strategy] order submission to KIS failed at server: no {order.order_no} uid {order.unique_id}", name=self.agent_id)
-            return False
+        for order in orders:
+            if not isinstance(order, CancelOrder):
+                if not self.validate_strategy_order(order): 
+                    optlog.error(f"[Strategy] order validation failed: no {order.order_no} uid {order.unique_id}", name=self.agent_id)
+                    return None
+
+        # this ensures furture exists in pending strategy order dict as the dispatch_order could arrive faster
+        loop = asyncio.get_running_loop()
+        futures: dict[str, asyncio.Future] = {} # need for this orders only
+
+        for order in orders: 
+            fut = loop.create_future()
+            futures[order.unique_id] = fut
+            self.pending_strategy_orders[order.unique_id] = fut
+
+        submitted = await self.submit_order(orders) 
+
+        if not submitted: # none submitted
+            for order in orders:
+                self.pending_strategy_orders.pop(order.unique_id) 
+                optlog.error(f"[Strategy] order submission to KIS failed at server: no {order.order_no} uid {order.unique_id}", name=self.agent_id)
+            return None
         
-        if processed_order.submitted:
-            optlog.info(f"[Strategy] order submit success: no {processed_order.order_no} uid {processed_order.unique_id}", name=self.agent_id)
-        else: 
-            optlog.error(f"[Strategy] order not processed at KIS: no {processed_order.order_no}) uid {processed_order.unique_id}", name=self.agent_id)
-            return False
+        try:
+            processed_orders = await asyncio.gather(*futures.values())
+        except asyncio.CancelledError:
+            for uid in futures:
+                self.pending_strategy_orders.pop(uid, None)
+            raise
 
-        return processed_order  ###_ make it more clean
+        for processed_order in processed_orders:
+            if processed_order.submitted:
+                optlog.info(f"[Strategy] order submit success: no {processed_order.order_no} uid {processed_order.unique_id}", name=self.agent_id)
+            else: 
+                optlog.error(f"[Strategy] order not processed at KIS: no {processed_order.order_no} uid {processed_order.unique_id}", name=self.agent_id)
+
+        if len(processed_orders) == 1: 
+            return processed_orders[0] # return as an order
+        else: 
+            return processed_orders # return as a list
 
     def handle_order_dispatch(self, dispatched_order: Order | CancelOrder):
-        # should exist
-        fut = self.pending_strategy_orders.pop(dispatched_order.unique_id)
-        fut.set_result(dispatched_order)
+        fut = self.pending_strategy_orders.pop(dispatched_order.unique_id, None)
+        if not fut:
+            optlog.error(f"[Strategy] no pending future exists for the dispatched_order: uid {dispatched_order.unique_id}", name=self.agent_id)
+            return
+
+        if not fut.done():
+            fut.set_result(dispatched_order)        
+        else: 
+            optlog.error(f"[Strategy] future is already done for the dispatched_order: uid {dispatched_order.unique_id}", name=self.agent_id)
+
 
     # -----------------------------------------------------------------
     # validators
     # -----------------------------------------------------------------
-    def validate_strategy_order(self, order: Order) -> bool:
+    def validate_strategy_order(self, order: Order | None) -> bool:
+        if order is None: return False
+
         if order.side == SIDE.BUY:
             if order.ord_dvsn == ORD_DVSN.LIMIT:
                 if order.quantity*order.price > self.pm.get_max_limit_buy_amt():
@@ -160,6 +190,7 @@ class StrategyBase(ABC):
         return True
 
     def create_an_order(self, side, ord_dvsn, quantity, price, exchange=EXCHANGE.SOR) -> Order:
+        # if error handling is necessary, for errors return None
         return Order(
             agent_id=self.agent_id, 
             code=self.code, 

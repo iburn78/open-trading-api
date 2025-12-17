@@ -51,7 +51,7 @@ class Agent:
     pm: PerformanceMetric = field(default_factory=PerformanceMetric)
 
     # other flags
-    agent_initial_value_assigned: bool = False
+    initialized: bool = False
     agent_ready_to_run_strategy: bool = False
     agent_initial_price_set_up: asyncio.Event = field(default_factory=asyncio.Event) # wheather the first TNP is received (so that pm can be properly initialized)
     sync_start_date: str | None = None # isoformat date ("yyyy-mm-dd")
@@ -88,13 +88,15 @@ class Agent:
         self.strategy.pm = self.pm
         self.strategy.submit_order = self.submit_order
 
-    def initial_value_setup(self, init_cash_allocated = 0, init_holding_qty = 0, 
+    def initialize(self, init_cash_allocated = 0, init_holding_qty = 0, 
                             init_avg_price = 0, sync_start_date = None):
         self.pm.init_cash_allocated = init_cash_allocated
         self.pm.init_holding_qty = init_holding_qty
         self.pm.init_avg_price = init_avg_price
+        if self.sync_start_date is not None:
+            optlog.warning('sync start date should be assigned here', name=self.id)
         self.sync_start_date = sync_start_date # default to be today (if None: today)
-        self.agent_initial_value_assigned = True
+        self.initialized = True
     
     async def run(self, **kwargs):
         """  
@@ -105,7 +107,7 @@ class Agent:
         - does 1) connect to server, 2) register itself, 3) subscribe to trp by code, 4) wait until stopped
         - orders can be made afterward
         """
-        if not self.agent_initial_value_assigned: 
+        if not self.initialized: 
             optlog.error(f'agent not initialized - agent run aborted', name = self.id)
             return 
 

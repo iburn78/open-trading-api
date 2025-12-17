@@ -223,6 +223,8 @@ async def main():
     finally:
         await dashboard.stop()
         await connected_agents.dashboard_manager.stop()
+        if order_manager._http:
+            await order_manager._http.close()
         saved_date = await order_manager.persist_to_disk(immediate = True)
         optlog.info(f"[Server] order_manager saved for {saved_date}")
         optlog.info("[Server] shutdown complete" + sep)

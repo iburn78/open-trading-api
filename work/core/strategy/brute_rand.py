@@ -19,21 +19,22 @@ class BruteForceRandStrategy(StrategyBase):
             optlog.debug(f"{self.code}-{update_event.name}", name=self.agent_id)
 
         q = random.randint(1, 5)
-        # choice = random.randint(0, 1)    
-        # if choice == 0:
-        sc = self.create_an_order(side=SIDE.BUY, ord_dvsn=ORD_DVSN.LIMIT, price=14500, quantity=q)
-        # else:
-        #     sc = self.create_an_order(side=SIDE.SELL, ord_dvsn=ORD_DVSN.LIMIT, price=580_000, quantity=q)
 
-        sc =await self.execute(sc)
-        optlog.info(f'{sc}:, {sc.org_no}')
+        sc1 = self.create_an_order(side=SIDE.BUY, ord_dvsn=ORD_DVSN.LIMIT, price=560000, quantity=q)
+        sc2 = self.create_an_order(side=SIDE.BUY, ord_dvsn=ORD_DVSN.LIMIT, price=565000, quantity=q)
+        sc3 = self.create_an_order(side=SIDE.BUY, ord_dvsn=ORD_DVSN.LIMIT, price=515000, quantity=q)
+        sc4 = sc3.make_a_cancel_order()
+
+        sc =await self.execute([sc1, sc2, sc3, sc4])
         await asyncio.sleep(random.randint(5, 10))
-        # # cancel test
-        # optlog.info(f'cancel order')
-        # co = sc.make_a_cancel_order()
-        # res = await self.execute(co)
-        # optlog.info(f'cancel {co.order_no} {co.original_order}: {res}')
+        # cancel test
+        optlog.info(f'cancel order')
+        co = sc1.make_a_cancel_order(partial=True, new_qty=sc1.quantity-1)
+        res = await self.execute(co)
+        optlog.info(f'cancel {co.order_no} {co.original_order}: {res}')
 
 
-        ###_ study logs... why not complaining on the lost connection etc... 
+        ###_ in case of partial cancel
+        ###_ how trn is arrived
+        ###_ how to reflect to the order manager and order book: both has to be updated
         return

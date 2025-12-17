@@ -5,6 +5,7 @@ import asyncio
 import pickle
 import os
 import time
+import httpx
 
 from core.common.setup import data_dir, disk_save_period, order_manager_keep_days
 from core.common.optlog import optlog, log_raise
@@ -98,9 +99,12 @@ class OrderManager:
         default_factory=lambda: defaultdict(lambda: asyncio.Lock())
     )
 
+    _http: httpx.AsyncClient | None = None
+
     def __post_init__(self): 
         self.sec = lambda t: int(t[:2])*3600 + int(t[2:4])*60 + int(t[4:6])
         self.load_history()
+        self._http: httpx.AsyncClient = httpx.AsyncClient(timeout=httpx.Timeout(10.0))
 
     def __str__(self):
         if not self.map:
@@ -195,11 +199,13 @@ class OrderManager:
     async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order | CancelOrder], trenv, date_=None):
         if any(o.submitted for o in orders):
             optlog.warning('Orders should not be already submitted: no actions taken', name=agent.id)
-            return
+            return False
         
-        for order in orders:
+        l = len(orders)
+        for i, order in enumerate(orders):
             try:
-                await asyncio.to_thread(order.submit, trenv)
+                await order.submit(trenv, self._http)
+                # await asyncio.to_thread(order.submit, trenv) # non-async version
             except Exception as e:
                 optlog.error(f"[OrderManager] submission error {order.unique_id}: {e}", name=agent.id, exc_info=True)
             # send back submission result (order status updated) to the agent right away
@@ -222,7 +228,9 @@ class OrderManager:
                     await dispatch(agent, notice) 
                 self._update_map(code_map, order)
 
-            await asyncio.sleep(trenv.sleep)
+            if i < l-1:
+                await asyncio.sleep(trenv.sleep)
+        return True
 
     async def process_tr_notice(self, notice: TransactionNotice, connected_agents: ConnectedAgents, trenv, date_=None):
         # reroute notice to the corresponding order

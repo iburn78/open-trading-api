@@ -24,10 +24,8 @@ async def handle_submit_orders(client_request: ClientRequest, writer, **server_d
     agent = connected_agents.get_agent_card_by_port(port)
     orders = client_request.get_request_data()
 
-    await order_manager.submit_orders_and_register(agent, orders, trenv)
-    # no need to assign any value to ServerResponse as the command is already processed, and return value is meaningless at this moment
-    # however, empty ServerResponse object return required to match request-response 
-    return ServerResponse(success=True, status='order queued')
+    res: bool = await order_manager.submit_orders_and_register(agent, orders, trenv)
+    return ServerResponse(success=res, status='order queued')
 
 # 연결된 Agent를 Register함 (AgentCard가 ConnectedAgents에 연결)
 # when disconnected, auto-remove (or use connected_agents.remove(agent_card))

@@ -18,6 +18,8 @@ import websockets
 import yaml
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
+import httpx 
+
 from ..common.setup import smartSleep_, demoSleep_
 from ..common.optlog import optlog, ModuleLogger
 
@@ -365,6 +367,7 @@ class APIRespError(APIResp):
         if url:
             logger.error(f"URL: {url}")
 
+
 ########### API call wrapping : API 호출 공통
 def _url_fetch(
         api_url, ptr_id, tr_cont, params, appendHeaders=None, postFlag=False, hashFlag=True
@@ -410,6 +413,66 @@ def _url_fetch(
     else:
         logger.error(f"[_url_fetch] Error Code: {res.status_code} | {res.text}")
         return APIRespError(res.status_code, res.text)
+
+####################################################################
+# Async version 
+####################################################################
+async def _url_fetch_async(
+    _http, api_url, ptr_id, tr_cont, params, appendHeaders=None, postFlag=False, hashFlag=True
+):
+    url = f"{getTREnv().my_url}{api_url}"
+
+    headers = _getBaseHeader(getTREnv().my_svr)  # 기본 header 값 정리
+
+    # 추가 Header 설정
+    tr_id = ptr_id
+    if ptr_id[0] in ("T", "J", "C"):  # 실전투자용 TR id 체크
+        if _isPaper:  
+            tr_id = "V" + ptr_id[1:]
+
+    headers["tr_id"] = tr_id  # 트랜젝션 TR id
+    headers["custtype"] = "P"  # 일반(개인고객,법인고객) "P", 제휴사 "B"
+    headers["tr_cont"] = tr_cont  # 트랜젝션 TR id
+
+    if appendHeaders is not None:
+        if len(appendHeaders) > 0:
+            for x in appendHeaders.keys():
+                headers[x] = appendHeaders.get(x)
+
+    if _DEBUG:
+        logger.debug(
+            "< Sending Info >\n"
+            f"URL: {url}, TR: {tr_id}\n"
+            f"<header>\n{headers}\n"
+            f"<body>\n{params}"
+        )
+    
+    try:
+        if postFlag:
+            resp = await _http.post(
+                url,
+                headers=headers,
+                json=params,
+            )
+        else:
+            resp = await _http.get(
+                url,
+                headers=headers,
+                params=params,
+            )
+
+    except httpx.RequestError as e:
+        logger.error(f"[_url_fetch_async] request failed: {e}")
+        raise
+
+    if resp.status_code == 200:
+        ar = APIResp(resp)
+        if _DEBUG:
+            ar.printAll()
+        return ar
+    else:
+        logger.error(f"[_url_fetch_async] Error Code: {resp.status_code} | {resp.text}")
+        return APIRespError(resp.status_code, resp.text)
 
 
 ########### New - websocket 대응
@@ -915,7 +978,7 @@ class KISWebSocket:
         self.on_result = on_result
         self.result_all_data = result_all_data
         try:
-            asyncio.run(self.__runner())
+            asyncio.run(self.__runner())  # not used and asyncio.run moved to server.py
         except KeyboardInterrupt:
             # when cancelling, the logging could cause unnecessary noise
             # logger.error("Closing by cancel (e.g., by task-group cancel or keyboard)")
