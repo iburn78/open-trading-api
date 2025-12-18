@@ -252,10 +252,14 @@ def set_order_hash_key(h, p):
 
 # API 호출 응답에 필요한 처리 공통 함수
 class APIResp:
-    def __init__(self, resp):
+    def __init__(self, resp, _http=False):
         self._rescode = resp.status_code
         self._resp = resp
-        self._header = self._setHeader()
+        # adjusted to accomodate HTTPX-Async
+        if _http:
+            self._header = self._setHeader_http()
+        else: 
+            self._header = self._setHeader()
         self._body = self._setBody()
         self._err_code = self._body.msg_cd
         self._err_message = self._body.msg1
@@ -271,6 +275,10 @@ class APIResp:
         _th_ = namedtuple("header", fld.keys())
 
         return _th_(**fld)
+
+    def _setHeader_http(self):
+        fld = {x: self._resp.headers.get(x) for x in self._resp.headers.keys() if x.islower()}
+        return fld
 
     def _setBody(self):
         _tb_ = namedtuple("body", self._resp.json().keys())
@@ -314,7 +322,7 @@ class APIResp:
             f"\n-------------------------------\n" 
             f"Error in response: {self.getResCode()} url={url}\n" 
             f"rt_cd: {self.getBody().rt_cd} / msg_cd: {self.getErrorCode()} / msg1: {self.getErrorMessage()}" 
-            "-------------------------------"
+            f"\n-------------------------------\n" 
         )
 
     # end of class APIResp
@@ -466,7 +474,7 @@ async def _url_fetch_async(
         raise
 
     if resp.status_code == 200:
-        ar = APIResp(resp)
+        ar = APIResp(resp, _http=True)
         if _DEBUG:
             ar.printAll()
         return ar

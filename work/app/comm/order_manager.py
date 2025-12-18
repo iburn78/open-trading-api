@@ -193,8 +193,31 @@ class OrderManager:
 
             if isinstance(order, CancelOrder):
                 # in case of CancelOrder, also handle the original_order
-                code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).pop(order.original_order.order_no)
-                code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[order.original_order.order_no] = order.original_order
+                original_order = code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).get(order.o_order_order_no)
+                if original_order is None: 
+                    optlog.error(f"order cancel error {order}", name=order.agent_id)
+                    return
+
+                if order.qty_all_yn == "Y":
+                    original_order.quantity = original_order.processed
+                    original_order.cancelled = True 
+                    original_order.completed = True
+                    code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).pop(order.o_order_order_no)
+                    code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[original_order.order_no] = original_order
+
+                else: # partial
+                    original_order.quantity = original_order.quantity - order.quantity
+
+                    if original_order.quantity <= original_order.processed:
+                        if original_order.quantity < original_order.processed:
+                            # should never happen
+                            optlog.error(f"partial cancel order error {order}, {original_order}", name=order.agent_id)
+
+                        # completed too
+                        original_order.cancelled = True
+                        original_order.completed = True
+                        code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).pop(order.o_order_order_no)
+                        code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[original_order.order_no] = original_order
 
     async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order | CancelOrder], trenv, date_=None):
         if any(o.submitted for o in orders):
@@ -209,6 +232,8 @@ class OrderManager:
             except Exception as e:
                 optlog.error(f"[OrderManager] submission error {order.unique_id}: {e}", name=agent.id, exc_info=True)
             # send back submission result (order status updated) to the agent right away
+            ###_ may change to task
+            ###_ then order may not arrive faster than notice like in server
             await dispatch(agent, order)
 
             if not order.submitted:
@@ -225,6 +250,7 @@ class OrderManager:
                     order.update(notice, trenv)
                     # send back notice to the agent right away
                     # can assume agent is still connected (otherwise, dispatch will log error) right after the order.submit
+                    ###_ may change to task
                     await dispatch(agent, notice) 
                 self._update_map(code_map, order)
 
@@ -241,11 +267,9 @@ class OrderManager:
             code_map = self._get_code_map(notice.code, date_)
             order = None
             # find order by notice.order_no (which doesn't have agent id)
-            for agent_id, order_dict in code_map[INCOMPLETED_ORDERS].items(): 
+            for _, order_dict in code_map[INCOMPLETED_ORDERS].items(): 
                 order = order_dict.get(notice.oder_no)
                 if order: 
-                    if order.agent_id != agent_id: 
-                        optlog.error(f'order.agent_id {order.agent_id} inconsistent with notice.oder_no {notice.oder_no} ---', name=order.agent_id) 
                     break # stop finding
             if order:  
                 order.update(notice, trenv)

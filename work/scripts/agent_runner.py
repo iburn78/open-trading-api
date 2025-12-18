@@ -25,7 +25,7 @@ async def main(sw=None): # switch
         await asyncio.gather(task1)
 
     elif sw == "2":
-        B = Agent(id = 'B1_', code = '000660', dp = 8002, strategy=BruteForceRandStrategy())
+        B = Agent(id = 'B2_', code = '000660', dp = 8002, strategy=BruteForceRandStrategy())
         B.initialize(init_cash_allocated=100000000, sync_start_date=None)
         task2 = asyncio.create_task(B.run())  
 

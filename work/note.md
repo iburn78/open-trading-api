@@ -67,6 +67,7 @@ or more modern way (only for development situation)
 - in Linux: OpenBLAS optimization might be needed to use all threads
 - in Linux: install Intel MKL NumPy to boost speed 
     - pip install numpy -U --extra-index-url https://pypi.anaconda.org/intel/simple
+- caution: once an object is over the stream(reader/writer), no longer it is the same object
 
 
 ### Tips
