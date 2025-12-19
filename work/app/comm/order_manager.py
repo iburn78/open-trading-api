@@ -113,7 +113,7 @@ class OrderManager:
         res = f'[OrderManager] for {date_}, codes: ' + list_str(self.map[date_].keys()) +'\n'
         for code, code_map in self.map[date_].items():
             res += f'- {code}\n'
-            res += f'  {PENDING_TRNS}: ' + list_str(code_map[PENDING_TRNS].keys()) +'\n'
+            res += f'  {PENDING_TRNS}: ' + list_str(code_map[PENDING_TRNS].keys()) +'\n' ###_ keys + how many
             res += f'  {INCOMPLETED_ORDERS}: \n'
             for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items():
                 res += f'  - {agent_id}: total {len(orders_dict)} orders\n'
@@ -191,37 +191,26 @@ class OrderManager:
             code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).pop(order.order_no, None)
             code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[order.order_no] = order
 
-            if isinstance(order, CancelOrder):
+            if not order.is_regular_order: 
                 # in case of CancelOrder, also handle the original_order
                 original_order = code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).get(order.o_order_order_no)
                 if original_order is None: 
-                    optlog.error(f"order cancel error {order}", name=order.agent_id)
+                    optlog.error(f"[OrderManager] cancel order update error {order}", name=order.agent_id)
                     return
 
-                if order.qty_all_yn == "Y":
-                    original_order.quantity = original_order.processed
-                    original_order.cancelled = True 
+                original_order.quantity = original_order.quantity - order.processed
+                if original_order.quantity < original_order.processed:
+                    optlog.error(f"[OrderManager] cancel quantity error {order}, {original_order}", name=order.agent_id)
+                    return 
+
+                if original_order.quantity == original_order.processed:
                     original_order.completed = True
-                    code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).pop(order.o_order_order_no)
+                    code_map[INCOMPLETED_ORDERS].get(order.agent_id).pop(order.o_order_order_no)
                     code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[original_order.order_no] = original_order
-
-                else: # partial
-                    original_order.quantity = original_order.quantity - order.quantity
-
-                    if original_order.quantity <= original_order.processed:
-                        if original_order.quantity < original_order.processed:
-                            # should never happen
-                            optlog.error(f"partial cancel order error {order}, {original_order}", name=order.agent_id)
-
-                        # completed too
-                        original_order.cancelled = True
-                        original_order.completed = True
-                        code_map[INCOMPLETED_ORDERS].get(order.agent_id, {}).pop(order.o_order_order_no)
-                        code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[original_order.order_no] = original_order
 
     async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order | CancelOrder], trenv, date_=None):
         if any(o.submitted for o in orders):
-            optlog.warning('Orders should not be already submitted: no actions taken', name=agent.id)
+            optlog.warning('[OrderManager] Orders should not be already submitted: no actions taken', name=agent.id)
             return False
         
         l = len(orders)
@@ -251,6 +240,7 @@ class OrderManager:
                     # send back notice to the agent right away
                     # can assume agent is still connected (otherwise, dispatch will log error) right after the order.submit
                     ###_ may change to task
+                    ###_ pickle and json dumps -> may change
                     await dispatch(agent, notice) 
                 self._update_map(code_map, order)
 
@@ -275,6 +265,7 @@ class OrderManager:
                 order.update(notice, trenv)
                 self._update_map(code_map, order)
                 agent = connected_agents.get_agent_card_by_id(order.agent_id)
+                ###_ may fix .... to save and fire
                 if agent: # if agent is still connected
                     await dispatch(agent, notice)
             else:

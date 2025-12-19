@@ -50,9 +50,9 @@ class StrategyBase(ABC):
                 self._trn_receive_event.clear() 
                 self._order_receipt_event.clear() 
             tasks = [
-                asyncio.create_task(self._price_update_event.wait()),
-                asyncio.create_task(self._trn_receive_event.wait()),
-                asyncio.create_task(self._order_receipt_event.wait()),
+                asyncio.create_task(self._price_update_event.wait(), name=f"{self.agent_id}_pu_event_task"),
+                asyncio.create_task(self._trn_receive_event.wait(), name=f"{self.agent_id}_tr_event_task"),
+                asyncio.create_task(self._order_receipt_event.wait(), name=f"{self.agent_id}_or_event_task"),
             ]
 
             _, pending = await asyncio.wait(
@@ -122,9 +122,9 @@ class StrategyBase(ABC):
         processed_orders = {}
 
         for order in orders:
-            if not isinstance(order, CancelOrder):
+            if order.is_regular_order:
                 if not self.validate_strategy_order(order): 
-                    optlog.error(f"[Strategy] order validation failed: no {order.order_no} uid {order.unique_id}", name=self.agent_id)
+                    optlog.error(f"[Strategy] order validation failed: {order}", name=self.agent_id)
                     return None
 
         # this ensures furture exists in pending strategy order dict as the dispatch_order could arrive faster
@@ -159,7 +159,7 @@ class StrategyBase(ABC):
                 self.pending_strategy_orders.pop(order.unique_id, None)
             raise
         
-        res = list[processed_orders.values()]
+        res = list(processed_orders.values())
         return res if len(res) > 1 else res[0]
 
     def handle_order_dispatch(self, dispatched_order: Order | CancelOrder):

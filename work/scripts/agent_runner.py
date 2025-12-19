@@ -17,7 +17,7 @@ async def main(sw=None): # switch
         A = Agent(id = 'A5', code = '000660', dp = 8001, strategy=DoubleUpStrategy())
 
         A.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2025-12-15')
-        task1 = asyncio.create_task(A.run())  
+        task1 = asyncio.create_task(A.run(), name="str_run_task")  
 
         await asyncio.sleep(1000)
 
@@ -27,7 +27,7 @@ async def main(sw=None): # switch
     elif sw == "2":
         B = Agent(id = 'B2_', code = '000660', dp = 8002, strategy=BruteForceRandStrategy())
         B.initialize(init_cash_allocated=100000000, sync_start_date=None)
-        task2 = asyncio.create_task(B.run())  
+        task2 = asyncio.create_task(B.run(), name="str_run_task")  
 
         await asyncio.sleep(1000)
 

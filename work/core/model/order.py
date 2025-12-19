@@ -29,10 +29,10 @@ class Order:
     submitted_time: str | None = None 
 
     # control flags
+    is_regular_order: bool = True
     submitted: bool = False # if order_no is assgined by KIS, then submitted == True
     accepted: bool = False
     completed: bool = False
-    cancelled: bool = False # full cancel only considered as True
 
     # for tax and fee calculation
     amount: int = 0 # total purchased/sold cumulative amount (sum of quantity x price)
@@ -61,24 +61,29 @@ class Order:
 
         if not self.ord_dvsn.is_allowed_in(self.exchange):
             log_raise(f"Order type {self.ord_dvsn.name} not allowed on exchange {self.exchange} ---", name=self.agent_id)
-        
-    def __str__(self):
+
+    def _str_base(self):
         ordn = f"{int(self.order_no):>6d}" if self.order_no else f"  none"
         return (
             f"[O] {self.code} {self.agent_id:>5s} {ordn} "
-            f"{self.gen_time[2:14]} " # ddhhmmss.ff upto 1/10   00 sec
+            f"{self.gen_time[2:14]}({self.unique_id[:6]}) " # ddhhmmss.ff upto 1/10   00 sec
             f"P{self.price:>8,d} Q{self.quantity:>5,d} pr{self.processed:>5,d} "
             f"{self.side.name[:3]} {self.ord_dvsn.name[:3]} {self.exchange.name[:3]} "
             f"{'S' if self.submitted else '_'}"
             f"{'A' if self.accepted else '_'}"
-            f"{'CP' if self.completed else '__'}"
-            f"{'CL' if self.cancelled else '__'} "
+            f"{'C' if self.completed else '_'}"
+        )
+    
+    def __str__(self):
+        txt = self._str_base()
+        txt += (
             f"ftap:"
             f"{self.fee_:>6,d} "
             f"{self.tax_:>7,d} "
             f"{self.amount:>11,d} "
             f"{self.avg_price:>8,.0f}"
         )
+        return txt
 
     def __eq__(self, other):
         if not isinstance(other, Order): return False
@@ -86,8 +91,8 @@ class Order:
 
     # async submit is handled in order_manager in the server side (so logging is in the server side)
     async def submit(self, trenv, _http):
-        if self.completed or self.cancelled:
-            optlog.error(f"A completed or cancelled order is submitted: order submission aborted {self.unique_id}", name=self.agent_id)
+        if self.completed:
+            optlog.error(f"A completed order is submitted: order submission aborted {self.unique_id}", name=self.agent_id)
             return
 
         ord_qty = str(self.quantity)
@@ -106,7 +111,7 @@ class Order:
             )
 
         if res.empty:
-            ###_ when order is go through
+            # order failed
             optlog.error(f"[Order] order submit response empty, uid {self.unique_id}", name=self.agent_id)
         elif pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
             optlog.error(f"[Order] check response {res}", name=self.agent_id)
@@ -127,8 +132,8 @@ class Order:
     def update(self, notice: TransactionNotice, trenv):
         if self.order_no != notice.oder_no: # checking order_no (or double-checking)
             log_raise(f"Notice does not match with order {self.order_no} ---", name=self.agent_id)
-        if self.completed or self.cancelled: 
-            log_raise(f"Notice for completed or cancelled order {self.order_no} arrived ---", name=self.agent_id)
+        if self.completed: 
+            log_raise(f"Notice for completed order {self.order_no} arrived ---", name=self.agent_id)
         if notice.rfus_yn != "0": # "0": 승인
             log_raise(f"Order {self.order_no} refused ---", name=self.agent_id)
 
@@ -139,7 +144,7 @@ class Order:
                 if notice.ooder_no is None:
                     log_raise("Check logic (original order no of notice) ---", name=self.agent_id)
                 self.accepted = True
-                self.update_cancel_specific()
+                self.update_cancel_specific(notice)
             else: # notice.acpt_yn == "3": # 취소(FOK/IOC)
                 log_raise("Not implemented yet ---", name=self.agent_id)
 
@@ -174,16 +179,14 @@ class Order:
         pass
 
     def make_a_cancel_order(self, partial: bool = False, to_cancel_qty: int = 0): 
-        if self.completed or self.cancelled:
-            optlog.warning(f"tried to make a cancel order for completed or cancelled: {self}", name=self.agent_id)
+        if self.completed:
+            optlog.warning(f"tried to make a cancel order for a completed order: {self}", name=self.agent_id)
             return None
-        # if original order is not yet submitted==True, once it is processed before the cancel order, it can be processed due to the sequential processing
 
         if partial: 
             qty_all_yn = "N"
         else: 
             qty_all_yn = "Y"
-            to_cancel_qty = 0
 
         return CancelOrder(
             agent_id=self.agent_id, 
@@ -191,7 +194,7 @@ class Order:
             side = self.side,
             ord_dvsn = self.ord_dvsn,
             quantity = to_cancel_qty,
-            price = 0,
+            price = self.price,
             exchange = self.exchange,
             o_order_org_no = self.org_no, 
             o_order_order_no = self.order_no, 
@@ -218,40 +221,45 @@ class CancelOrder(Order):
     - if partial and cancel:
     -     check quantity (price can be any, at least "0" required)
 
-    # Note: 
+    partial revise/cancel
     - partial: 주식정정취소가능주문조회 상 정정취소가능수량(psbl_qty)을 Check 하라고 권고
-    - 단, 해당 기능 모의투자 미지원
-    - Race condition could occur (해당 기능 이용해도 역시 발생가능)
+    - 단, 해당 기능 모의투자 미지원 / API Call 소모 / Race condition could occur (해당 기능 이용해도 역시 발생가능)
+    
+    revise is only meaningful in 수량 축소: the same as partial cancel
+    rule in matching sequence
+    - 가격을 정정하면 새 주문으로 간주, 해당 가격대의 맨 뒤(가장 늦은 순위)로 이동
+    - 수량만 줄이는 정정: 기존 순위 유지
+    - 수량을 늘리는 정정: 새 주문 취급, 전체가 맨 뒤로 이동
+    - 따라서, full or partial cancel 만 의미 있고, revise는 full / partial cancel + new order와 동일 
+    - 본 Class는 full / partial cancel 만을 구현
 
-    # revise is only meaningful in 수량 축소 
-    - this is the same as partial cancel
-    ###_
-    가격을 정정하면 → 새 주문으로 간주, 해당 가격대의 맨 뒤(가장 늦은 순위)로 이동
-    수량만 줄이는 정정이면 → 기존 순위 유지, 시간 우선 원칙이 그대로 유지
-    수량을 늘리는 정정이면 → 새 주문 취급, 역시 전체가 맨 뒤로 이동
-    취소시, 취소 수량을 넣어야 함... 취소된 수량만큼 체결된 것처럼 tRN이 오는데, 코드는 012
-    취소된 수량이 all / partial이든 옴 
-    1218_110734.833 [I] sv> [TR notice] 000660, no 0000007599 / 0000007451 012 cnd 0 KRX BUY LIMIT P:0 Q:5 pr:5
-1218_110734.888 [I] sv> [TR notice] 000660, no 0000007600 / 0000007450 012 cnd 0 KRX BUY LIMIT P:0 Q:10 pr:10
-1218_110734.889 [I] sv> [TR notice] 000660, no 0000007601 / 0000007449 012 cnd 0 KRX BUY LIMIT P:0 Q:10 pr:10
-1218_110735.029 [I] sv> [TR notice] 000660, no 0000007602 / 0000007447 012 cnd 0 KRX BUY LIMIT P:0 Q:5 pr:5
-1218_110735.081 [I] sv> [TR notice] 000660, no 0000007604 / 0000007446 012 cnd 0 KRX BUY LIMIT P:0 Q:10 pr:10
-1218_110735.248 [I] sv> [TR notice] 000660, no 0000007605 / 0000007444 012 cnd 0 KRX BUY LIMIT P:0 Q:10 pr:10
-1218_110735.310 [I] sv> [TR notice] 000660, no 0000007606 / 0000007429 012 cnd 0 KRX BUY LIMIT P:0 Q:5 pr:5
-수량 초과시 그냥 안먹힘
+    trn behavior
+    - quantity: 취소 수량을 넣어야 함 (partial 의 경우)
+    - 취소된 수량만큼 체결된 것처럼 trn이 보내짐, 코드는 012
+    - 수량 초과시 그냥 trn이 오지 않음
+    - KIS에서의 미체결량 = quantity - processed
+    - KIS에서는 주문수량은 변치 않고 미체결량만 줄이나, 본 구현에서는 quantity를 줄이고, 원 주문수량은 없음
     """
 
-    ###_
-    # for simplicity and clarity, only cancel / all is implemented
-    # cancelled original orders are also set to "COMPLETED"
     o_order_org_no: str | None = None
     o_order_order_no: str | None = None
     qty_all_yn: str = "Y"
 
     def __post_init__(self):
-        # doesn't call super automatically
-        if self.original_order is None: 
-            optlog.error(f"[CancelOrder] original order is missing {self}", name=self.agent_id)
+        # doesn't call super() automatically
+        self.is_regular_order = False 
+
+        if self.o_order_order_no is None or self.o_order_org_no is None:
+            optlog.error(f"[CancelOrder] original order info is missing {self}", name=self.agent_id)
+
+    def __str__(self): 
+        txt = self._str_base()
+        ordn = f"{int(self.o_order_order_no):>6d}" if self.o_order_order_no else f"  none"
+        FP = "F" if self.qty_all_yn == "Y" else "P"
+        txt += (
+            f"{FP}C {ordn}"
+        )
+        return txt
 
     async def submit(self, trenv, _http):
         res = await order_rvsecncl_async(
@@ -264,25 +272,24 @@ class CancelOrder(Order):
             ord_dvsn=self.ord_dvsn, 
             rvse_cncl_dvsn_cd='02', # cancel
             ord_qty=str(self.quantity), # to cancel quantity
-            ord_unpr='0', 
+            ord_unpr='0', # send it with 0 as cancel
             qty_all_ord_yn=self.qty_all_yn, 
             excg_id_dvsn_cd=self.exchange
         )
         if res.empty:
-            # maybe the case that fails to cancel
-            optlog.warning(f'[CancelOrder] order submit response empty, uid {self.unique_id}', name=self.agent_id)
+            # order failed: 수량 초과시 포함
+            optlog.error(f'[CancelOrder] order submit response empty, uid {self.unique_id}', name=self.agent_id)
         elif pd.isna(res.loc[0, ["ODNO", "ORD_TMD", "KRX_FWDG_ORD_ORGNO"]]).any():
-            # maybe the case that fails to cancel
-            optlog.warning(f"[CancelOrder] check response: {res}", name=self.agent_id)
+            optlog.error(f"[CancelOrder] check response: {res}", name=self.agent_id)
         else:
             self.order_no = res.ODNO.iloc[0]
             self.submitted_time = res.ORD_TMD.iloc[0]
             self.org_no = res.KRX_FWDG_ORD_ORGNO.iloc[0]
             self.submitted = True
-            optlog.info(f"[CancelOrder] a cancel-order {self.order_no} submitted to cancel order {self.original_order.order_no}", name=self.agent_id)
+            optlog.info(f"[CancelOrder] a cancel-order {self.order_no} submitted to cancel order {self.o_order_order_no}", name=self.agent_id)
 
-    def update_cancel_specific(self):
+    def update_cancel_specific(self, notice: TransactionNotice):
         self.completed = True
-        ###_ partial or all classify
-        ###_ update original order necessary
-        optlog.info(f"[CancelOrder] {self.order_no} completed: original order {self.o_order_order_no} cancelled", name=self.agent_id)
+        self.quantity = notice.oder_qty # fill with to cancel quantity
+        self.processed = notice.cntg_qty # fill with cancel processed
+        optlog.info(f"[CancelOrder] {self.order_no} completed: original order {self.o_order_order_no}", name=self.agent_id)

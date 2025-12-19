@@ -160,7 +160,7 @@ class Agent:
         optlog.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", name=self.id)
 
         # [Strategy enact part]
-        str_task = asyncio.create_task(self.strategy.logic_run())
+        str_task = asyncio.create_task(self.strategy.logic_run(), name=f"{self.id}_str_task")
 
         try:
             await self.hardstop_event.wait()
@@ -246,6 +246,7 @@ class Agent:
 # this function is used in the server side, so the logging is also on the server side
 async def dispatch(to: AgentCard | list[AgentCard], message: object):
     if not to:
+        ###_ save and fire ...
         optlog.info(f"[Agent] no agents to dispatch: {message}")
         return
 

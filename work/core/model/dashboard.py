@@ -25,8 +25,8 @@ class DashBoard:
         self._broadcast_queue.put_nowait(text)
 
     async def start(self):
-        self._server_task = asyncio.create_task(self._start_server())
-        self._broadcaster_task = asyncio.create_task(self._broadcaster_loop())
+        self._server_task = asyncio.create_task(self._start_server(), name=f"{self.owner}_dashboard_server_task")
+        self._broadcaster_task = asyncio.create_task(self._broadcaster_loop(), name=f"{self.owner}_broadcaster_loop_task")
     
     async def stop(self):
         # --- DASHBOARD CLEANUP ---

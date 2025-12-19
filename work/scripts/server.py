@@ -82,7 +82,7 @@ async def async_on_result(ws, tr_id, result, data_info):
     get_status()
 
 def on_result(ws, tr_id, result, data_info):
-    asyncio.create_task(async_on_result(ws, tr_id, result, data_info))
+    asyncio.create_task(async_on_result(ws, tr_id, result, data_info), name="server_async_on_result_task")
 
 async def websocket_loop():
     kws = ka.KISWebSocket(api_url="/tryitout")
@@ -92,7 +92,7 @@ async def websocket_loop():
     kws.subscribe(request=ccnl_notice, data=[trenv.my_htsid])
 
     # run websocket 
-    asyncio.create_task(kws.start_async(on_result=on_result))
+    asyncio.create_task(kws.start_async(on_result=on_result), name="server_start_async_task")
     ws_ready.set()
 
 # ---------------------------------
@@ -201,13 +201,13 @@ async def server(shutdown_event: asyncio.Event):
         await connected_agents.dashboard_manager.start()
         await dashboard.start()
 
-        tg.create_task(websocket_loop())
-        tg.create_task(start_server())
-        tg.create_task(broadcast(shutdown_event))
+        tg.create_task(websocket_loop(), name="server_websocket_loop_task")
+        tg.create_task(start_server(), name="server_start_server_task")
+        tg.create_task(broadcast(shutdown_event), name="server_broadcast_task")
 
         # later expand this to save other statics, clean-up, sanity checks, etc
-        tg.create_task(order_manager.persist_to_disk())
-        tg.create_task(order_manager.check_pending_trns_timeout())
+        tg.create_task(order_manager.persist_to_disk(), name="server_persist_to_disk_task")
+        tg.create_task(order_manager.check_pending_trns_timeout(), name="server_check_pending_trns_task")
 
         await shutdown_event.wait() # the task group doesn't exit instantly
 

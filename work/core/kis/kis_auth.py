@@ -322,7 +322,7 @@ class APIResp:
             f"\n-------------------------------\n" 
             f"Error in response: {self.getResCode()} url={url}\n" 
             f"rt_cd: {self.getBody().rt_cd} / msg_cd: {self.getErrorCode()} / msg1: {self.getErrorMessage()}" 
-            f"\n-------------------------------\n" 
+            f"\n-------------------------------" 
         )
 
     # end of class APIResp

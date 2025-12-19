@@ -91,7 +91,7 @@ class Sync:
         for k, v in (self.completed_orders or {}).items():
             res += f'comp  {v}\n'
         for k, v in (self.pending_trns or {}).items():
-            res += f'ptrns {k}: {v}\n'
+            res += f'ptrns {k}: {v}\n' ###_ how many not just all
         
         if res: res = '\n'+res 
         else: res = "sync data empty"

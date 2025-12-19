@@ -32,7 +32,7 @@ class PersistentClient:
             optlog.error(f"[Client] unexpected error in connecting to {self.host}:{self.port}: {e}", name=self.agent_id, exc_info=True)
             return
 
-        self.listen_task = asyncio.create_task(self.listen_server())
+        self.listen_task = asyncio.create_task(self.listen_server(), name=f"{self.agent_id}_client_listen_task")
         sep = "\n======================================================================================"
         optlog.info(f"[Client] connected to {self.host}:{self.port}"+sep, name=self.agent_id)
 
@@ -56,7 +56,7 @@ class PersistentClient:
                     continue
 
                 # listner should not block listening
-                asyncio.create_task(self.on_dispatch(msg))
+                asyncio.create_task(self.on_dispatch(msg), name=f"{self.agent_id}_client_on_dispatch_task")
 
         except (asyncio.CancelledError, ConnectionAbortedError, ConnectionResetError, OSError) as e: # client-cancelled situation (cancelld by the event loop in the client side)
             optlog.info(f"[Client] listen task cancelled {e}", name=self.agent_id)  # intentional

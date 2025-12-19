@@ -21,9 +21,6 @@ class DoubleUpStrategy(StrategyBase):
     SELL_BEP_RETURN_RATE = 0.002 
     BUY_BEP_RETURN_RATE = -0.004
 
-    ###_ study what happens to limit orders that is overtime... => overnight handling of all orders
-    ###_ handling of server order manager map is also necessary 
-
     async def on_update(self, update_event: UpdateEvent):
         if update_event != UpdateEvent.PRICE_UPDATE:
             optlog.debug(f"{self.code}-{update_event.name}", name=self.agent_id)
@@ -35,7 +32,7 @@ class DoubleUpStrategy(StrategyBase):
             q = self.INITIAL_BUY_QTY
             optlog.info(f"INITIAL BUY {q}", name=self.agent_id)
             sc = self.create_an_order(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, price=0, quantity=q)
-            await self.execute(sc)
+            await self.execute_rebind(sc)
             return
 
         # pending sell quantity 
@@ -44,7 +41,7 @@ class DoubleUpStrategy(StrategyBase):
             q = self.pm.holding_qty  # quantity to sell
             optlog.info(f"SELL ALLL {q}", name=self.agent_id) 
             sc = self.create_an_order(side=SIDE.SELL, ord_dvsn=ORD_DVSN.MARKET, price=0, quantity=q)
-            await self.execute(sc)
+            await self.execute_rebind(sc)
             return
 
         if self.pm.bep_return_rate is not None and self.pm.bep_return_rate <= self.BUY_BEP_RETURN_RATE:
@@ -52,6 +49,6 @@ class DoubleUpStrategy(StrategyBase):
             q = min(self.pm.holding_qty*self.DOUBLEUP_MULTIPLIER, self.MAX_PURCHASE_QTY)
             optlog.info(f"DOUBLE-UP BUY {q}", name=self.agent_id)
             sc = self.create_an_order(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, price=0, quantity=q)
-            await self.execute(sc)
+            await self.execute_rebind(sc)
             return
 

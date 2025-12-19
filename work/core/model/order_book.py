@@ -16,13 +16,13 @@ class OrderBook:
     code: str = ""
     trenv: KISEnv | None = None # initialized once agent is registered
 
-    # private order lists - should use setter/getter functions to calculate dashboard info real time
+    # order lists - should use setter/getter functions to calculate dashboard info real time
     _indexed_incompleted_orders: dict["order_no": str, Order | CancelOrder] = field(default_factory=dict)
     _indexed_prev_incompleted_orders: dict["order_no": str, Order | CancelOrder] = field(default_factory=dict) # only used when sync
     _indexed_completed_orders: dict["order_no": str, Order | CancelOrder] = field(default_factory=dict)
     # - below _pending_trns: copied from the server; and this is not agent specific; so it is possible not to emptied out eventually, which is acceptable
     _pending_trns_from_server_on_sync: dict["order_no": str, list[TransactionNotice]] = field(default_factory=dict)
-    _unhandled_trns: list[TransactionNotice] = field(default_factory=list)
+    _unhandled_trns: dict["order_no": str, list[TransactionNotice]] = field(default_factory=dict)
 
     # _lock is necessary because order submission and notice processing may happen concurrently
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
@@ -110,12 +110,20 @@ class OrderBook:
             # _pending_trns_from_server_on_sync value assigned only here
             self._pending_trns_from_server_on_sync = sync.pending_trns
 
-            unhandled = await self._parse_orders_and_update_stats()
+            for _, v in self._indexed_completed_orders.items():
+                if v.is_regular_order:
+                    self._record_increase(v, v.processed, v.fee_+v.tax_, v.amount)
+
+            for _, v in self._indexed_prev_incompleted_orders.items():
+                if v.is_regular_order:
+                    self._record_increase(v, v.processed, v.fee_+v.tax_, v.amount)
+
+            for _, v in self._indexed_incompleted_orders.items():
+                if v.is_regular_order:
+                    self._record_increase(v, v.processed, v.fee_+v.tax_, v.amount)
+                    self._pending_increase(v, v.quantity-v.processed)
             optlog.info(f"sync completed: {self}", name=self.agent_id)
 
-        for trn in unhandled: # if any
-            await self.process_tr_notice(trn)
-    
     def _check_if_start_from_empty(self):
         # checking representative ones
         if self._indexed_incompleted_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 1", name=self.agent_id) 
@@ -123,87 +131,46 @@ class OrderBook:
         if self.orderbook_holding_qty != 0: optlog.error(f"[OrderBook] key_stat is not zero - 1", name=self.agent_id)
         if self.total_cash_used != 0: optlog.error(f"[OrderBook] key_stat is not zero - 2", name=self.agent_id)
 
-    async def _parse_orders_and_update_stats(self):
-        for _, v in self._indexed_completed_orders.items():
-            self._stat_update(v, on_sync=True)
-
-        for _, v in self._indexed_prev_incompleted_orders.items():
-            self._stat_update(v, on_sync=True)
-
-        unhandled = [] 
-        for _, v in self._indexed_incompleted_orders.items():
-            unhandled = self._handle_order_dispatch(v) # to avoid deadlock
-            self._stat_update(v)
-        return unhandled
-
     # ----------------------------------------------------------------------------------
     # executed order portion stat update (체결된 사항에 대한 update)
     # ----------------------------------------------------------------------------------
-    # - prev_qty = order.processed 
-    # - prev_cost = order.fee_ + order.tax_ 
-    # - prev_amount = order.amount 
-    def _stat_update(self, updated_order: Order | CancelOrder, prev_qty=0, prev_cost=0, prev_amount=0, on_sync=False):
-        if not isinstance(updated_order, CancelOrder): 
-            delta_qty = updated_order.processed - prev_qty
-            if delta_qty == 0:
-                return # nothing to update 
-            if delta_qty < 0: 
-                optlog.error(f'[OrderBook] stat_update - delta quantity negative: {updated_order}', name=self.agent_id)
-                return
+    def _pending_increase(self, updated_order, delta_qty):
+        if delta_qty == 0: return
+        if updated_order.side == SIDE.BUY:
+            self.pending_buy_qty += delta_qty
+            if updated_order.ord_dvsn == ORD_DVSN.LIMIT:
+                self.pending_limit_buy_amt += updated_order.price*delta_qty
+            else:  # MARKET or MIDDLE
+                self.pending_market_buy_qty += delta_qty
+        else:  # sell
+            self.pending_sell_qty += delta_qty
 
-            delta_cost = (updated_order.fee_ + updated_order.tax_) - prev_cost
-            delta_amount = updated_order.amount - prev_amount
-
-            if updated_order.side == SIDE.BUY:
-                if not on_sync:
-                    self.pending_buy_qty += -delta_qty
-                    if updated_order.ord_dvsn == ORD_DVSN.LIMIT:
-                        self.pending_limit_buy_amt += -delta_amount
-                    else:  # MARKET or MIDDLE
-                        self.pending_market_buy_qty += -delta_qty
-                    
-                pq = self.orderbook_holding_qty # prev quantity, copy value
-                self.orderbook_holding_qty += delta_qty
-                self.orderbook_holding_avg_price = (pq*self.orderbook_holding_avg_price+delta_amount)/self.orderbook_holding_qty if self.orderbook_holding_qty !=0 else 0
-                self.cumul_buy_qty += delta_qty
-                self.net_cash_used += delta_amount
-
+    def _record_increase(self, updated_order: Order, delta_qty, delta_cost, delta_amount):
+        if delta_qty == 0: return
+        if updated_order.side == SIDE.BUY:
+            pq = self.orderbook_holding_qty # prev quantity, copy value
+            self.orderbook_holding_qty += delta_qty
+            self.orderbook_holding_avg_price = (pq*self.orderbook_holding_avg_price+delta_amount)/self.orderbook_holding_qty if self.orderbook_holding_qty !=0 else 0
+            self.cumul_buy_qty += delta_qty
+            self.net_cash_used += delta_amount
+        else:
+            if self.orderbook_holding_qty - delta_qty >= 0:
+                self.orderbook_holding_qty += -delta_qty
             else:
-                if not on_sync:
-                    self.pending_sell_qty += -delta_qty
+                self.initial_holding_sold_qty += -(self.orderbook_holding_qty - delta_qty)
+                self.orderbook_holding_qty = 0
+                self.orderbook_holding_avg_price = 0
 
-                if self.orderbook_holding_qty - delta_qty >= 0:
-                    self.orderbook_holding_qty += -delta_qty
-                else:
-                    self.initial_holding_sold_qty += -(self.orderbook_holding_qty - delta_qty)
-                    self.orderbook_holding_qty = 0
-                    self.orderbook_holding_avg_price = 0
-
-                self.cumul_sell_qty += delta_qty
-                self.net_cash_used += -delta_amount
-
-            self.cumul_cost += delta_cost
-            self.total_cash_used = self.net_cash_used + self.cumul_cost
-
-        else: # CancelOrder
-            if not on_sync:
-                cancelled_qty = updated_order.original_order.quantity-updated_order.original_order.processed
-                cancelled_amt = updated_order.original_order.price*cancelled_qty
-                if updated_order.original_order.side == SIDE.BUY:
-                    self.pending_buy_qty += -cancelled_qty
-                    if updated_order.original_order.ord_dvsn == ORD_DVSN.LIMIT:
-                        self.pending_limit_buy_amt += -cancelled_amt
-                    else:  # MARKET or MIDDLE
-                        self.pending_market_buy_qty += -cancelled_qty
-                else:
-                    self.pending_sell_qty += -cancelled_qty
-
+            self.cumul_sell_qty += delta_qty
+            self.net_cash_used += -delta_amount
+        self.cumul_cost += delta_cost
+        self.total_cash_used = self.net_cash_used + self.cumul_cost
+    
     # ----------------------------------------------------------------------------------
     # trn handling
     # ----------------------------------------------------------------------------------
     async def process_tr_notice(self, notice: TransactionNotice):
         # reroute notice to corresponding order
-        # - no race condition expected here
         async with self._lock:
             order = self._indexed_incompleted_orders.get(notice.oder_no)
             if order: 
@@ -211,58 +178,68 @@ class OrderBook:
                 prev_qty = order.processed 
                 prev_cost = order.fee_ + order.tax_ 
                 prev_amount = order.amount 
+                prev_accepted = order.accepted
 
                 # update order itself 
                 order.update(notice, self.trenv)
 
                 # update order_book stat
-                self._stat_update(updated_order=order, prev_qty=prev_qty, prev_cost=prev_cost, prev_amount=prev_amount)
+                delta_qty = order.processed - prev_qty
+                delta_cost = (order.fee_ + order.tax_) - prev_cost
+                delta_amount = order.amount - prev_amount
+                if delta_qty < 0: 
+                    optlog.error(f'[OrderBook] delta quantity negative: {order}', name=self.agent_id)
 
+                if order.is_regular_order:
+                    if not prev_accepted and order.accepted:
+                        self._pending_increase(order, order.quantity)
+
+                    self._record_increase(order, delta_qty, delta_cost, delta_amount)
+                    self._pending_increase(order, -delta_qty)
+                else: 
+                    if order.completed:
+                        self._pending_increase(order, -order.processed)
+
+                # order list update - move orders
                 if order.completed:
                     self._indexed_incompleted_orders.pop(order.order_no)
                     self._indexed_completed_orders[order.order_no] = order
 
-                if isinstance(order, CancelOrder):
-                    # move original_order 
-                    self._indexed_incompleted_orders.pop(order.original_order.order_no)
-                    self._indexed_completed_orders[order.original_order.order_no] = order.original_order
+                    if not order.is_regular_order: 
+                        original_order = self._indexed_incompleted_orders.get(order.o_order_order_no)
+                        if original_order is None: 
+                            optlog.error(f"[OrderBook] cance order update error {order}", name=self.agent_id)
+                            return
+
+                        original_order.quantity = original_order.quantity - order.processed
+                        if original_order.quantity < original_order.processed:
+                            optlog.error(f"[OrderBook] cancel quantity error {order}, {original_order}", name=self.agent_id)
+                            return 
+
+                        if original_order.quantity == original_order.processed:
+                            original_order.completed = True
+                            self._indexed_incompleted_orders.pop(order.o_order_order_no)
+                            self._indexed_completed_orders[original_order.order_no] = original_order
             else: 
-                # just in case race condition occurs
-                self._unhandled_trns.append(notice)
+                # in race case 
+                self._unhandled_trns.setdefault(notice.oder_no, []).append(notice)
 
     # ----------------------------------------------------------------------------------
     # order dispatch handling
     # ----------------------------------------------------------------------------------
     async def handle_order_dispatch(self, dispatched_order: Order | CancelOrder):
+        if not dispatched_order.submitted: 
+            return
+
         async with self._lock:
-            unhandled = self._handle_order_dispatch(dispatched_order)
-
-        for trn in unhandled:
-            await self.process_tr_notice(trn)
-        
-    def _handle_order_dispatch(self, dispatched_order: Order | CancelOrder):
-        # order successfully submitted to the API
-        if dispatched_order.submitted: # this has to be checking with dispatched_order
             self._indexed_incompleted_orders[dispatched_order.order_no] = dispatched_order
-
-            if not isinstance(dispatched_order, CancelOrder):
-                # pending order status update
-                if dispatched_order.side == SIDE.BUY:
-                    self.pending_buy_qty += dispatched_order.quantity
-                    if dispatched_order.ord_dvsn == ORD_DVSN.LIMIT:
-                        self.pending_limit_buy_amt += dispatched_order.quantity*dispatched_order.price
-                    else:  # MARKET or MIDDLE
-                        self.pending_market_buy_qty += dispatched_order.quantity
-                else:  # sell
-                    self.pending_sell_qty += dispatched_order.quantity
 
             # handle notices that are synced from the server
             sync_trns = self._pending_trns_from_server_on_sync.pop(dispatched_order.order_no, [])
+            unhandled_trns = self._unhandled_trns.pop(dispatched_order.order_no, [])
+            to_process = sync_trns + unhandled_trns
 
-            # processing unhandled trns here
-            # - empty the list, otherwise trns stay (still unmatched trns will be add back to the list)
-            # - unhandled will be processed outside of _lock (as process_tr_notice requires _lock)
-            unhandled = sync_trns + self._unhandled_trns.copy()
-            self._unhandled_trns.clear() # might be shared 
-            return unhandled
-        return []
+        # to_process will be processed outside of _lock to avoid deadlock
+        for trn in to_process:
+            await self.process_tr_notice(trn)
+        

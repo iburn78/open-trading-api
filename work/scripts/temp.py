@@ -11,7 +11,7 @@ trenv = ka.getTREnv()
 
 the_account = Account()
 async def ta():
-    task = asyncio.create_task(the_account.acc_load(trenv))
+    task = asyncio.create_task(the_account.acc_load(trenv), name="load_acc_task")
     await asyncio.gather(task)
 asyncio.run(ta())
 print(the_account)
