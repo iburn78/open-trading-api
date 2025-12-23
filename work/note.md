@@ -87,6 +87,10 @@ or more modern way (only for development situation)
 - Documentation
 - Performance profiling with cProfile(sync), yappi(async)
 
+### [medium topics]
+- to speed-up: use string serialization instead of pickle.dumps and json.dumps (as they do type checking encoding/decoding can be costly)
+- may relax await dispatch to tasks (however, need to check whether agent logic is solid)
+
 ### [AgentManager related]
 - make it run each agent only once: use local lock file method etc
 - manage agents (easy to see like EXCEL)

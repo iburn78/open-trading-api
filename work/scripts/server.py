@@ -73,7 +73,7 @@ async def async_on_result(ws, tr_id, result, data_info):
     elif get_tr(trenv, tr_id) in ('TransactionPrices_KRX',  'TransactionPrices_Total'): # 실시간 체결가
         # directly send to agents
         trp = TransactionPrices(trprices=result, trenv_env_dv=trenv.env_dv)
-        await dispatch(connected_agents.get_target_agents_by_trp(trp), trp)
+        await dispatch(connected_agents.get_target_agents_by_trp(trp), trp) # to agents that matches with the code
 
     # to add more tr_id ...
     else:
@@ -170,7 +170,7 @@ async def broadcast(shutdown_event: asyncio.Event):
             break
         except asyncio.TimeoutError:
             message = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
-            message += ' ping from the server --- '
+            message += ' ping from the server '
             await dispatch(connected_agents.get_all_agents(), message)
             optlog.info(get_status())
 

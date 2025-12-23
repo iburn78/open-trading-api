@@ -20,7 +20,7 @@ class Order:
     listed_market: str | None = None # KOSPI, KOSDAQ, etc 
 
     # auto gen
-    unique_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    unique_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     gen_time: str = field(default_factory=lambda: pd.Timestamp.now().strftime('%m%d%H%M%S.%f'))
 
     # to be filled by server upon submission

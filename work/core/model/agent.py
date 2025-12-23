@@ -180,7 +180,7 @@ class Agent:
         if self.client.is_connected:
             # fire and forget: Server will send back individual order updates via on_dispatch
             submit_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
-            submit_request.set_request_data(order_list) # submit as a list (a list required)
+            submit_request.set_request_data(order_list)
             sres: ServerResponse | None = await self.client.send_client_request(submit_request) 
             if isinstance(sres, ServerResponse):
                 return sres.success
@@ -246,7 +246,6 @@ class Agent:
 # this function is used in the server side, so the logging is also on the server side
 async def dispatch(to: AgentCard | list[AgentCard], message: object):
     if not to:
-        ###_ save and fire ...
         optlog.info(f"[Agent] no agents to dispatch: {message}")
         return
 
@@ -259,7 +258,12 @@ async def dispatch(to: AgentCard | list[AgentCard], message: object):
         try:
             agent.writer.write(msg_bytes)
             await agent.writer.drain()  # await ensures exceptions are caught here
+        ###_ should never happen
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as e:
             optlog.error(f"[Agent] agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed: {e}", name=agent.id)
         except Exception as e:
             optlog.error(f"[Agent] unexpected dispatch error: {e}", name=agent.id, exc_info=True)
+
+###_ Centralize Exception handling
+###_ Receipt 
+###_ Ensure even when Ctrl-C handle everything correctly

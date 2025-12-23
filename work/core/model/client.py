@@ -2,7 +2,7 @@ import pickle
 import asyncio
 from typing import Optional, Callable, Awaitable
 
-from ..common.interface import ClientRequest, ServerResponse
+from ..common.interface import ClientRequest, ServerResponse, OM_Dispatch, Dispatch_ACK
 from ..common.setup import HOST, PORT
 from ..common.optlog import optlog, log_raise
 
@@ -39,25 +39,28 @@ class PersistentClient:
     async def listen_server(self): # listen to server command responses, and dispatches
         try:
             while True:
-                # read length prefix
                 length_bytes = await self.reader.readexactly(4)
                 length = int.from_bytes(length_bytes, "big")
-
-                # read message
                 data = await self.reader.readexactly(length)
                 msg = pickle.loads(data)
-                # msg can be 1) ServerResponse, 2) TRN, 3) TRP, 4) Order or CancelOrder, 5) etc
-                
+
+                if isinstance(msg, OM_Dispatch):
+                    ack_bytes = pickle.dumps(Dispatch_ACK(id=msg.id))
+                    ack = len(ack_bytes).to_bytes(4, "big") + ack_bytes
+                    self.writer.write(ack)
+                    await self.writer.drain()
+                    msg = msg.data # continue to process to on_dispatch
+
                 # route to the correct pending client_request
-                if isinstance(msg, ServerResponse):
-                    if not msg.fire_forget:
-                        fut = self.pending_requests.pop(msg.request_id)
-                        fut.set_result(msg) 
+                elif isinstance(msg, ServerResponse):
+                    fut = self.pending_requests.pop(msg.request_id)
+                    fut.set_result(msg) 
                     continue
 
                 # listner should not block listening
                 asyncio.create_task(self.on_dispatch(msg), name=f"{self.agent_id}_client_on_dispatch_task")
 
+        ###_ fix
         except (asyncio.CancelledError, ConnectionAbortedError, ConnectionResetError, OSError) as e: # client-cancelled situation (cancelld by the event loop in the client side)
             optlog.info(f"[Client] listen task cancelled {e}", name=self.agent_id)  # intentional
             raise  # to propagate cancellation
@@ -71,6 +74,7 @@ class PersistentClient:
             log_raise(f"Error in listening: {e}", name=self.agent_id)
 
     async def send_client_request(self, client_request: ClientRequest):
+        ###_ should not happen ... not unreliable 
         if not self.is_connected:
             msg = f"[Client] client not connected: {client_request}"
             optlog.error(msg, name=self.agent_id)
@@ -79,24 +83,19 @@ class PersistentClient:
         req_bytes = pickle.dumps(client_request)
         msg = len(req_bytes).to_bytes(4, "big") + req_bytes
 
-        if not client_request.fire_forget: 
-            # create a future and store it for response matching
-            # future: a tool that makes a coroutine wait
-            # make sure when response should arrive after future creation
-            fut = asyncio.get_running_loop().create_future()
-            self.pending_requests[client_request.request_id] = fut
+        # create a future and store it for response matching
+        # future: a tool that makes a coroutine wait
+        # make sure when response should arrive after future creation
+        fut = asyncio.get_running_loop().create_future()
+        self.pending_requests[client_request.request_id] = fut
 
         # send request
         self.writer.write(msg)
         await self.writer.drain()
 
-        if client_request.fire_forget: 
-            # if no need to wait for return, then return None
-            return None
-        else: 
-            # wait for the specific response
-            response: ServerResponse = await fut  
-            return response
+        # wait for the specific response
+        response: ServerResponse = await fut  
+        return response
 
     # no need to check if already closed
     async def close(self):

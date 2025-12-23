@@ -108,3 +108,9 @@ def list_str(l):
     if isinstance(l, Iterable) and l:
         return "[" + ", ".join(str(x) for x in l) + "]"
     return "[]"
+
+# for dict[str, list] case
+def dict_key_number(l):
+    if isinstance(l, dict) and l:
+        return "[" + ", ".join(f"{x}: {len(y)}" for x, y in l.items()) + "]"
+    return "[]"

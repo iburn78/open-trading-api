@@ -9,8 +9,8 @@ import httpx
 
 from core.common.setup import data_dir, disk_save_period, order_manager_keep_days
 from core.common.optlog import optlog, log_raise
-from core.common.tools import merge_with_suffix_on_A, list_str
-from core.common.interface import Sync
+from core.common.tools import merge_with_suffix_on_A, list_str, dict_key_number
+from core.common.interface import Sync, OM_Dispatch, Dispatch_ACK
 from core.model.agent import AgentCard, dispatch
 from core.model.order import Order, CancelOrder
 from core.kis.ws_data import TransactionNotice
@@ -24,6 +24,7 @@ from app.comm.conn_agents import ConnectedAgents
 PENDING_TRNS = 'pending_trns'
 INCOMPLETED_ORDERS = 'incompleted_orders'
 COMPLETED_ORDERS = 'completed_orders'
+PENDING_DISPATCHES = 'pending_dispatches'
 
 @dataclass
 class OrderManager:
@@ -59,6 +60,11 @@ class OrderManager:
                 agent_id: {order_no: order, order_no: order}
                 ...
             }
+            pending_dispatches: {  # indexed
+                agent_id: {id: data, id: data, ...}
+                agent_id: {id: data, id: data, ...}
+                ...
+            }
         },
         code: {
             pending_trns: {
@@ -76,10 +82,14 @@ class OrderManager:
                 agent_id: {order_no: order, order_no: order}
                 ...
             }
+            pending_dispatches: {  # indexed
+                agent_id: {id: data, id: data, ...}
+                agent_id: {id: data, id: data, ...}
+                ...
+            }
         },
         ...
     }
-
     """
     # defaultdict(list) is useful when there is 1 to N relationship, e.g., multiple notices to one order
     # access to defaultdict would generate key inside with empty list - handle with care
@@ -88,13 +98,16 @@ class OrderManager:
 
     map: defaultdict = field(default_factory=lambda: defaultdict(
         lambda: defaultdict(
-            lambda: {PENDING_TRNS: defaultdict(list), INCOMPLETED_ORDERS: defaultdict(dict), COMPLETED_ORDERS: defaultdict(list)}
+            lambda: {PENDING_TRNS: defaultdict(list), 
+                    INCOMPLETED_ORDERS: defaultdict(dict), 
+                    COMPLETED_ORDERS: defaultdict(dict),
+                    PENDING_DISPATCHES: defaultdict(dict),
+                    }
         )
     ))
     load_days: int = order_manager_keep_days
 
-    # Each key gets its own asyncio.Lock automatically
-    # key = code
+    # Each key in dict (key = code) gets its own asyncio.Lock automatically
     _locks: dict[str, asyncio.Lock] = field(
         default_factory=lambda: defaultdict(lambda: asyncio.Lock())
     )
@@ -113,7 +126,7 @@ class OrderManager:
         res = f'[OrderManager] for {date_}, codes: ' + list_str(self.map[date_].keys()) +'\n'
         for code, code_map in self.map[date_].items():
             res += f'- {code}\n'
-            res += f'  {PENDING_TRNS}: ' + list_str(code_map[PENDING_TRNS].keys()) +'\n' ###_ keys + how many
+            res += f'  {PENDING_TRNS}: ' + dict_key_number(code_map[PENDING_TRNS])+'\n' 
             res += f'  {INCOMPLETED_ORDERS}: \n'
             for agent_id, orders_dict in code_map[INCOMPLETED_ORDERS].items():
                 res += f'  - {agent_id}: total {len(orders_dict)} orders\n'
@@ -123,6 +136,11 @@ class OrderManager:
             for agent_id, orders_dict in code_map[COMPLETED_ORDERS].items():
                 res += f'  - {agent_id}: total {len(orders_dict)} orders\n'
                 for k, o in orders_dict.items():
+                    res += f'    - {o}\n'
+            res += f'  {PENDING_DISPATCHES}: \n'
+            for agent_id, data_dict in code_map[PENDING_DISPATCHES].items():
+                res += f'  - {agent_id}: total {len(data_dict)} items\n'
+                for k, o in data_dict.items():
                     res += f'    - {o}\n'
         return res.strip()
 
@@ -166,9 +184,15 @@ class OrderManager:
         optlog.debug(f"[OrderManager] agent sync data sent", name=agent.id)
         return Sync(agent.id, pios, ios, cos, ptrns)
 
-    def agent_sync_completed_lock_release(self, agent: AgentCard):
+    async def agent_sync_completed_lock_release(self, agent: AgentCard):
         lock = self._locks[agent.code]
         if lock and lock.locked():
+            # handling of pending dispatches
+            code_map = self._get_code_map(agent.code)
+            pds = code_map[PENDING_DISPATCHES].pop(agent.id, {})
+            for _, d in pds:
+                await self.dispatch_handler(agent, d)
+
             lock.release()
             optlog.debug(f"[OrderManager] agent sync lock released for code {agent.code}", name=agent.id)
             return True
@@ -181,7 +205,7 @@ class OrderManager:
             date_ = date.today().isoformat()
         date_map = self.map.setdefault(date_, {})
         code_map = date_map.setdefault(code, {
-            PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}
+            PENDING_TRNS: {}, INCOMPLETED_ORDERS: {}, COMPLETED_ORDERS: {}, PENDING_DISPATCHES: {}
         })
         return code_map
 
@@ -208,7 +232,7 @@ class OrderManager:
                     code_map[INCOMPLETED_ORDERS].get(order.agent_id).pop(order.o_order_order_no)
                     code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[original_order.order_no] = original_order
 
-    async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order | CancelOrder], trenv, date_=None):
+    async def submit_orders_and_register(self, agent: AgentCard, orders: list[Order | CancelOrder], trenv):
         if any(o.submitted for o in orders):
             optlog.warning('[OrderManager] Orders should not be already submitted: no actions taken', name=agent.id)
             return False
@@ -220,17 +244,16 @@ class OrderManager:
                 # await asyncio.to_thread(order.submit, trenv) # non-async version
             except Exception as e:
                 optlog.error(f"[OrderManager] submission error {order.unique_id}: {e}", name=agent.id, exc_info=True)
-            # send back submission result (order status updated) to the agent right away
-            ###_ may change to task
-            ###_ then order may not arrive faster than notice like in server
-            await dispatch(agent, order)
 
-            if not order.submitted:
-                continue
-
-            # lock and register incompleted order
             async with self._locks[order.code]:
-                code_map = self._get_code_map(agent.code, date_)
+                # send back submission result (order status updated) to the agent right away
+                await self.dispatch_handler(agent, order)
+
+                if not order.submitted:
+                    continue
+
+                # register incompleted order
+                code_map = self._get_code_map(agent.code)
                 code_map[INCOMPLETED_ORDERS].setdefault(agent.id, {})[order.order_no] = order
 
                 # process pending notices
@@ -238,23 +261,20 @@ class OrderManager:
                 for notice in code_map[PENDING_TRNS].pop(order.order_no, []):
                     order.update(notice, trenv)
                     # send back notice to the agent right away
-                    # can assume agent is still connected (otherwise, dispatch will log error) right after the order.submit
-                    ###_ may change to task
-                    ###_ pickle and json dumps -> may change
-                    await dispatch(agent, notice) 
+                    await self.dispatch_handler(agent, notice) 
                 self._update_map(code_map, order)
 
             if i < l-1:
                 await asyncio.sleep(trenv.sleep)
         return True
 
-    async def process_tr_notice(self, notice: TransactionNotice, connected_agents: ConnectedAgents, trenv, date_=None):
+    async def process_tr_notice(self, notice: TransactionNotice, connected_agents: ConnectedAgents, trenv):
         # reroute notice to the corresponding order
         # notice content handling logic resides in Order | CancelOrder class
         # notice could arrive faster than order submit result - should not use order_no (race condition)
         # trn: order = N : 1 relationship
         async with self._locks[notice.code]:
-            code_map = self._get_code_map(notice.code, date_)
+            code_map = self._get_code_map(notice.code)
             order = None
             # find order by notice.order_no (which doesn't have agent id)
             for _, order_dict in code_map[INCOMPLETED_ORDERS].items(): 
@@ -265,9 +285,9 @@ class OrderManager:
                 order.update(notice, trenv)
                 self._update_map(code_map, order)
                 agent = connected_agents.get_agent_card_by_id(order.agent_id)
-                ###_ may fix .... to save and fire
+                ###_ need to fix (so that agent is guaranteed to exist (or clean-up))
                 if agent: # if agent is still connected
-                    await dispatch(agent, notice)
+                    await self.dispatch_handler(agent, notice)
             else:
                 # otherwise save it to pending_trns
                 code_map[PENDING_TRNS].setdefault(notice.oder_no, []).append(notice)
@@ -294,7 +314,6 @@ class OrderManager:
                             if (now_sec - self.sec(first_trn_time)) % 86400 >= max_age:  # wrapping around the midnight
                                 # don't break, but the error msg will repeat
                                 optlog.error(f'[OrderManager] pending TRNs EXPIRED - timeout {max_age} sec: order_no {order_no}')
-
 
     async def persist_to_disk(self, immediate=False):
         if immediate:
@@ -349,3 +368,17 @@ class OrderManager:
                 continue
             self.map[date_] = loaded
             optlog.info(f"[OrderManager] loaded history for {date_} ({fname})")
+
+    async def dispatch_handler(self, agent: AgentCard, data):
+        d = OM_Dispatch(data=data)
+        code_map = self._get_code_map(agent.code)
+        code_map[PENDING_DISPATCHES].setdefault(agent.id, {})[d.id] = data
+        await dispatch(agent, d)
+        
+    async def ack_received(self, agent: AgentCard, dispatch_ack: Dispatch_ACK):
+        async with self._locks[agent.code]:
+            code_map = self._get_code_map(agent.code)
+            code_map[PENDING_DISPATCHES].get(agent.id).pop(dispatch_ack.id)
+
+
+            

@@ -6,7 +6,7 @@ from .conn_agents import ConnectedAgents
 from .order_manager import OrderManager
 from core.common.optlog import optlog, LOG_INDENT
 from core.model.agent import AgentCard
-from core.common.interface import RequestCommand, ClientRequest, ServerResponse, Sync
+from core.common.interface import RequestCommand, ClientRequest, ServerResponse, Sync, Dispatch_ACK
 from core.kis.domestic_stock_functions_ws import ccnl_krx, ccnl_total
 from core.kis.api_tools import get_psbl_order
 
@@ -63,7 +63,7 @@ async def handle_sync_complete_notice(client_request: ClientRequest, writer, **s
     agent_card: AgentCard = connected_agents.get_agent_card_by_id(agent_id)
     order_manager: OrderManager = server_data_dict.get('order_manager')
 
-    success = order_manager.agent_sync_completed_lock_release(agent_card)
+    success = await order_manager.agent_sync_completed_lock_release(agent_card)
     # return with sync data
     if success:
         resp = ServerResponse(success, "sync-release completed")
@@ -110,46 +110,43 @@ COMMAND_HANDLERS = {
 
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, **server_data_dict):
     port = writer.get_extra_info("peername")[1] 
-    cid = port
+    cid = ''
     agent = None
+    order_manager: OrderManager = server_data_dict.get('order_manager')
+
     while True:
-        if agent is None:
+        if not agent:
             # agent assigned after register, so need to read
             agent = server_data_dict['connected_agents'].get_agent_card_by_port(port)
             if agent: cid = agent.id
 
-        # Read length + body
         length_bytes = await reader.read(4)
-        if not length_bytes: break
+        if not length_bytes: break ###_ client disconnected this point or what...
 
         length = int.from_bytes(length_bytes, "big")
         client_bytes = await reader.readexactly(length)
 
-        try:
-            client_request: ClientRequest = pickle.loads(client_bytes)
-            logmsg = f"[request received] {client_request}"
+        client_msg = pickle.loads(client_bytes)
 
-            rd = client_request.get_request_data()
-            if rd and isinstance(rd, list): 
-                logmsg += f"\n{LOG_INDENT}request data: list ({len(rd)} items)"
-                for o in rd: 
-                    logmsg += f"\n{LOG_INDENT}{o}"
-            elif rd:
-                logmsg += f"\n{LOG_INDENT}request data: {rd}"
-            optlog.info(logmsg, name=cid)
+        if isinstance(client_msg, Dispatch_ACK):
+            await order_manager.ack_received(agent, client_msg)
+            continue
 
-            handler = COMMAND_HANDLERS.get(client_request.command)
-            response: ServerResponse = await handler(client_request, writer, **server_data_dict)
-            response.set_attr(client_request)
+        client_request: ClientRequest = client_msg
+        logmsg = f"[request received] {client_request}"
 
-        except (pickle.UnpicklingError, EOFError, AttributeError,
-            ValueError, ImportError, IndexError) as e:
-            response = ServerResponse(success=False, status=f"client request load error {e}")
-            optlog.error(f"[HandleClient] {response}", name=cid, exc_info=True)
+        rd = client_request.get_request_data()
+        if rd and isinstance(rd, list): 
+            logmsg += f"\n{LOG_INDENT}request data: list ({len(rd)} items)"
+            for o in rd: 
+                logmsg += f"\n{LOG_INDENT}{o}"
+        elif rd:
+            logmsg += f"\n{LOG_INDENT}request data: {rd}"
+        optlog.info(logmsg, name=cid)
 
-        except Exception as e:
-            response = ServerResponse(success=False, status=f"invalid client request (or unknown error) {e}")
-            optlog.error(f"[HandleClient] {response}", name=cid, exc_info=True)
+        handler = COMMAND_HANDLERS.get(client_request.command)
+        response: ServerResponse = await handler(client_request, writer, **server_data_dict)
+        response.request_id = client_request.request_id
 
         # Send response back
         resp_bytes = pickle.dumps(response)

@@ -16,7 +16,7 @@ async def main(sw=None): # switch
         # A = Agent(id = 'A1', code = '000660', dp = 8001, strategy=NullStr())
         A = Agent(id = 'A5', code = '000660', dp = 8001, strategy=DoubleUpStrategy())
 
-        A.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2025-12-15')
+        A.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2025-12-21')
         task1 = asyncio.create_task(A.run(), name="str_run_task")  
 
         await asyncio.sleep(1000)
