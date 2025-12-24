@@ -31,7 +31,6 @@ class StrategyBase(ABC):
         # -----------------------------------------------------------------
 
         # Strategy - Agent communication channel (only used in StrategyBase and Agent - internal for both)
-        self._order_receipt_event: asyncio.Event = asyncio.Event()
         self._price_update_event: asyncio.Event = asyncio.Event()
         self._trn_receive_event: asyncio.Event = asyncio.Event()
 
@@ -46,13 +45,11 @@ class StrategyBase(ABC):
         while True:
             self._price_update_event.clear() # does not run on every price change
             # choose which to start fresh waiting 
-            if self.lazy_run:
+            if self.lazy_run: # if True, strategy does not run on every trn: only reacts to new trns
                 self._trn_receive_event.clear() 
-                self._order_receipt_event.clear() 
             tasks = [
                 asyncio.create_task(self._price_update_event.wait(), name=f"{self.agent_id}_pu_event_task"),
                 asyncio.create_task(self._trn_receive_event.wait(), name=f"{self.agent_id}_tr_event_task"),
-                asyncio.create_task(self._order_receipt_event.wait(), name=f"{self.agent_id}_or_event_task"),
             ]
 
             _, pending = await asyncio.wait(
@@ -71,10 +68,6 @@ class StrategyBase(ABC):
                     self._trn_receive_event.clear()
                     optlog.info(self.pm, name=self.agent_id)
                     await self.on_update_shell(UpdateEvent.TRN_RECEIVE)
-
-                if self._order_receipt_event.is_set():
-                    self._order_receipt_event.clear()
-                    await self.on_update_shell(UpdateEvent.ORDER_RECEIVE)
 
             except Exception:
                 optlog.critical("[Strategy] logic_run crashed", name=self.agent_id, exc_info=True)

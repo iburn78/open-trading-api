@@ -49,6 +49,8 @@ class Order:
     def __post_init__(self):
         if type(self.quantity) != int or type(self.price) != int:
             log_raise("submit with quantity and/or price as int ---", name=self.agent_id)
+        if self.quantity < 0 or self.price  < 0:
+            log_raise("negative quantity or price not allowed ---", name=self.agent_id)
         if self.side not in ("buy", "sell"):
             log_raise("side must be 'buy' or 'sell' ---", name=self.agent_id)
 

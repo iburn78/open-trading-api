@@ -75,18 +75,15 @@ class BeepFilter(logging.Filter):
         notice_beep(freq, dur, msg=False)
 
 def notice_beep(freq=400, dur=200, msg=True):
-    try:
-        if system == "Windows":
-            if msg: 
-                winsound.MessageBeep()
-            else:
-                winsound.Beep(freq, dur)
-        elif system == "Darwin":
-            os.system("say 'beep'")
-        else:  # Linux / Unix
-            print('\a')
-    except KeyboardInterrupt:
-        pass
+    if system == "Windows":
+        if msg: 
+            winsound.MessageBeep()
+        else:
+            winsound.Beep(freq, dur)
+    elif system == "Darwin":
+        os.system("say 'beep'")
+    else:  # Linux / Unix
+        print('\a')
 
 def set_logger(fname: str|None = None, flevel = F_LEVEL, slevel= S_LEVEL,
             max_bytes=MAX_BYTES, backup_count=BACKUP_COUNT) -> logging.Logger:
@@ -141,6 +138,7 @@ def set_logger(fname: str|None = None, flevel = F_LEVEL, slevel= S_LEVEL,
 
     return optlog
 
+###_ sometime, remove log_raise to make the server robust
 def log_raise(msg, logger=None, name=None):
     logger = logger or optlog # arg default value looped up only once in reading func def. when dynamically initiallizing, need to catch dynamically.
     if name:

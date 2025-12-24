@@ -99,7 +99,7 @@ class PerformanceMetric:
                 f"{LOG_INDENT}pending b (lmt a, mkt q) / s : {self.pending_buy_qty:,d} ({self.pending_limit_buy_amt:,d}, {self.pending_market_buy_qty:,d}) / {self.pending_sell_qty:,d}\n"
                 f"{LOG_INDENT}cumul buy / sell             : {self.cumul_buy_qty:>,d} / {self.cumul_sell_qty:>,d}\n"
                 f"{LOG_INDENT}----------------------------------------------------\n"
-                f"{LOG_INDENT}holding / init / ordbook avp : {self.avg_price:,.0f} / {self.init_avg_price:,.0f} / {self.orderbook_holding_avg_price:,.0f}\n"
+                f"{LOG_INDENT}price holding / init / ord_bk: {self.avg_price:,.0f} / {self.init_avg_price:,.0f} / {self.orderbook_holding_avg_price:,.0f}\n"
                 f"{LOG_INDENT}bep price                    : {self.bep_price:,.0f}\n"
                 f"{LOG_INDENT}----------------------------------------------------\n"
                 f"{LOG_INDENT}cash avail / init / on hold  : {self.cash_available:,d} / {self.init_cash_allocated:,d} / {self.cash_on_hold:,d}\n"
@@ -126,7 +126,7 @@ class PerformanceMetric:
         self._get_data_from_market_prices()
         self._calculate_stats_on_price_update()
         self.dashboard.enqueue(self)
-
+    
     def _get_data_from_orderbook(self):
         self.pending_buy_qty = self.order_book.pending_buy_qty
         self.pending_limit_buy_amt = self.order_book.pending_limit_buy_amt

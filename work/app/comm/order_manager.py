@@ -107,7 +107,7 @@ class OrderManager:
     ))
     load_days: int = order_manager_keep_days
 
-    # Each key in dict (key = code) gets its own asyncio.Lock automatically
+    # each key in dict (key=code) gets its own asyncio.Lock automatically
     _locks: dict[str, asyncio.Lock] = field(
         default_factory=lambda: defaultdict(lambda: asyncio.Lock())
     )
@@ -187,13 +187,18 @@ class OrderManager:
     async def agent_sync_completed_lock_release(self, agent: AgentCard):
         lock = self._locks[agent.code]
         if lock and lock.locked():
+            # to avoid deadlock with ack_received(), release first
+            lock.release()
+
             # handling of pending dispatches
             code_map = self._get_code_map(agent.code)
             pds = code_map[PENDING_DISPATCHES].pop(agent.id, {})
-            for _, d in pds:
-                await self.dispatch_handler(agent, d)
-
-            lock.release()
+            if pds:
+                agent.sync_completed_event.clear()
+                for d in pds.values():
+                    await self.dispatch_handler(agent, d)
+                await agent.sync_completed_event.wait()
+            agent.sync_completed = True
             optlog.debug(f"[OrderManager] agent sync lock released for code {agent.code}", name=agent.id)
             return True
         else:
@@ -239,14 +244,10 @@ class OrderManager:
         
         l = len(orders)
         for i, order in enumerate(orders):
-            try:
-                await order.submit(trenv, self._http)
-                # await asyncio.to_thread(order.submit, trenv) # non-async version
-            except Exception as e:
-                optlog.error(f"[OrderManager] submission error {order.unique_id}: {e}", name=agent.id, exc_info=True)
+            await order.submit(trenv, self._http)
 
             async with self._locks[order.code]:
-                # send back submission result (order status updated) to the agent right away
+                # send back the submission result (order with status updated) 
                 await self.dispatch_handler(agent, order)
 
                 if not order.submitted:
@@ -360,25 +361,24 @@ class OrderManager:
             if date_ < cutoff_date:
                 continue  # skip old files
             path = os.path.join(data_dir, fname)
-            try:
-                with open(path, "rb") as f:
-                    loaded = pickle.load(f)
-            except Exception as e:
-                optlog.error(f"[OrderManager] failed to load {fname}: {e}")
-                continue
-            self.map[date_] = loaded
+            with open(path, "rb") as f:
+                self.map[date_] = pickle.load(f)
             optlog.info(f"[OrderManager] loaded history for {date_} ({fname})")
 
     async def dispatch_handler(self, agent: AgentCard, data):
         d = OM_Dispatch(data=data)
         code_map = self._get_code_map(agent.code)
         code_map[PENDING_DISPATCHES].setdefault(agent.id, {})[d.id] = data
+
         await dispatch(agent, d)
         
     async def ack_received(self, agent: AgentCard, dispatch_ack: Dispatch_ACK):
         async with self._locks[agent.code]:
             code_map = self._get_code_map(agent.code)
-            code_map[PENDING_DISPATCHES].get(agent.id).pop(dispatch_ack.id)
-
-
-            
+            agent_map = code_map[PENDING_DISPATCHES].get(agent.id)
+            if not agent_map:
+                optlog.error(f"[OrderManager] stale ACK: {dispatch_ack}", name=agent.id)
+                return
+            agent_map.pop(dispatch_ack.id)
+            if not agent.sync_completed and not agent_map:
+                agent.sync_completed_event.set()

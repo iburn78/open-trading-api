@@ -27,7 +27,9 @@ class AgentCard: # an agent's business card (e.g., agents submit their business 
     dp: int | None
 
     client_port: str | None = None # assigned by the server/OS 
-    writer = None 
+    writer: object | None = None 
+    sync_completed: bool = False
+    sync_completed_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 @dataclass
 class Agent:
@@ -54,7 +56,7 @@ class Agent:
     initialized: bool = False
     agent_ready_to_run_strategy: bool = False
     agent_initial_price_set_up: asyncio.Event = field(default_factory=asyncio.Event) # wheather the first TNP is received (so that pm can be properly initialized)
-    sync_start_date: str | None = None # isoformat date ("yyyy-mm-dd")
+    sync_start_date: str | None = None # isoformat date ("yyyy-mm-dd") # should be assigned in initialize() 
 
     def __post_init__(self):
         self.listed_market = get_listed_market(self.code)
@@ -90,11 +92,12 @@ class Agent:
 
     def initialize(self, init_cash_allocated = 0, init_holding_qty = 0, 
                             init_avg_price = 0, sync_start_date = None):
+        if init_cash_allocated < 0 or init_holding_qty < 0 or init_avg_price < 0: 
+            optlog.error(f'any negative initialization not allowed - not initialized', name=self.id)
+            return
         self.pm.init_cash_allocated = init_cash_allocated
         self.pm.init_holding_qty = init_holding_qty
         self.pm.init_avg_price = init_avg_price
-        if self.sync_start_date is not None:
-            optlog.warning('sync start date should be assigned here', name=self.id)
         self.sync_start_date = sync_start_date # default to be today (if None: today)
         self.initialized = True
     
@@ -130,12 +133,6 @@ class Agent:
         self.order_book.trenv = self.trenv 
         self.pm.my_svr = self.trenv.my_svr
 
-        # [Subscription part]
-        subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD)
-        subs_request.set_request_data(self.card) 
-        subs_resp: ServerResponse = await self.client.send_client_request(subs_request)
-        optlog.info(f"[ServerResponse] {subs_resp}", name=self.id)
-
         # [Sync part - getting sync data]
         sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
         sync_request.set_request_data((self.id, self.sync_start_date))
@@ -143,6 +140,7 @@ class Agent:
         optlog.debug(f'[ServerResponse] {sync_resp}', name=self.id)
         sync: Sync = sync_resp.data_dict.get("sync_data") 
         await self.order_book.process_sync(sync)
+        self.pm.update()
 
         # [Sync part - releasing lock]
         release_request = ClientRequest(command=RequestCommand.SYNC_COMPLETE_NOTICE)
@@ -152,6 +150,16 @@ class Agent:
             optlog.debug(f'[ServerResponse] {release_resp}', name=self.id)
         else: 
             log_raise(f"lock release failed ---", name=self.id)
+        
+        # pending dispatches will be delivered here - async way
+        ###_ guarantee needed if pending_dispatchs has arrived or not
+        ###_ should be ensure if sync is completed
+
+        # [Subscription part]
+        subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD)
+        subs_request.set_request_data(self.card) 
+        subs_resp: ServerResponse = await self.client.send_client_request(subs_request)
+        optlog.info(f"[ServerResponse] {subs_resp}", name=self.id)
 
         # [Price initialization part]
         optlog.debug(f'[Agent] waiting for initial market price', name=self.id)
@@ -213,8 +221,7 @@ class Agent:
         # optlog.info(f"[Agent] dispatched order: no {order.order_no} uid {order.unique_id}", name=self.id) 
         await self.order_book.handle_order_dispatch(order)
         self.pm.update() 
-        self.strategy.handle_order_dispatch(order)
-        self.strategy._order_receipt_event.set() 
+        self.strategy.handle_order_dispatch(order) ###_ strategy has to save its future status too... 
 
     async def handle_prices(self, trp: TransactionPrices):
         self.market_prices.update_from_trp(trp)
