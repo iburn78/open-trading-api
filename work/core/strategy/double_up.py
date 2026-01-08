@@ -1,7 +1,6 @@
+from ..kis.ws_data import SIDE, MTYPE 
 from ..model.strategy_base import StrategyBase
 from ..model.strategy_util import UpdateEvent
-from ..common.optlog import optlog
-from ..kis.ws_data import SIDE, ORD_DVSN 
 
 class DoubleUpStrategy(StrategyBase):
     """
@@ -23,15 +22,15 @@ class DoubleUpStrategy(StrategyBase):
 
     async def on_update(self, update_event: UpdateEvent):
         if update_event != UpdateEvent.PRICE_UPDATE:
-            optlog.debug(f"{self.code}-{update_event.name}", name=self.agent_id)
+            self.logger.info(f"{self.code}-{update_event.name}", extra={"owner":self.agent_id})
 
         if self.pm.pending_buy_qty > 0 or self.pm.pending_sell_qty > 0: return
 
         if self.pm.holding_qty == 0:
             # buy once
             q = self.INITIAL_BUY_QTY
-            optlog.info(f"INITIAL BUY {q}", name=self.agent_id)
-            sc = self.create_an_order(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, price=0, quantity=q)
+            self.logger.info(f"INITIAL BUY {q}", extra={"owner":self.agent_id})
+            sc = self.create_an_order(side=SIDE.BUY, mtype=MTYPE.MARKET, price=0, quantity=q)
             await self.execute_rebind(sc)
             return
 
@@ -39,16 +38,16 @@ class DoubleUpStrategy(StrategyBase):
         if self.pm.bep_return_rate is not None and self.pm.bep_return_rate >= self.SELL_BEP_RETURN_RATE:
             # sell all
             q = self.pm.holding_qty  # quantity to sell
-            optlog.info(f"SELL ALLL {q}", name=self.agent_id) 
-            sc = self.create_an_order(side=SIDE.SELL, ord_dvsn=ORD_DVSN.MARKET, price=0, quantity=q)
+            self.logger.info(f"SELL ALLL {q}", extra={"owner":self.agent_id})
+            sc = self.create_an_order(side=SIDE.SELL, mtype=MTYPE.MARKET, price=0, quantity=q)
             await self.execute_rebind(sc)
             return
 
         if self.pm.bep_return_rate is not None and self.pm.bep_return_rate <= self.BUY_BEP_RETURN_RATE:
             # buy double up to max buy amount
             q = min(self.pm.holding_qty*self.DOUBLEUP_MULTIPLIER, self.MAX_PURCHASE_QTY)
-            optlog.info(f"DOUBLE-UP BUY {q}", name=self.agent_id)
-            sc = self.create_an_order(side=SIDE.BUY, ord_dvsn=ORD_DVSN.MARKET, price=0, quantity=q)
+            self.logger.info(f"DOUBLE-UP BUY {q}", extra={"owner":self.agent_id})
+            sc = self.create_an_order(side=SIDE.BUY, mtype=MTYPE.MARKET, price=0, quantity=q)
             await self.execute_rebind(sc)
             return
 

@@ -1,6 +1,6 @@
-from ..common.optlog import log_raise 
-from ..common.tools import excel_round
-from ..kis.ws_data import SIDE, EXCHANGE
+from ..base.settings import Service
+from ..base.tools import excel_round
+from ..kis.ws_data import SIDE, EXG
 
 # ----------------------------------------
 # Transaction cost calculation
@@ -66,29 +66,27 @@ class CostCalculator:
     }
 
     @classmethod
-    def get_fee_table(cls, account):
-        if account == "prod":  # 국내주식수수료 면제 (유관기관수수료만 부담)
+    def get_fee_table(cls, service: Service):
+        if service == Service.PROD:  # 국내주식수수료 면제 (유관기관수수료만 부담)
             return cls.MIN_FEE, cls.RD_rule['MIN_FEE'], cls.RD_rule['TAX']
-        elif account == "auto":
+        elif service == Service.AUTO:
             return cls.FEE, cls.RD_rule['FEE'], cls.RD_rule['TAX']
-        elif account == "vps":
+        elif service == Service.DEMO:
             return cls.DEMO_FEE, cls.RD_rule['FEE'], cls.RD_rule['TAX']
-        else:
-            log_raise("Check in cost calculation: possibly trenv issue ---")
 
     # 각각의 Order가 중간 체결 될때는 각 Fee 및 Tax를 float로 합산하고, 매 순간 Excel Rounding (int) 진행함
     # 완료되거나 중단될 경우, rounded 값 사용
     # 보수적 접근으로 실제 증권사 Logic을 정확히 알 수 없으므로 근사치임 (체결간 시간 간격등 추가 Rule이 있을 수 있음)
     @classmethod
-    def calculate(cls, side: SIDE, quantity, price, svr, listed_market=None, traded_exchange=None, maker_taker="taker"): 
+    def calculate(cls, side: SIDE, quantity, price, service, listed_market=None, traded_exchange=None, maker_taker="taker"): 
         # default to be conservative
         if listed_market is None:
             listed_market = 'KOSPI'
         if traded_exchange is None: 
-            traded_exchange = EXCHANGE.KRX
+            traded_exchange = EXG.KRX
 
-        fee_table, fee_rd_rule, tax_rd_rule = cls.get_fee_table(svr)
-        if traded_exchange == EXCHANGE.KRX:
+        fee_table, fee_rd_rule, tax_rd_rule = cls.get_fee_table(service)
+        if traded_exchange == EXG.KRX:
             fee = fee_table[traded_exchange.value]
         else:
             fee = fee_table[traded_exchange.value][maker_taker]
@@ -105,13 +103,12 @@ class CostCalculator:
 
     # 매각시 수익이 0 이 되는 total cost의 계산
     @classmethod
-    def bep_cost_calculate(cls, quantity, avg_price, svr, listed_market=None):
+    def bep_cost_calculate(cls, quantity, avg_price, service: Service): 
         # default to be conservative
-        traded_exchange = EXCHANGE.KRX 
-        if listed_market is None:
-            listed_market = 'KOSPI'
+        traded_exchange = EXG.KRX 
+        listed_market = 'KOSPI'
 
-        fee_table, fee_rd_rule, tax_rd_rule = cls.get_fee_table(svr)
+        fee_table, fee_rd_rule, tax_rd_rule = cls.get_fee_table(service)
         fee_percent = fee_table[traded_exchange.value]
         tax_percent = cls.TAX[listed_market]['TransactionTax'] + cls.TAX[listed_market]['RuralDevTax']
 

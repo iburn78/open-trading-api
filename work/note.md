@@ -11,12 +11,13 @@ independent modules
 - model: import common, kis 
 
 ### app
-intermediate applications to be used in scripts/
+intermediate applications to be used in \base
 - imports core
 
 ### scripts
 - run in the root dir (e.g., work/) as a module ```python -m scripts.xxx```
 - for unbuffered terminal output: ```python -u -m scripts.xxx```
+- vscode import path even showed as working, it may not actually work when running (depending on how you run it)
 
 or more modern way (only for development situation)
 - Define pyproject.toml in the project root (see example pyproject.toml file).
@@ -69,6 +70,17 @@ or more modern way (only for development situation)
     - pip install numpy -U --extra-index-url https://pypi.anaconda.org/intel/simple
 - caution: once an object is over the stream(reader/writer), no longer it is the same object
 
+### KeyboardInterrupt & asyncio cancellation model
+- asyncio.run() catches KeyboardInterrupt, cancels the main task, and later re-raises KI after cleanup.
+- Cancelling a task marks it cancelled immediately, but CancelledError is raised only when the coroutine next resumes at an await.
+- The deepest suspended coroutine frame inside the cancelled task is the first to receive CancelledError.
+- Cancellation is always delivered to the frame that would resume next (equivalent to raising CancelledError there).
+- Cleanup handlers should catch CancelledError, perform cleanup, and re-raise it.
+- Typical cleanup includes closing sockets, DB sessions, locks, streams, subscriptions, and releasing resources.
+- On Ctrl-C:
+    - the main task (and everything it awaits / TaskGroups) is cancelled first
+    - during event-loop shutdown, any remaining background tasks are cancelled
+- TaskGroup cancels all member tasks together and aggregates exceptions.
 
 ### Tips
 - Update windows terminal from old CMD to windows terminal and use this: winget install --id Microsoft.WindowsTerminal -e 
@@ -117,7 +129,7 @@ or more modern way (only for development situation)
 
 #### server/reconnect
 - when reconnect / check if really continuous / how it works now and how should it work
-- when load/save pkl, may print status to log
+- when load/save pkl, may leave status to log
 - make it multi day re-connection
 - need to make reset function of server status... etc 
 - three level reconnection: 1) kis_auth level (already in place, need to study/understand), 2) websocket_loop() level, 3) server level (entire off and on / should make data continuity seamless)
@@ -138,3 +150,11 @@ or more modern way (only for development situation)
 - SEC vs SEC preferred: check arbitrage opp.
 
 
+
+
+###_ separate what are tasks and what are awaits
+
+# Below define strategies
+# - Foreign follower
+# - Value / Volatility tracker
+# - Volume trigger strategy

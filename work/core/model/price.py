@@ -2,8 +2,7 @@ from dataclasses import dataclass
 from collections import deque
 from datetime import datetime, timedelta
 
-from ..common.tools import excel_round
-from ..common.optlog import optlog
+from ..base.tools import excel_round
 from ..kis.ws_data import TransactionPrices
 
 # market prices for a given code
@@ -31,7 +30,6 @@ class MarketPrices:
     safety_margin: float = 0.1 
 
     # internal control
-    _deque_warning_shown: bool = False
     _update_called: bool = False
 
     def __str__(self):
@@ -70,12 +68,8 @@ class MarketPrices:
             total -= old_val
         dq.append((tr_time, value))
         total += value
-        if not self._deque_warning_shown and len(dq) > self.maxlen*(1-self.safety_margin):
-            # this is one time warning, and once warning occurs, need to adjust settings:
-            optlog.warning(f"-----------------------------------------------------------")
-            optlog.warning(f"[MarketPrices-{self.code}] deque for {total_attr} length exceeds over {(1-self.safety_margin)*100}% of maxlen - need attention")
-            optlog.warning(f"-----------------------------------------------------------")
-            self._deque_warning_shown = True
+        if len(dq) > self.maxlen*(1-self.safety_margin):
+            raise RuntimeError(f"[MarketPrices] {self.code} deque for {total_attr} length exceeds over {(1-self.safety_margin)*100}% of maxlen") 
 
         setattr(self, total_attr, total)
 

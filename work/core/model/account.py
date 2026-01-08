@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
 
-from ..common.optlog import optlog
-from ..kis.domestic_stock_functions import inquire_balance
+from ..base.settings import Service
+from ..base.logger import LogSetup
+from ..kis.kis_connect import KIS_Connector
+from ..kis.kis_tools import KIS_Functions
 
 @dataclass
 class CashBalance:
@@ -20,7 +22,7 @@ class Holding: # Stock Holding / data is filled from the API server (e.g., actua
     name: str
     code: str
     quantity: int
-    amount: int # 수량*체결가
+    amount: int # 수량x체결가
 
     def __str__(self):
         return (
@@ -32,26 +34,22 @@ class Account:
     holdings: dict["code":str, Holding] = field(default_factory=dict)
     cash: CashBalance = None
 
+    def __post_init__(self):
+        self.logger = LogSetup().logger 
+        self.kc = KIS_Connector(Service.DEMO, self.logger, None)
+        self.kf = KIS_Functions(self.kc)
+
     def __str__(self):
         parts = [str(self.cash)] if self.cash else []
         parts.extend(str(h) for c, h in self.holdings.items())
         return "\n".join(parts)
 
-    async def acc_load(self, trenv):
-        ptf, acc = inquire_balance(
-            cano=trenv.my_acct,
-            env_dv=trenv.env_dv,
-            acnt_prdt_cd=trenv.my_prod,
-            afhr_flpr_yn="N",
-            inqr_dvsn="01",
-            unpr_dvsn="01",
-            fund_sttl_icld_yn="N",
-            fncg_amt_auto_rdpt_yn="N",
-            prcs_dvsn="00"
-        )
+    async def acc_load(self):
+        ptf, acc = await self.kf.inquire_balance()
 
         if ptf.empty or acc.empty:
-            optlog.error("[Account] Inquire balance failed - max_try reached")
+            # failed to load account
+            return
 
         # 예수금 update
         self.cash = self.cash or CashBalance()
@@ -80,3 +78,9 @@ class Account:
                 )
             new_holdings[code] = holding
         self.holdings = new_holdings
+
+import asyncio
+if __name__ == "__main__":
+    the_account = Account()
+    asyncio.run(the_account.acc_load())
+    print(the_account)

@@ -3,9 +3,8 @@ from dataclasses import dataclass
 from .order_book import OrderBook
 from .price import MarketPrices
 from .cost import CostCalculator
-from ..common.setup import TradePrinciples
-from ..common.optlog import LOG_INDENT
-from ..common.tools import excel_round
+from ..base.settings import TradeSettings, Service
+from ..base.tools import excel_round
 from ..model.dashboard import DashBoard
 
 @dataclass
@@ -15,12 +14,11 @@ class PerformanceMetric:
     # -------------------------------------------------------
     agent_id: str | None = None
     code: str | None = None
-    listed_market: str | None = None
+    service: Service | None = None
     order_book: OrderBook | None = None
     market_prices: MarketPrices | None = None
 
-    # - set after agent registration
-    my_svr: str | None = None
+    # set after agent registration
     dashboard: DashBoard | None = None
 
     # -------------------------------------------------------
@@ -92,23 +90,24 @@ class PerformanceMetric:
 
     def __str__(self):
         try: 
+            _indent = "    "
             text = (
                 f"[PM] dashboard ({self.code}): {self.current_price:>5,d}, agent {self.agent_id}\n"
-                f"{LOG_INDENT}----------------------------------------------------\n"
-                f"{LOG_INDENT}holding / init / orderbook   : {self.holding_qty:,d} / {self.init_holding_qty:,d} / {self.orderbook_holding_qty:,d}\n"
-                f"{LOG_INDENT}pending b (lmt a, mkt q) / s : {self.pending_buy_qty:,d} ({self.pending_limit_buy_amt:,d}, {self.pending_market_buy_qty:,d}) / {self.pending_sell_qty:,d}\n"
-                f"{LOG_INDENT}cumul buy / sell             : {self.cumul_buy_qty:>,d} / {self.cumul_sell_qty:>,d}\n"
-                f"{LOG_INDENT}----------------------------------------------------\n"
-                f"{LOG_INDENT}price holding / init / ord_bk: {self.avg_price:,.0f} / {self.init_avg_price:,.0f} / {self.orderbook_holding_avg_price:,.0f}\n"
-                f"{LOG_INDENT}bep price                    : {self.bep_price:,.0f}\n"
-                f"{LOG_INDENT}----------------------------------------------------\n"
-                f"{LOG_INDENT}cash avail / init / on hold  : {self.cash_available:,d} / {self.init_cash_allocated:,d} / {self.cash_on_hold:,d}\n"
-                f"{LOG_INDENT}cumul cost / total used      : {self.cumul_cost:,d} / {self.total_cash_used:,d}\n"
-                f"{LOG_INDENT}----------------------------------------------------\n"
-                f"{LOG_INDENT}return rate / bep return rate: {self.return_rate*100:.2f}% / {self.bep_return_rate*100:.2f}%\n"
-                f"{LOG_INDENT}cur value / init / gain      : {self.cur_value:,d} / {self.init_value:,d} / {self.unrealized_gain:,d}\n"
-                f"{LOG_INDENT}cap return rate              : {self.cap_return_rate*100:.2f}%\n"
-                f"{LOG_INDENT}----------------------------------------------------"
+                f"{_indent}----------------------------------------------------\n"
+                f"{_indent}holding / init / orderbook   : {self.holding_qty:,d} / {self.init_holding_qty:,d} / {self.orderbook_holding_qty:,d}\n"
+                f"{_indent}pending b (lmt a, mkt q) / s : {self.pending_buy_qty:,d} ({self.pending_limit_buy_amt:,d}, {self.pending_market_buy_qty:,d}) / {self.pending_sell_qty:,d}\n"
+                f"{_indent}cumul buy / sell             : {self.cumul_buy_qty:>,d} / {self.cumul_sell_qty:>,d}\n"
+                f"{_indent}----------------------------------------------------\n"
+                f"{_indent}price holding / init / ord_bk: {self.avg_price:,.0f} / {self.init_avg_price:,.0f} / {self.orderbook_holding_avg_price:,.0f}\n"
+                f"{_indent}bep price                    : {self.bep_price:,.0f}\n"
+                f"{_indent}----------------------------------------------------\n"
+                f"{_indent}cash avail / init / on hold  : {self.cash_available:,d} / {self.init_cash_allocated:,d} / {self.cash_on_hold:,d}\n"
+                f"{_indent}cumul cost / total used      : {self.cumul_cost:,d} / {self.total_cash_used:,d}\n"
+                f"{_indent}----------------------------------------------------\n"
+                f"{_indent}return rate / bep return rate: {self.return_rate*100:.2f}% / {self.bep_return_rate*100:.2f}%\n"
+                f"{_indent}cur value / init / gain      : {self.cur_value:,d} / {self.init_value:,d} / {self.unrealized_gain:,d}\n"
+                f"{_indent}cap return rate              : {self.cap_return_rate*100:.2f}%\n"
+                f"{_indent}----------------------------------------------------"
             )
         except:
             text = f"[PM] not initialized: ({self.code}), agent {self.agent_id}"
@@ -143,12 +142,12 @@ class PerformanceMetric:
         self.total_cash_used = self.order_book.total_cash_used
 
         # no current price related calc / ordering is important
-        self._pending_limit_order_amount = excel_round(self.pending_limit_buy_amt*(1+TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN))
+        self._pending_limit_order_amount = excel_round(self.pending_limit_buy_amt*(1+TradeSettings.LIMIT_ORDER_SAFETY_MARGIN))
         self.holding_qty = self.init_holding_qty - self.initial_holding_sold_qty + self.orderbook_holding_qty
         self.max_sell_qty = self.holding_qty - self.pending_sell_qty
 
         self.avg_price = ((self.init_holding_qty-self.initial_holding_sold_qty)*self.init_avg_price + self.orderbook_holding_qty*self.orderbook_holding_avg_price)/self.holding_qty if self.holding_qty > 0 else 0
-        _, self.bep_price = CostCalculator.bep_cost_calculate(self.holding_qty, self.avg_price, self.my_svr, self.listed_market)
+        _, self.bep_price = CostCalculator.bep_cost_calculate(self.holding_qty, self.avg_price, self.service)
 
         self.cash_balance = self.init_cash_allocated - self.total_cash_used
         self.init_value = self.init_cash_allocated + self.init_holding_qty*self.init_avg_price
@@ -159,7 +158,7 @@ class PerformanceMetric:
     # on price update / ordering is important
     def _calculate_stats_on_price_update(self):
         if self.pending_market_buy_qty > 0:
-            self._pending_market_order_amount = excel_round(self.pending_market_buy_qty*self.current_price*(1+TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)) # MARKET or MIDDLE
+            self._pending_market_order_amount = excel_round(self.pending_market_buy_qty*self.current_price*(1+TradeSettings.MARKET_ORDER_SAFETY_MARGIN)) # MARKET or MIDDLE
         else: 
             self._pending_market_order_amount = 0
 
@@ -176,9 +175,9 @@ class PerformanceMetric:
         self.cap_return_rate = self.unrealized_gain / self.init_value if self.init_value > 0 else 0 
 
     def get_max_market_buy_amt(self):
-        self.max_market_buy_amt = excel_round(self.cash_available*(1-TradePrinciples.MARKET_ORDER_SAFETY_MARGIN)) # MARKET or MIDDLE
+        self.max_market_buy_amt = excel_round(self.cash_available*(1-TradeSettings.MARKET_ORDER_SAFETY_MARGIN)) # MARKET or MIDDLE
         return self.max_market_buy_amt
 
     def get_max_limit_buy_amt(self):
-        self.max_limit_buy_amt = excel_round(self.cash_available*(1-TradePrinciples.LIMIT_ORDER_SAFETY_MARGIN))
+        self.max_limit_buy_amt = excel_round(self.cash_available*(1-TradeSettings.LIMIT_ORDER_SAFETY_MARGIN))
         return self.max_limit_buy_amt

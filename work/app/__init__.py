@@ -1,3 +1,3 @@
 """
-intermediate applications to be used in /scripts
+intermediate applications to be used in /base
 """

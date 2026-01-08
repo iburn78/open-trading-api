@@ -1,14 +1,11 @@
 import pickle
 import asyncio
-from typing import Optional, Callable, Awaitable
 
-from ..common.interface import ClientRequest, ServerResponse, OM_Dispatch, Dispatch_ACK
-from ..common.setup import HOST, PORT
-from ..common.optlog import optlog, log_raise
+from ..base.settings import HOST, SERVER_PORT
+from ..comm.comm_interface import ClientRequest, ServerResponse, OM_Dispatch, Dispatch_ACK
 
-# client remains connected
 class PersistentClient:
-    def __init__(self, host=HOST, port=PORT, on_dispatch: Optional[Callable[[object], Awaitable[None]]] = None): # rigorous type-hinting, meaning it must be an async function(coroutine)
+    def __init__(self, host=HOST, port=None, on_dispatch = None): 
         self.host = host
         self.port = port
         self.reader: asyncio.StreamReader | None = None
@@ -18,23 +15,23 @@ class PersistentClient:
         self.on_dispatch = on_dispatch  # callback for server messages
         self._closing = False
         self.agent_id = None
+        self.logger = None
 
     async def connect(self):
         if self.is_connected:
-            optlog.warning(f"[Client] already connected to {self.host}:{self.port}", name=self.agent_id)
+            self.logger.error(f"[PersistentClient] already connected to {self.host}:{self.port}", extra={"owner":self.agent_id})
             return
         try:
             self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
         except ConnectionRefusedError as e:
-            optlog.error(f"[Client] connection refused: {self.host}:{self.port} → {e}", name=self.agent_id)
-            return
+            self.logger.error(f"[PersistentClient] connection refused {self.host}:{self.port}: {e}", extra={"owner":self.agent_id}, exc_info=True)
+            raise
         except Exception as e:
-            optlog.error(f"[Client] unexpected error in connecting to {self.host}:{self.port}: {e}", name=self.agent_id, exc_info=True)
-            return
+            self.logger.error(f"[PersistentClient] unexpected error {self.host}:{self.port}: {e}", extra={"owner":self.agent_id}, exc_info=True)
+            raise
 
-        self.listen_task = asyncio.create_task(self.listen_server(), name=f"{self.agent_id}_client_listen_task")
-        sep = "\n======================================================================================"
-        optlog.info(f"[Client] connected to {self.host}:{self.port}"+sep, name=self.agent_id)
+        self.listen_task = asyncio.create_task(self.listen_server())
+        self.logger.info(f"[PersistentClient] connected to {self.host}:{self.port}", extra={"owner":self.agent_id})
 
     async def listen_server(self): # listen to server command responses, and dispatches
         try:
@@ -45,7 +42,7 @@ class PersistentClient:
                 msg = pickle.loads(data)
 
                 if isinstance(msg, OM_Dispatch):
-                    ack_bytes = pickle.dumps(Dispatch_ACK(id=msg.id))
+                    ack_bytes = pickle.dumps(Dispatch_ACK(id=msg.id, agent_id=self.agent_id))
                     ack = len(ack_bytes).to_bytes(4, "big") + ack_bytes
                     self.writer.write(ack)
                     await self.writer.drain()
@@ -58,26 +55,25 @@ class PersistentClient:
                     continue
 
                 # listner should not block listening
-                asyncio.create_task(self.on_dispatch(msg), name=f"{self.agent_id}_client_on_dispatch_task")
+                asyncio.create_task(self.on_dispatch(msg))
 
-        ###_ fix
-        except (asyncio.CancelledError, ConnectionAbortedError, ConnectionResetError, OSError) as e: # client-cancelled situation (cancelld by the event loop in the client side)
-            optlog.info(f"[Client] listen task cancelled {e}", name=self.agent_id)  # intentional
-            raise  # to propagate cancellation
-        except asyncio.IncompleteReadError:
+        except asyncio.CancelledError as e: 
+            self.logger.info(f"[PersistentClient] listen task cancelled {e}", extra={"owner":self.agent_id})  # intentional
+            raise  
+        except asyncio.IncompleteReadError as e:
             if self._closing:
                 pass
-            elif not self.listen_task.cancelled(): # if not keyboard-interrupt
-                optlog.warning("[Client] server closed connection", name=self.agent_id)  # actual EOF / disconnect
+            elif not self.listen_task.cancelled(): 
+                self.logger.error(f"[PersistentClient] server closed connection {e}", extra={"owner":self.agent_id}, exc_info=True)  # actual EOF / disconnect
         except Exception as e:
             # this is a local server-client communication: to be reliable
-            log_raise(f"Error in listening: {e}", name=self.agent_id)
+            self.logger.error(f"[PersistentClient] Error in listening: {e}", extra={"owner":self.agent_id}, exc_info=True)
 
     async def send_client_request(self, client_request: ClientRequest):
         ###_ should not happen ... not unreliable 
         if not self.is_connected:
-            msg = f"[Client] client not connected: {client_request}"
-            optlog.error(msg, name=self.agent_id)
+            msg = f"[PersistentClient] client not connected: {client_request}"
+            self.logger.error(msg, extra={"owner":self.agent_id})
             return ServerResponse(success=False, status=msg)  
 
         req_bytes = pickle.dumps(client_request)
@@ -103,14 +99,10 @@ class PersistentClient:
         if self.writer:
             self.writer.close()
             await self.writer.wait_closed()
-        if self.listen_task:
-            try:
-                self.listen_task.cancel()
-                await self.listen_task
-            except asyncio.CancelledError as e:
-                pass # expected so no need to log
-        sep = "\n======================================================================================"
-        optlog.info("[Client] server connection closed"+sep, name=self.agent_id)
+        if self.listen_task is not None and not self.listen_task.done():
+            self.listen_task.cancel()
+            await self.listen_task
+        self.logger.info("[PersistentClient] server connection closed", extra={"owner":self.agent_id})
     
     @property
     def is_connected(self) -> bool:

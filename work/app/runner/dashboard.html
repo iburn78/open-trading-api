@@ -74,7 +74,7 @@ function removePort(port) {
 }
 
 // -------- connect to dashboard manager (port 9000) --------
-const mgr = new WebSocket("ws://127.0.0.1:9000");
+const mgr = new WebSocket("ws://127.0.0.1:9020");
 
 mgr.onmessage = (event) => {
     let endpoints;
@@ -99,7 +99,7 @@ mgr.onmessage = (event) => {
     }
 };
 
-mgr.onopen = () => console.log("Connected to manager (9000)");
+mgr.onopen = () => console.log("Connected to manager (9020)");
 mgr.onerror = () => console.log("Manager error");
 mgr.onclose = () => console.log("Manager closed");
 </script>

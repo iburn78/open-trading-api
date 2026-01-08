@@ -4,10 +4,10 @@ import os, time
 import FinanceDataReader as fdr
 from collections.abc import Iterable
 
-from .setup import data_dir
+from .settings import DATA_DIR
 
 # ----------------------------------------
-# Float precision adjust
+# float precision adjust
 # ----------------------------------------
 def excel_round_vector(x: int | list[int], ndigits=0):  # excel like rounding / works for scaler and vector / positive and negative
     x = np.asarray(x)
@@ -20,9 +20,45 @@ def excel_round(x: float, ndigits=0):  # scaler
     return int(round(x + eps, ndigits))
 
 # ----------------------------------------
-# Get external data
+# type cast or none 
 # ----------------------------------------
-df_krx_path = os.path.join(data_dir,"df_krx.feather")
+CASTERS = {
+    "str": str,
+    "int": int,
+    "float": float,
+}
+
+NULL_STRINGS = {
+    "nan",
+    "null",
+    "none",
+    "na",
+}
+
+def is_nan(v):
+    return isinstance(v, float) and v != v   # real NaN
+
+def cast_or_none(casttype, val):
+    # None
+    if val is None:
+        return None
+
+    # Strings: "", whitespace, NULL-like tokens
+    if isinstance(val, str):
+        s = val.strip()
+        if not s or s.lower() in NULL_STRINGS:
+            return None
+
+    # float('nan')
+    if is_nan(val):
+        return None
+
+    return CASTERS[casttype](val)
+
+# ----------------------------------------
+# get external data
+# ----------------------------------------
+df_krx_path = os.path.join(DATA_DIR,"df_krx.feather")
 df_krx_refresh_time = 12*60*60
 
 def get_df_krx():

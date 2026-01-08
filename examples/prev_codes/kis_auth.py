@@ -20,8 +20,8 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 import httpx 
 
-from ..common.setup import smartSleep_, demoSleep_
-from ..common.optlog import optlog, ModuleLogger
+from ..base.settings import smartSleep_, demoSleep_
+from ..base.logger import optlog, ModuleLogger
 
 ### added ###
 import threading

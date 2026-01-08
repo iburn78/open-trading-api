@@ -1,11 +1,10 @@
 import asyncio
 from dataclasses import dataclass, field
+import logging
 
 from .order import Order, CancelOrder
-from ..common.optlog import optlog, log_raise, LOG_INDENT
-from ..common.interface import Sync
-from ..kis.kis_auth import KISEnv
-from ..kis.ws_data import ORD_DVSN, SIDE, TransactionNotice
+from ..kis.ws_data import MTYPE, SIDE, TransactionNotice
+from ..comm.comm_interface import Sync
 
 @dataclass
 class OrderBook: 
@@ -14,7 +13,7 @@ class OrderBook:
     """
     agent_id: str = ""
     code: str = ""
-    trenv: KISEnv | None = None # initialized once agent is registered
+    logger: logging.Logger = None
 
     # order lists - should use setter/getter functions to calculate dashboard info real time
     _indexed_incompleted_orders: dict["order_no": str, Order | CancelOrder] = field(default_factory=dict)
@@ -59,28 +58,29 @@ class OrderBook:
     def __str__(self):
         if not self._indexed_incompleted_orders and not self._indexed_completed_orders:
             return "[OrderBook] no records"
+        _indent = '    '
         return (
             f"[OrderBook] dashboard {(self.code)}, agent {self.agent_id}\n"
-            f"{LOG_INDENT}----------------------------------------------------\n"
-            f"{LOG_INDENT}OrderBook Holding Qty: {self.orderbook_holding_qty:>15,d}\n"
-            f"{LOG_INDENT}Pending Buy Qty      : {self.pending_buy_qty:>15,d}\n"
-            f"{LOG_INDENT}- Limit (Amount)     : {self.pending_limit_buy_amt :>15,d}\n"
-            f"{LOG_INDENT}- Market (Quantity)  : {self.pending_market_buy_qty :>15,d}\n"  # including Middle
-            f"{LOG_INDENT}Pending Sell Qty     : {self.pending_sell_qty:>15,d}\n"
-            f"{LOG_INDENT}Init Holding Sold Qty: {self.initial_holding_sold_qty:>15,d}\n"
-            f"{LOG_INDENT}----------------------------------------------------\n"
-            f"{LOG_INDENT}Cumulative Buy       : {self.cumul_buy_qty:>15,d}\n"
-            f"{LOG_INDENT}Cumulative Sell      : {self.cumul_sell_qty:>15,d}\n"
-            f"{LOG_INDENT}----------------------------------------------------\n"
-            f"{LOG_INDENT}Net Cash Used        : {self.net_cash_used:>15,d}\n"
-            f"{LOG_INDENT}Cumulative Cost      : {self.cumul_cost:>15,d}\n"
-            f"{LOG_INDENT}Total Cash Used      : {self.total_cash_used:>15,d}\n"
-            f"{LOG_INDENT}----------------------------------------------------\n"
-            f"{LOG_INDENT}OrderBook Holding AvP: {self.orderbook_holding_avg_price:>15,.0f}\n"
-            f"{LOG_INDENT}----------------------------------------------------"
+            f"{_indent}----------------------------------------------------\n"
+            f"{_indent}OrderBook Holding Qty: {self.orderbook_holding_qty:>15,d}\n"
+            f"{_indent}Pending Buy Qty      : {self.pending_buy_qty:>15,d}\n"
+            f"{_indent}- Limit (Amount)     : {self.pending_limit_buy_amt :>15,d}\n"
+            f"{_indent}- Market (Quantity)  : {self.pending_market_buy_qty :>15,d}\n"  # including Middle
+            f"{_indent}Pending Sell Qty     : {self.pending_sell_qty:>15,d}\n"
+            f"{_indent}Init Holding Sold Qty: {self.initial_holding_sold_qty:>15,d}\n"
+            f"{_indent}----------------------------------------------------\n"
+            f"{_indent}Cumulative Buy       : {self.cumul_buy_qty:>15,d}\n"
+            f"{_indent}Cumulative Sell      : {self.cumul_sell_qty:>15,d}\n"
+            f"{_indent}----------------------------------------------------\n"
+            f"{_indent}Net Cash Used        : {self.net_cash_used:>15,d}\n"
+            f"{_indent}Cumulative Cost      : {self.cumul_cost:>15,d}\n"
+            f"{_indent}Total Cash Used      : {self.total_cash_used:>15,d}\n"
+            f"{_indent}----------------------------------------------------\n"
+            f"{_indent}OrderBook Holding AvP: {self.orderbook_holding_avg_price:>15,.0f}\n"
+            f"{_indent}----------------------------------------------------"
         )
     def _section(self, title, indexed_orders: dict):
-        return f"{title} ({len(indexed_orders)} orders)\n" + "\n".join(f"{LOG_INDENT}{v}" for k, v in indexed_orders.items())
+        return f"{title} ({len(indexed_orders)} orders)\n" + "\n".join(f"    {v}" for k, v in indexed_orders.items())
 
     def get_listings_str(self, processing_only: bool=True):
         sections = []
@@ -97,7 +97,7 @@ class OrderBook:
     # ----------------------------------------------------------------------------------
     async def process_sync(self, sync: Sync):
         async with self._lock:
-            optlog.info(f"sync data received: {sync}", name=self.agent_id)
+            self.logger.info(f"[OrderBook] sync data received: {sync}", extra={"owner":self.agent_id})
             
             # sync has to be done when agent is initialized... 
             self._check_if_start_from_empty()
@@ -122,14 +122,14 @@ class OrderBook:
                 if v.is_regular_order:
                     self._record_increase(v, v.processed, v.fee_+v.tax_, v.amount)
                     self._pending_increase(v, v.quantity-v.processed)
-            optlog.info(f"sync completed: {self}", name=self.agent_id)
+            self.logger.info(f"[OrderBook] sync completed: {self}", extra={"owner":self.agent_id})
 
     def _check_if_start_from_empty(self):
         # checking representative ones
-        if self._indexed_incompleted_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 1", name=self.agent_id) 
-        if self._indexed_completed_orders: optlog.error(f"[OrderBook] parse_orders, initial state not empty - 2", name=self.agent_id) 
-        if self.orderbook_holding_qty != 0: optlog.error(f"[OrderBook] key_stat is not zero - 1", name=self.agent_id)
-        if self.total_cash_used != 0: optlog.error(f"[OrderBook] key_stat is not zero - 2", name=self.agent_id)
+        if self._indexed_incompleted_orders: self.logger.error(f"[OrderBook] parse_orders, initial state not empty - 1", extra={"owner":self.agent_id})
+        if self._indexed_completed_orders: self.logger.error(f"[OrderBook] parse_orders, initial state not empty - 2", extra={"owner":self.agent_id})
+        if self.orderbook_holding_qty != 0: self.logger.error(f"[OrderBook] key_stat is not zero - 1", extra={"owner":self.agent_id})
+        if self.total_cash_used != 0: self.logger.error(f"[OrderBook] key_stat is not zero - 2", extra={"owner":self.agent_id})
 
     # ----------------------------------------------------------------------------------
     # executed order portion stat update (체결된 사항에 대한 update)
@@ -138,7 +138,7 @@ class OrderBook:
         if delta_qty == 0: return
         if updated_order.side == SIDE.BUY:
             self.pending_buy_qty += delta_qty
-            if updated_order.ord_dvsn == ORD_DVSN.LIMIT:
+            if updated_order.mtype == MTYPE.LIMIT:
                 self.pending_limit_buy_amt += updated_order.price*delta_qty
             else:  # MARKET or MIDDLE
                 self.pending_market_buy_qty += delta_qty
@@ -172,7 +172,7 @@ class OrderBook:
     async def process_tr_notice(self, notice: TransactionNotice):
         # reroute notice to corresponding order
         async with self._lock:
-            order = self._indexed_incompleted_orders.get(notice.oder_no)
+            order = self._indexed_incompleted_orders.get(notice.order_no)
             if order: 
                 # store previous state
                 prev_qty = order.processed 
@@ -181,14 +181,14 @@ class OrderBook:
                 prev_accepted = order.accepted
 
                 # update order itself 
-                order.update(notice, self.trenv)
+                order.update(notice)
 
                 # update order_book stat
                 delta_qty = order.processed - prev_qty
                 delta_cost = (order.fee_ + order.tax_) - prev_cost
                 delta_amount = order.amount - prev_amount
                 if delta_qty < 0: 
-                    optlog.error(f'[OrderBook] delta quantity negative: {order}', name=self.agent_id)
+                    self.logger.error(f"[OrderBook] delta quantity negative: {order}", extra={"owner":self.agent_id})
 
                 if order.is_regular_order:
                     if not prev_accepted and order.accepted:
@@ -202,27 +202,27 @@ class OrderBook:
 
                 # order list update - move orders
                 if order.completed:
-                    self._indexed_incompleted_orders.pop(order.order_no)
+                    del self._indexed_incompleted_orders[order.order_no]
                     self._indexed_completed_orders[order.order_no] = order
 
                     if not order.is_regular_order: 
-                        original_order = self._indexed_incompleted_orders.get(order.o_order_order_no)
+                        original_order = self._indexed_incompleted_orders.get(order.original_order_no)
                         if original_order is None: 
-                            optlog.error(f"[OrderBook] cance order update error {order}", name=self.agent_id)
+                            self.logger.error(f"[OrderBook] cancel order update error {order}", extra={"owner":self.agent_id})
                             return
 
                         original_order.quantity = original_order.quantity - order.processed
                         if original_order.quantity < original_order.processed:
-                            optlog.error(f"[OrderBook] cancel quantity error {order}, {original_order}", name=self.agent_id)
+                            self.logger.error(f"[OrderBook] cancel quantity error {order}, {original_order}", extra={"owner":self.agent_id})
                             return 
 
                         if original_order.quantity == original_order.processed:
                             original_order.completed = True
-                            self._indexed_incompleted_orders.pop(order.o_order_order_no)
+                            del self._indexed_incompleted_orders[order.original_order_no]
                             self._indexed_completed_orders[original_order.order_no] = original_order
             else: 
                 # in race case 
-                self._unhandled_trns.setdefault(notice.oder_no, []).append(notice)
+                self._unhandled_trns.setdefault(notice.order_no, []).append(notice)
 
     # ----------------------------------------------------------------------------------
     # order dispatch handling

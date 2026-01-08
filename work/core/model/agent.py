@@ -1,6 +1,7 @@
-import asyncio
 from dataclasses import dataclass, field
+import asyncio
 import pickle
+import logging
 
 from .order import Order, CancelOrder
 from .client import PersistentClient
@@ -8,15 +9,17 @@ from .order_book import OrderBook
 from .price import MarketPrices
 from .perf_metric import PerformanceMetric
 from .strategy_base import StrategyBase
-from ..common.tools import get_listed_market, get_df_krx_price
-from ..common.interface import RequestCommand, ClientRequest, ServerResponse, Sync
-from ..common.optlog import optlog, log_raise, notice_beep
+from ..base.logger import notice_beep
+from ..base.settings import Service, SERVER_PORT
+from ..base.tools import get_df_krx_price
+from ..kis.ws_data import TransactionPrices, TransactionNotice, MTYPE
 from ..model.dashboard import DashBoard
-from ..kis.kis_auth import KISEnv
-from ..kis.ws_data import TransactionPrices, TransactionNotice, ORD_DVSN
+from ..comm.comm_interface import RequestCommand, ClientRequest, ServerResponse, Sync
 
+# an agent's business card (e.g., agents submit their business cards in registration)
+# all server operation on agent is done with AgentCard instance
 @dataclass
-class AgentCard: # an agent's business card (e.g., agents submit their business cards in registration)
+class AgentCard: 
     """
     Server managed info / may change per connection
     - e.g., server memos additional info to the agent's business card
@@ -24,26 +27,28 @@ class AgentCard: # an agent's business card (e.g., agents submit their business 
     """
     id: str
     code: str
-    dp: int | None
 
+    dp: int # dashboard port - from agent init
     client_port: str | None = None # assigned by the server/OS 
     writer: object | None = None 
     sync_completed: bool = False
     sync_completed_event: asyncio.Event = field(default_factory=asyncio.Event)
+    subscriptions: set = field(default_factory=set) # subscribed functions
 
 @dataclass
 class Agent:
     id: str  
     code: str
+    service: Service
     dp: int # dashboard port
+    logger: logging.Logger
 
-    listed_market: str | None = None # KOSPI, KOSDAQ etc 
-    dashboard: DashBoard = field(default_factory=DashBoard) # creation of dashboard and pushing messages 
+    # dashboard
+    dashboard: DashBoard = field(default_factory=DashBoard) 
 
     # for server communication
     card: AgentCard = field(default_factory=lambda: AgentCard(id="", code="", dp=None))
     client: PersistentClient = field(default_factory=PersistentClient)
-    trenv: KISEnv | None = None  # to be assigned later
     hardstop_event: asyncio.Event = field(default_factory=asyncio.Event) # to finish agent activity
 
     # data tracking and strategy
@@ -59,18 +64,20 @@ class Agent:
     sync_start_date: str | None = None # isoformat date ("yyyy-mm-dd") # should be assigned in initialize() 
 
     def __post_init__(self):
-        self.listed_market = get_listed_market(self.code)
-
         self.card.id = self.id
         self.card.code = self.code
         self.card.dp = self.dp
 
+        self.client.logger = self.logger
         self.client.agent_id = self.id
+        self.client.port = SERVER_PORT[self.service]
         self.client.on_dispatch = self.on_dispatch
 
-        self.dashboard.owner = self.id
+        self.dashboard.logger = self.logger
+        self.dashboard.owner_name = self.id
         self.dashboard.port = self.dp
 
+        self.order_book.logger = self.logger
         self.order_book.agent_id = self.id
         self.order_book.code = self.code
 
@@ -79,7 +86,7 @@ class Agent:
 
         self.pm.agent_id = self.id
         self.pm.code = self.code
-        self.pm.listed_market = self.listed_market
+        self.pm.service = self.service
         self.pm.order_book = self.order_book
         self.pm.market_prices = self.market_prices
         self.pm.dashboard = self.dashboard
@@ -87,13 +94,14 @@ class Agent:
 
         self.strategy.agent_id = self.id
         self.strategy.code = self.code
+        self.strategy.logger = self.logger
         self.strategy.pm = self.pm
         self.strategy.submit_order = self.submit_order
 
     def initialize(self, init_cash_allocated = 0, init_holding_qty = 0, 
                             init_avg_price = 0, sync_start_date = None):
         if init_cash_allocated < 0 or init_holding_qty < 0 or init_avg_price < 0: 
-            optlog.error(f'any negative initialization not allowed - not initialized', name=self.id)
+            self.logger.error(f"[Agent] negative initialization not allowed - not initialized", extra={"owner":self.id})
             return
         self.pm.init_cash_allocated = init_cash_allocated
         self.pm.init_holding_qty = init_holding_qty
@@ -101,7 +109,7 @@ class Agent:
         self.sync_start_date = sync_start_date # default to be today (if None: today)
         self.initialized = True
     
-    async def run(self, **kwargs):
+    async def run(self):
         """  
         Keeps the agent alive until stopped.
         agent's main loop 
@@ -111,7 +119,7 @@ class Agent:
         - orders can be made afterward
         """
         if not self.initialized: 
-            optlog.error(f'agent not initialized - agent run aborted', name = self.id)
+            self.logger.error(f"[Agent] agent not initialized - agent run aborted", extra={"owner":self.id})
             return 
 
         await self.client.connect()
@@ -123,61 +131,53 @@ class Agent:
         register_request = ClientRequest(command=RequestCommand.REGISTER_AGENT_CARD)
         register_request.set_request_data(self.card) 
         register_resp: ServerResponse = await self.client.send_client_request(register_request)
-        optlog.info(f"[ServerResponse] {register_resp}", name=self.id)
+        self.logger.info(f"[Agent] ServerResponse {register_resp}", extra={"owner":self.id})
         if not register_resp.success:
             await self.client.close()
             return 
-        self.trenv = register_resp.data_dict['trenv'] # trenv should be in data, otherwise let it raise here
-
-        # set order_book and pm trenv here 
-        self.order_book.trenv = self.trenv 
-        self.pm.my_svr = self.trenv.my_svr
 
         # [Sync part - getting sync data]
         sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
-        sync_request.set_request_data((self.id, self.sync_start_date))
+        sync_request.set_request_data(self.sync_start_date)
         sync_resp: ServerResponse = await self.client.send_client_request(sync_request)
-        optlog.debug(f'[ServerResponse] {sync_resp}', name=self.id)
+        self.logger.info(f"[Agent] ServerResponse {sync_resp}", extra={"owner":self.id})
         sync: Sync = sync_resp.data_dict.get("sync_data") 
         await self.order_book.process_sync(sync)
         self.pm.update()
 
         # [Sync part - releasing lock]
         release_request = ClientRequest(command=RequestCommand.SYNC_COMPLETE_NOTICE)
-        release_request.set_request_data(self.id)
         release_resp: ServerResponse = await self.client.send_client_request(release_request)
         if release_resp.success:
-            optlog.debug(f'[ServerResponse] {release_resp}', name=self.id)
+            self.logger.info(f"[Agent] ServerResponse {release_resp}", extra={"owner":self.id})
         else: 
-            log_raise(f"lock release failed ---", name=self.id)
+            self.logger.error(f"[Agent] ServerResponse lock release failed", extra={"owner":self.id})
         
         # pending dispatches will be delivered here - async way
         ###_ guarantee needed if pending_dispatchs has arrived or not
         ###_ should be ensure if sync is completed
 
         # [Subscription part]
-        subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP_BY_AGENT_CARD)
-        subs_request.set_request_data(self.card) 
-        subs_resp: ServerResponse = await self.client.send_client_request(subs_request)
-        optlog.info(f"[ServerResponse] {subs_resp}", name=self.id)
+        subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP)
+        res: ServerResponse = await self.client.send_client_request(subs_request)
+        self.logger.info(f"[Agent] ServerResponse {res}", extra={"owner":self.id})
 
         # [Price initialization part]
-        optlog.debug(f'[Agent] waiting for initial market price', name=self.id)
+        self.logger.info(f"[Agent] waiting for initial market price", extra={"owner":self.id})
         await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
         self.agent_ready_to_run_strategy = True
-        optlog.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", name=self.id)
+        self.logger.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", extra={"owner":self.id})
 
         # [Strategy enact part]
-        str_task = asyncio.create_task(self.strategy.logic_run(), name=f"{self.id}_str_task")
-
         try:
+            str_task = asyncio.create_task(self.strategy.logic_run())
             await self.hardstop_event.wait()
         except asyncio.CancelledError:
-            optlog.info(f"[Agent] agent {self.id} hardstopped.", name=self.id)
+            self.logger.info(f"[Agent] agent {self.id} cancelled.", extra={"owner":self.id}, exc_info=True)  ###_ exact info? here?
         finally:
-            if str_task is not None:
+            if str_task is not None and not str_task.done():
                 str_task.cancel()
-            await asyncio.gather(str_task, return_exceptions=True)
+                await asyncio.gather(str_task, return_exceptions=True)
             await self.dashboard.stop()
             await self.client.close()
 
@@ -189,11 +189,11 @@ class Agent:
             # fire and forget: Server will send back individual order updates via on_dispatch
             submit_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
             submit_request.set_request_data(order_list)
-            sres: ServerResponse | None = await self.client.send_client_request(submit_request) 
-            if isinstance(sres, ServerResponse):
-                return sres.success
+            res: ServerResponse | None = await self.client.send_client_request(submit_request) 
+            if isinstance(res, ServerResponse):
+                return res.success
         else:
-            optlog.error(f'[Agent] submit new order not processed - client not connected', name=self.id)
+            self.logger.error(f"[Agent] submit new order not processed - client not connected", extra={"owner":self.id})
         return False
 
     # ----------------------------------------------------------------------------------
@@ -211,17 +211,17 @@ class Agent:
         if handler:
             await handler(data)
         else:
-            optlog.error(f"[Agent] unhandled dispatch type: {type(data)}", name=self.id)
-            optlog.debug(data, name=self.id)
+            self.logger.error(f"[Agent] unhandled dispatch type: {type(data)}", extra={"owner":self.id})
+            self.logger.debug(data)
 
     async def handle_str(self, msg):
-        optlog.info(f"[Agent] dispatched message: {msg}", name=self.id)
+        self.logger.info(f"[Agent] dispatched message: {msg}", extra={"owner":self.id})
 
     async def handle_order(self, order: Order | CancelOrder):
-        # optlog.info(f"[Agent] dispatched order: no {order.order_no} uid {order.unique_id}", name=self.id) 
+        # self.logger.info(f"[Agent] dispatched order: no {order.order_no} uid {order.unique_id}", extra={"owner":self.id})
         await self.order_book.handle_order_dispatch(order)
         self.pm.update() 
-        self.strategy.handle_order_dispatch(order) ###_ strategy has to save its future status too... 
+        self.strategy.handle_order_dispatch(order)
 
     async def handle_prices(self, trp: TransactionPrices):
         self.market_prices.update_from_trp(trp)
@@ -230,7 +230,7 @@ class Agent:
         self.strategy._price_update_event.set()
         
     async def handle_notice(self, trn: TransactionNotice):
-        optlog.info(trn, name=self.id) # show trn before processing
+        self.logger.info(trn, extra={"owner":self.id}) # show trn before processing
         notice_beep() # make a sound upton trn
         await self.order_book.process_tr_notice(trn)
         self.pm.update()
@@ -239,38 +239,22 @@ class Agent:
     # ----------------------------------------------------------------------------------
     # tools
     # ----------------------------------------------------------------------------------
-    async def check_psbl_buy_amount(self, ord_dvsn: ORD_DVSN, price: int):
+    async def check_psbl_buy_amount(self, mtype: MTYPE, price: int):
         psbl_request = ClientRequest(command=RequestCommand.GET_PSBL_ORDER)
-        psbl_request.set_request_data((self.code, ord_dvsn, price)) 
-        psbl_resp: ServerResponse = await self.client.send_client_request(psbl_request)
-        (a_, q_, p_) = psbl_resp.data_dict['psbl_data'] 
+        psbl_request.set_request_data((self.code, mtype, price)) 
+        res: ServerResponse = await self.client.send_client_request(psbl_request)
+        (a_, q_, p_) = res.data_dict['psbl_data'] 
         # order quantity should be less than or equal to q_
         return q_
 
-# ----------------------------------------------------------------------------------
-# server tools
-# ----------------------------------------------------------------------------------
-# this function is used in the server side, so the logging is also on the server side
-async def dispatch(to: AgentCard | list[AgentCard], message: object):
-    if not to:
-        optlog.info(f"[Agent] no agents to dispatch: {message}")
-        return
-
-    if isinstance(to, AgentCard):
-        to = [to]
-
+async def dispatch(to: AgentCard | list[AgentCard], message):
+    if not to: return
+    if isinstance(to, AgentCard): to = [to]
     data = pickle.dumps(message)
     msg_bytes = len(data).to_bytes(4, 'big') + data
     for agent in to:
         try:
             agent.writer.write(msg_bytes)
-            await agent.writer.drain()  # await ensures exceptions are caught here
-        ###_ should never happen
-        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as e:
-            optlog.error(f"[Agent] agent {agent.id} (port {agent.client_port}) disconnected - dispatch msg failed: {e}", name=agent.id)
-        except Exception as e:
-            optlog.error(f"[Agent] unexpected dispatch error: {e}", name=agent.id, exc_info=True)
-
-###_ Centralize Exception handling
-###_ Receipt 
-###_ Ensure even when Ctrl-C handle everything correctly
+            await agent.writer.drain() 
+        except Exception:
+            pass 

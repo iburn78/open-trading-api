@@ -2,15 +2,14 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 import uuid
 
-from .tools import dict_key_number
-from ..kis.kis_auth import KISEnv
+from ..base.tools import dict_key_number
 
 class RequestCommand(Enum):
     SUBMIT_ORDERS = auto()
     REGISTER_AGENT_CARD = auto()
     SYNC_ORDER_HISTORY = auto()
     SYNC_COMPLETE_NOTICE = auto()
-    SUBSCRIBE_TRP_BY_AGENT_CARD = auto()
+    SUBSCRIBE_TRP = auto()
     GET_PSBL_ORDER = auto()
 
 @dataclass
@@ -22,7 +21,7 @@ class ClientRequest:
     def __str__(self):
         return self.command.name
 
-    def set_request_data(self, request_data: object):
+    def set_request_data(self, request_data=None):
         self.data_dict['request_data'] = request_data
 
     def get_request_data(self):
@@ -32,7 +31,7 @@ class ClientRequest:
 class ServerResponse: # acknowledgement of client_request
     success: bool
     status: str
-    data_dict: object = field(default_factory=dict)
+    data_dict: dict = field(default_factory=dict)
     request_id: str | None = None
 
     def __str__(self):
@@ -43,12 +42,14 @@ class ServerResponse: # acknowledgement of client_request
 
 @dataclass
 class OM_Dispatch:
+    data: object 
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    data: object | None = None
 
+# on every OM_Dispatch, client sends Dispatch_ACK
 @dataclass
 class Dispatch_ACK:
     id: str 
+    agent_id: str
 
 @dataclass
 class Sync:
@@ -66,7 +67,6 @@ class Sync:
 
     # today
     pending_trns: dict | None = None
-    trenv: KISEnv | None = None
 
     def __str__(self):
         res = ''
