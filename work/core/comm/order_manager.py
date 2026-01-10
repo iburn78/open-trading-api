@@ -191,10 +191,10 @@ class OrderManager:
                     await self.dispatch_handler(agent, d)
                 await agent.sync_completed_event.wait()
             agent.sync_completed = True
-            self.logger.info(f"[OrderManager] agent sync lock released for code {agent.code}", extra={"owner":agent.id})
+            self.logger.info(f"[OrderManager] agent sync completed", extra={"owner":agent.id})
             return True
         else:
-            self.logger.error(f"[OrderManager] agent sync lock released FAILED for code {agent.code}", extra={"owner":agent.id})
+            self.logger.error(f"[OrderManager] agent sync lock released FAILED: code {agent.code}", extra={"owner":agent.id})
             return False
 
     def _get_code_map(self, code, date_=None):
@@ -232,7 +232,7 @@ class OrderManager:
     async def submit_orders_and_register(self, orders: list[Order | CancelOrder]):
         agent = self.connected_agents.get_agent_by_id(orders[0].agent_id)
         if any(o.submitted for o in orders):
-            self.logger.error(f"[OrderManager] orders already submitted: no actions taken", extra={'owner': agent.id})
+            self.logger.error(f"[OrderManager] orders already submitted: no actions taken", extra={"owner": agent.id})
             return False
         
         for order in orders:
@@ -390,7 +390,7 @@ class OrderManager:
             code_map = self._get_code_map(agent.code)
             agent_map = code_map[PENDING_DISPATCHES].get(agent.id)
             if not agent_map:
-                self.logger.error(f"[OrderManager] stale ACK: {dispatch_ack}", extra={'owner': agent.id})
+                self.logger.error(f"[OrderManager] stale ACK: {dispatch_ack}", extra={"owner": agent.id})
                 return
             del agent_map[dispatch_ack.id]
             if not agent.sync_completed and not agent_map:

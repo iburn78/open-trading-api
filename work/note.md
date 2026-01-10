@@ -213,3 +213,16 @@ or more modern way (only for development situation)
    - Tasks created outside TG are **not managed**.
    - Must be explicitly tracked or safely fire-and-forget.
    - TG does **not** act as an umbrella for outside tasks.
+
+
+TaskGroup does not shield CancelledError
+
+It defers propagation
+
+Cleanup after async with is not guaranteed
+
+try/finally is still mandatory
+
+###_ clarify what ports are used and what
+###_ dashboard manager / dashboard structure / understand dashboard logic
+###_ note reorganize

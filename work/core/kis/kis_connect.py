@@ -230,6 +230,7 @@ class KIS_Connector:
         parts = []
         parts.append("SysMsg:OK" if rsp.isOk else "SysMsg:Not_OK")
         parts.append(f"tr_id:{rsp.tr_id}")
+        parts.append(f"tr_key:{rsp.tr_key}")
         parts.append(rsp.tr_msg)
         return ', '.join(parts)
 

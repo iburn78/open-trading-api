@@ -27,7 +27,7 @@ class SubscriptionManager:
                 "[SubsManager]"
             ]
             for f, d in self.subs_map.items():
-                parts.append(f'{f.__name__}: {d}')
+                parts.append(f'- {f.__name__}: {d}')
             return '\n'.join(parts)
         else: 
             return '[SubsManager] no agent-specific subscriptions'
@@ -85,4 +85,4 @@ class SubscriptionManager:
         if not func_map:
             del self.subs_map[func]
 
-        return f"Removed {agent.id} from {func.__name__} ({agent.code})"
+        return f"[SubsManager] removed {agent.id} from {func.__name__} ({agent.code})"

@@ -11,4 +11,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(server.run())
     except KeyboardInterrupt: 
-        logger.info("[Server] stopped by user (Ctrl+C)")
+        logger.info("[Server] stopped by user (Ctrl+C)\n\n")

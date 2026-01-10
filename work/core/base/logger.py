@@ -58,7 +58,7 @@ class BriefFormatter(logging.Formatter):
         'CRITICAL': 'CRITICAL'
     }
 
-    # use extra={'owner': 'to_express_shortname'}
+    # use extra={"owner": 'to_express_shortname'}
     def format(self, record: logging.LogRecord):
         record.shortlevel = self.LEVEL_MAP.get(record.levelname, '[ ]')
         record.owner = getattr(record, "owner", "")

@@ -15,7 +15,6 @@ async def agent_runner(logger):
         tg.create_task(A.run())
 
     await asyncio.sleep(1000)
-
     A.hardstop_event.set()
 
 if __name__ == "__main__":
@@ -24,4 +23,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(agent_runner(logger))
     except KeyboardInterrupt:
-        logger.info("[AgentRunner] stopped by user (Ctrl+C)")
+        logger.info("[AgentRunner] stopped by user (Ctrl+C)\n\n")

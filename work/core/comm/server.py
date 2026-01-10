@@ -46,7 +46,7 @@ class Server:
     
     def get_status(self): 
         text = (
-            f"[Server-{self.service}] dashboard\n"
+            f"[Server] {self.service} - dashboard\n"
             f"----------------------------------------------------\n"
             f"{self.connected_agents}\n"
             f"{self.subs_manager}\n"
@@ -105,4 +105,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(server.run())
     except KeyboardInterrupt: # to suppress reraised KI
-        logger.info("[Server] stopped by user (Ctrl+C)")
+        logger.info("[Server] stopped by user (Ctrl+C)\n\n")

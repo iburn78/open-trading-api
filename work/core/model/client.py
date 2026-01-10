@@ -25,17 +25,35 @@ class PersistentClient:
         """Connect and start the listener within the caller's TG."""
         if self.is_connected:
             return
-        self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
+        try: 
+            self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
+        except ConnectionRefusedError as e:
+            self.logger.error(f"[Client] connection failed: {e}", extra={"owner": self.agent_id})
+            return
         self.logger.info(f"[Client] connected to {self.host}:{self.port}", extra={"owner": self.agent_id})
 
-        # listener + dispatch + requests live inside this TG
-        async with asyncio.TaskGroup() as tg:
-            self._tg = tg
-            self.connected.set()
-            await self.listen_server()  # never returns until cancelled
+        try:
+            # listener + dispatch + requests live inside this TG
+            async with asyncio.TaskGroup() as tg:
+                self._tg = tg
+                self.connected.set()
+                await self.listen_server()  # never returns until cancelled
+        finally:
+            self._tg = None
+            self.connected.clear()
 
-        self._tg = None
-        self.connected.clear()
+            # Cancelling futures is necessary because pending / unfulfilled request
+            # state must be handled at a higher (protocol/application) layer.
+            # The client object is transport-only and must not own request truth.
+            for fut in self.pending_requests.values():
+                if not fut.done():
+                    fut.cancel()
+            self.pending_requests.clear()
+
+            if self.writer:
+                self.writer.close()
+                await self.writer.wait_closed()
+            self.logger.info("[Client] server connection closed", extra={"owner": self.agent_id})
 
     async def listen_server(self):
         """Main listener for server messages."""
@@ -61,18 +79,22 @@ class PersistentClient:
                     msg = msg.data 
 
                 # dispatch via TG
-                if self._tg is not None:
-                    self._tg.create_task(self.on_dispatch(msg))
+                tg = self._tg
+                if tg is not None:
+                    tg.create_task(self.on_dispatch(msg))
 
         except asyncio.IncompleteReadError:
-            self.logger.error("[Client] server closed connection", extra={"owner": self.agent_id})
+            self.logger.warning("[Client] server closed connection", extra={"owner": self.agent_id})
+
         except Exception as e:
             self.logger.error(f"[Client] unexpected error in listen_server: {e}", extra={"owner": self.agent_id}, exc_info=True)
 
-    async def send_client_request(self, client_request: ClientRequest, timeout: float = None) -> ServerResponse:
+    async def send_client_request(self, client_request: ClientRequest, timeout: float = None) -> ServerResponse | None:
         """Send a request; short-lived task under the same TG."""
-        if not self.is_connected or not self.connected.is_set():
-            raise RuntimeError("Client not connected: no active request TaskGroup")
+        tg = self._tg # copying object reference as connect() might assign self._tg == None
+        if not self.is_connected or tg is None:
+            self.logger.error(f"[Client] not connected", extra={"owner": self.agent_id}, exc_info=True)
+            return None
 
         async def _send_and_wait():
             fut = asyncio.get_running_loop().create_future()
@@ -90,20 +112,9 @@ class PersistentClient:
             finally:
                 self.pending_requests.pop(client_request.request_id, None)
 
-        return await self._tg.create_task(_send_and_wait())
+        return await tg.create_task(_send_and_wait())
 
-    async def close_writer(self):
-        """Close connection; TG tasks are cancelled automatically if parent TG is cancelled."""
-        if self.writer:
-            self.writer.close()
-            await self.writer.wait_closed()
-        self.logger.info("[Client] server connection closed", extra={"owner": self.agent_id})
 
     @property
     def is_connected(self) -> bool:
-        """Check if client is connected and listener is active."""
-        return (
-            self.writer is not None
-            and not self.writer.is_closing()
-            and self._tg is not None
-        )
+        return self.connected.is_set()

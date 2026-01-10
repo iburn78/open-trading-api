@@ -76,7 +76,7 @@ class Sync:
             res += f't-inc {v}\n'
         for k, v in (self.completed_orders or {}).items():
             res += f'comp  {v}\n'
-        res += dict_key_number(self.pending_trns or {})
+        res += dict_key_number(self.pending_trns) if self.pending_trns else ''
         
         if res: res = '\n'+res 
         else: res = "sync data empty"

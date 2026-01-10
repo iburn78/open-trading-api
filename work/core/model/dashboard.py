@@ -25,7 +25,7 @@ class DashBoard:
 
     async def _start_server(self):
         self._server = await websockets.serve(self._handler, self.host, self.port)
-        self.logger.info(f"[DashBoard] websocket broadcasting running on ws://{self.host}:{self.port}", extra={'owner': self.owner_name})
+        self.logger.info(f"[DashBoard] websocket broadcasting running on ws://{self.host}:{self.port}", extra={"owner": self.owner_name})
 
         try:
             await asyncio.Future()

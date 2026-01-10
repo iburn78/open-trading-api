@@ -27,13 +27,16 @@ class AgentCard:
     """
     id: str
     code: str
-
     dp: int # dashboard port - from agent init
+
     client_port: str | None = None # assigned by the server/OS 
     writer: object | None = None 
     sync_completed: bool = False
     sync_completed_event: asyncio.Event = field(default_factory=asyncio.Event)
     subscriptions: set = field(default_factory=set) # subscribed functions
+
+    def __str__(self):
+        return f'agent {self.id}, code {self.code}, dp {self.dp}, client port {self.client_port}'
 
 @dataclass
 class Agent:
@@ -123,54 +126,69 @@ class Agent:
             return 
         self.logger.info(f"[Agent] start running =============================================", extra={"owner":self.id})
 
-        async with asyncio.TaskGroup() as tg:
-            # [DashBoard enact part]
-            tg.create_task(self.client.connect())
-            await self.client.connected.wait()
-            tg.create_task(self.dashboard.run())
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tasks = []
+                # [DashBoard enact part]
+                tasks.append(tg.create_task(self.client.connect()))
+                await self.client.connected.wait()
+                tasks.append(tg.create_task(self.dashboard.run()))
 
-            # [Registration part]
-            register_request = ClientRequest(command=RequestCommand.REGISTER_AGENT_CARD)
-            register_request.set_request_data(self.card) 
-            register_resp: ServerResponse = await self.client.send_client_request(register_request)
-            self.logger.info(f"[Agent] ServerResponse {register_resp}", extra={"owner":self.id})
-            if not register_resp.success:
-                raise asyncio.CancelledError # to cancel long running tasks like dashboard 
+                # [Registration part]
+                register_request = ClientRequest(command=RequestCommand.REGISTER_AGENT_CARD)
+                register_request.set_request_data(self.card) 
+                register_resp: ServerResponse | None = await self.client.send_client_request(register_request)
+                if register_resp is None: 
+                    raise asyncio.CancelledError 
+                self.logger.info(f"[Agent] ServerResponse {register_resp}", extra={"owner":self.id})
+                if not register_resp.success:
+                    raise asyncio.CancelledError 
 
-            # [Sync part - getting sync data]
-            sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
-            sync_request.set_request_data(self.sync_start_date)
-            sync_resp: ServerResponse = await self.client.send_client_request(sync_request)
-            self.logger.info(f"[Agent] ServerResponse {sync_resp}", extra={"owner":self.id})
-            sync: Sync = sync_resp.data_dict.get("sync_data") 
-            await self.order_book.process_sync(sync)
-            self.pm.update()
+                # [Sync part - getting sync data]
+                sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
+                sync_request.set_request_data(self.sync_start_date)
+                sync_resp: ServerResponse | None = await self.client.send_client_request(sync_request)
+                if sync_resp is None: 
+                    raise asyncio.CancelledError 
+                self.logger.info(f"[Agent] ServerResponse {sync_resp}", extra={"owner":self.id})
+                sync: Sync = sync_resp.data_dict.get("sync_data") 
+                await self.order_book.process_sync(sync)
+                self.pm.update()
 
-            # [Sync part - releasing lock]
-            release_request = ClientRequest(command=RequestCommand.SYNC_COMPLETE_NOTICE)
-            release_resp: ServerResponse = await self.client.send_client_request(release_request)
-            if release_resp.success:
-                self.logger.info(f"[Agent] ServerResponse {release_resp}", extra={"owner":self.id})
-            else: 
-                self.logger.error(f"[Agent] ServerResponse lock release failed", extra={"owner":self.id})
+                # [Sync part - releasing lock]
+                release_request = ClientRequest(command=RequestCommand.SYNC_COMPLETE_NOTICE)
+                release_resp: ServerResponse | None = await self.client.send_client_request(release_request)
+                if release_resp is None: 
+                    raise asyncio.CancelledError 
+                if release_resp.success:
+                    self.logger.info(f"[Agent] ServerResponse {release_resp}", extra={"owner":self.id})
+                else: 
+                    self.logger.error(f"[Agent] ServerResponse lock release failed", extra={"owner":self.id})
         
-            # [Subscription part]
-            subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP)
-            res: ServerResponse = await self.client.send_client_request(subs_request)
-            self.logger.info(f"[Agent] ServerResponse {res}", extra={"owner":self.id})
+                # [Subscription part]
+                subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP)
+                subs_resp: ServerResponse | None = await self.client.send_client_request(subs_request)
+                if subs_resp is None:
+                    raise asyncio.CancelledError 
+                self.logger.info(f"[Agent] ServerResponse {subs_resp}", extra={"owner":self.id})
 
-            # [Price initialization part]
-            self.logger.info(f"[Agent] waiting for initial market price", extra={"owner":self.id})
-            await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
-            self.agent_ready_to_run_strategy = True
-            self.logger.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", extra={"owner":self.id})
+                # [Price initialization part]
+                self.logger.info(f"[Agent] waiting for initial market price", extra={"owner":self.id})
+                await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
+                self.agent_ready_to_run_strategy = True
+                self.logger.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", extra={"owner":self.id})
 
-            # [Strategy enact part]
-            tg.create_task(self.strategy.logic_run())
-            await self.hardstop_event.wait()
+                # [Strategy enact part]
+                tasks.append(tg.create_task(self.strategy.logic_run()))
 
-        await self.client.close_writer()
-        self.logger.info(f"[Agent] run completed =============================================", extra={"owner":self.id})
+                # [Hard stop part]
+                await self.hardstop_event.wait()
+                # - need to cancel explicitly as tasks are long living
+                for t in tasks:
+                    t.cancel()
+        
+        finally:
+            self.logger.info(f"[Agent] run completed =============================================", extra={"owner":self.id})
 
     # ----------------------------------------------------------------------------------
     # order handling
@@ -181,10 +199,12 @@ class Agent:
             submit_request = ClientRequest(command=RequestCommand.SUBMIT_ORDERS)
             submit_request.set_request_data(order_list)
             res: ServerResponse | None = await self.client.send_client_request(submit_request) 
+            if res is None:
+                return False
             if isinstance(res, ServerResponse):
                 return res.success
         else:
-            self.logger.error(f"[Agent] submit new order not processed - client not connected", extra={"owner":self.id})
+            self.logger.error(f"[Agent] submit order not processed - client not connected", extra={"owner":self.id})
         return False
 
     # ----------------------------------------------------------------------------------
@@ -233,7 +253,9 @@ class Agent:
     async def check_psbl_buy_amount(self, mtype: MTYPE, price: int):
         psbl_request = ClientRequest(command=RequestCommand.GET_PSBL_ORDER)
         psbl_request.set_request_data((self.code, mtype, price)) 
-        res: ServerResponse = await self.client.send_client_request(psbl_request)
+        res: ServerResponse | None = await self.client.send_client_request(psbl_request)
+        if res is None: 
+            return None
         (a_, q_, p_) = res.data_dict['psbl_data'] 
         # order quantity should be less than or equal to q_
         return q_
@@ -263,4 +285,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(A.run())
     except KeyboardInterrupt: 
-        logger.info("[Agent] stopped by user (Ctrl+C)")
+        logger.info("[Agent] stopped by user (Ctrl+C)\n\n")

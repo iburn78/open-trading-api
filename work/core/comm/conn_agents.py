@@ -39,7 +39,7 @@ class ConnectedAgents:
             ]
             for c, l in self.code_agent_map.items():
                 tl = [f'{a.id} ({a.dp}, {a.client_port})' for a in l]
-                parts.append(f'{c}: ' + list_str(tl))
+                parts.append(f'- {c}: ' + list_str(tl))
             return '\n'.join(parts)
         else: 
             return '[ConnectedAgents] no agents connected'
@@ -47,7 +47,7 @@ class ConnectedAgents:
     async def add(self, agent: AgentCard):
         async with self._lock:
             if self.get_agent_by_id(agent.id):
-                return False, f'[ConnectedAgents] agent_card {agent.id} already registered'
+                return False, f'[ConnectedAgents] agent {agent.id} already registered'
 
             if not self.dashboard_manager.register_dp(agent.dp, agent.id):
                 return False, f'[ConnectedAgents] agent {agent.id} client dashboard port {agent.dp} is already in use'
@@ -58,7 +58,7 @@ class ConnectedAgents:
             self.agent_id_map[agent.id] = agent
             assert agent.client_port not in self.port_agent_map # uniqueness should be guaranteed
             self.port_agent_map[agent.client_port] = agent
-            return True, f'[ConnectedAgents] agent_card {agent.id} registered in the server'
+            return True, f'agent {agent.id} registered in the server'
 
     async def remove(self, agent: AgentCard):
         async with self._lock:
@@ -75,8 +75,8 @@ class ConnectedAgents:
                     if not agent_list:
                         del self.code_agent_map[agent.code]
                         del self.code_market_map[agent.code]
-                    return f"[ConnectedAgents] agent_card {agent.id} removed from the server"
-            return f"[ConnectedAgents] agent_card {agent.id} not found"
+                    return f"[ConnectedAgents] agent {agent.id} removed from the server"
+            return f"[ConnectedAgents] agent {agent.id} not found"
 
     def get_agent_by_id(self, id):
         return self.agent_id_map.get(id, None)

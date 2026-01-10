@@ -27,8 +27,8 @@ class CommHandler:
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         addr = writer.get_extra_info("peername") # peername: network term / uniqe in a session
-        client_port = addr[1] # uniquley assigned by OS and TCP per client
         self.logger.info(f"[CommHandler] client connected {addr}")
+        client_port = addr[1] # uniquley assigned by OS and TCP per client
 
         try: 
             while True:
@@ -46,16 +46,17 @@ class CommHandler:
 
                 client_request: ClientRequest = client_msg
                 rd = client_request.get_request_data()
+                agent = self.connected_agents.get_agent_by_port(client_port)
 
                 logmsg = f"[CommHandler] request received: {client_request}"
                 if rd:  
                     if not isinstance(rd, list): rd = [rd]
                     for d in rd: 
                         logmsg += f"\n    {d}"
-                self.logger.info(logmsg)
+                self.logger.info(logmsg, extra={"owner": agent.id if agent is not None else client_port})
 
                 handler = self.COMMAND_HANDLERS.get(client_request.command)
-                kwargs = {'writer': writer, 'client_port': client_port}
+                kwargs = {'writer': writer, 'client_port': client_port, 'agent': agent}
                 response: ServerResponse = await handler(client_request, **kwargs)
                 response.request_id = client_request.request_id
 
@@ -70,9 +71,11 @@ class CommHandler:
             # clean-up
             agent = self.connected_agents.get_agent_by_port(client_port)
             if agent:
-                self.logger.info(f"[CommHandler] cleaning-up agent {agent.id}")
-                await self.subs_manager.remove(agent)
-                await self.connected_agents.remove(agent)
+                self.logger.info(f"[CommHandler] cleaning-up agent {agent.id}", extra={"owner": agent.id})
+                res = await self.subs_manager.remove(agent)
+                self.logger.info(res, extra={"owner": agent.id})
+                res = await self.connected_agents.remove(agent)
+                self.logger.info(res, extra={"owner": agent.id})
             else:     
                 self.logger.error(f"[CommHandler] agent not found with client_port {client_port}")
             writer.close()
@@ -91,6 +94,7 @@ class CommHandler:
         agent.writer = kwargs.get('writer') # used in agent dispatch
         agent.client_port = kwargs.get('client_port')
         success, msg = await self.connected_agents.add(agent)
+        self.logger.info(f"agent {agent.id} registered, client port {agent.client_port}", extra={"owner": agent.id})
 
         # return with registration status
         res = ServerResponse(success, msg)
@@ -99,8 +103,7 @@ class CommHandler:
     # agent sync with server 
     async def handle_sync_order_history(self, client_request: ClientRequest, **kwargs):
         sync_start_date = client_request.get_request_data()
-        agent: AgentCard = self.connected_agents.get_agent_by_port(kwargs.get('client_port'))
-        sync: Sync = await self.order_manager.get_agent_sync(agent, sync_start_date=sync_start_date)
+        sync: Sync = await self.order_manager.get_agent_sync(kwargs.get('agent'), sync_start_date=sync_start_date)
 
         # return with sync data
         res = ServerResponse(True, "sync request submitted")
@@ -108,8 +111,7 @@ class CommHandler:
         return res
 
     async def handle_sync_complete_notice(self, client_request: ClientRequest, **kwargs):
-        agent: AgentCard = self.connected_agents.get_agent_by_port(kwargs.get('client_port'))
-        success = await self.order_manager.agent_sync_completed_lock_release(agent)
+        success = await self.order_manager.agent_sync_completed_lock_release(kwargs.get('agent'))
 
         # return with sync data
         if success:
@@ -119,8 +121,9 @@ class CommHandler:
 
     # Agent의 종목(code) 실시간 시세에 대해 subscribe / unsubscribe
     async def handle_subscribe_trp(self, client_request: ClientRequest, **kwargs):
-        agent: AgentCard = self.connected_agents.get_agent_by_port(kwargs.get('client_port'))
+        agent = kwargs.get('agent')
         msg = await self.subs_manager.add(agent, self.kf.ccnl_krx)
+        self.logger.info(f"agent {agent.id} trp ({agent.code}) subscribed", extra={"owner": agent.id})
     
         return ServerResponse(success=True, status=msg)
 
