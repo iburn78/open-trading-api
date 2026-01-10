@@ -151,9 +151,9 @@ class TransactionPrices:
         self.records = [TRPriceData(*d[i:i+n_cols]) for i in range(0, n_rows * n_cols, n_cols)]
 
     def __str__(self):
-        parts = [f"TR prices {self.get_code()}:"]
+        parts = [f"[TR prices] {self.get_code()}:"]
         for r in self.records:
-            parts.append(f"{r.STCK_CNTG_HOUR} {r.STCK_PRPR} {r.CNTG_VOL}")
+            parts.append(f"    {r.STCK_CNTG_HOUR} {r.STCK_PRPR} {r.CNTG_VOL}")
         return '\n'.join(parts)
 
     def get_code(self):

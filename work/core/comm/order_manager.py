@@ -301,7 +301,6 @@ class OrderManager:
                 order.update(notice)
                 self._update_map(code_map, order)
                 agent = self.connected_agents.get_agent_by_id(order.agent_id)
-                ###_ need to fix (so that agent is guaranteed to exist (or clean-up))
                 if agent: # if agent is still connected
                     await self.dispatch_handler(agent, notice)
             else:

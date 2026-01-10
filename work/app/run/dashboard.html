@@ -73,7 +73,7 @@ function removePort(port) {
     }
 }
 
-// -------- connect to dashboard manager (port 9000) --------
+// -------- connect to dashboard manager (port 9020) --------
 const mgr = new WebSocket("ws://127.0.0.1:9020");
 
 mgr.onmessage = (event) => {
@@ -81,6 +81,7 @@ mgr.onmessage = (event) => {
     try {
         endpoints = JSON.parse(event.data);
     } catch (e) {
+        console.error("Invalid manager payload:", event.data);
         return;
     }
 

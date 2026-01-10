@@ -66,8 +66,6 @@ class CommHandler:
                 await writer.drain()
         except Exception as e:
             self.logger.error(f"[CommHandler] handler error {addr}: {e}", exc_info=True)
-        except asyncio.CancelledError:
-            raise
         finally:
             # clean-up
             agent = self.connected_agents.get_agent_by_port(client_port)
@@ -76,7 +74,7 @@ class CommHandler:
                 await self.subs_manager.remove(agent)
                 await self.connected_agents.remove(agent)
             else:     
-                self.logger.error(f"[CommHandler] agent not found for client_port {client_port}")
+                self.logger.error(f"[CommHandler] agent not found with client_port {client_port}")
             writer.close()
             await writer.wait_closed()
 

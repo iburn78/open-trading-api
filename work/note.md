@@ -81,6 +81,12 @@ or more modern way (only for development situation)
     - the main task (and everything it awaits / TaskGroups) is cancelled first
     - during event-loop shutdown, any remaining background tasks are cancelled
 - TaskGroup cancels all member tasks together and aggregates exceptions.
+- task.cancel() schedules CE at the next await
+- gather(..., return_exceptions=True) absorbs child cancellation
+- CancelledError should almost never be caught
+- except at lifecycle / shutdown boundaries
+- because CE can interrupt cleanup
+- TaskGroup + try/finally encode the correct ownership model: A structured lifetime boundary for async work / even a single task, there is no other alternatives
 
 ### Tips
 - Update windows terminal from old CMD to windows terminal and use this: winget install --id Microsoft.WindowsTerminal -e 
@@ -149,12 +155,61 @@ or more modern way (only for development situation)
 - develop random price simulator (use custom ones - should exist)
 - SEC vs SEC preferred: check arbitrage opp.
 
-
-
-
-###_ separate what are tasks and what are awaits
-
 # Below define strategies
 # - Foreign follower
 # - Value / Volatility tracker
 # - Volume trigger strategy
+
+
+
+## 1️⃣ Role of TaskGroup
+- **Primary role:** structured lifetime management of tasks.
+- Ensures **all tasks complete or all cancel together**.
+- Not a general-purpose “run in parallel” primitive.
+- Forces **ownership clarity** and deterministic shutdown.
+
+## 2️⃣ Key Rules / Patterns
+
+1. **Do not put long-lived or infinite tasks directly into a TaskGroup.**
+   - Example: `listen_server()` → infinite loop **must be outside**.
+   - Reason: TG waits for all tasks to finish. Infinite tasks + dynamically spawned children = **shutdown hangs / deadlock**.
+
+2. **A TG-owned task must not create new concurrent tasks (long-lived).**
+   - Safe: `await` calls.
+   - Unsafe: `asyncio.create_task()` or TG-`create_task()` inside a TG-owned task.
+   - Why: Cancellation races, dynamic task creation breaks structured concurrency.
+
+3. **Short-lived tasks are fine inside TG.**
+   - Example: per-message processing, small I/O, computation that finishes quickly.
+
+4. **Cancellation behavior**
+   - TG cancels all its tasks upon exit or if an exception occurs.
+   - Cancellation is cooperative (only at `await` points).
+   - TG waits for **all tasks it owns** to finish.
+   - CE is injected into tasks — tasks may still spawn things briefly unless structured correctly.
+   - In order to force stopping a TG, to cancel long-running tasks, raise CE is necessary (or any raise) rather than just return (which awaits long-running tasks to finish)
+
+5. **Nested TaskGroups**
+   - Allowed and **recommended** for scaling.
+   - Ownership graph must remain **acyclic**:
+    ```
+     Outer TG → TG-owned task → Inner TG → leaf tasks
+    ```
+   - Ensures structured concurrency, deterministic shutdown.
+    ```
+        Outer TG
+        ├── handler()
+        │   └── Inner TG
+        │       ├── process()
+        │       ├── process()
+        │       └── process()
+        └── handler()
+            └── Inner TG
+                ├── process()
+                ├── process()
+                └── process()
+    ```
+6. **Outside / detached tasks**
+   - Tasks created outside TG are **not managed**.
+   - Must be explicitly tracked or safely fire-and-forget.
+   - TG does **not** act as an umbrella for outside tasks.

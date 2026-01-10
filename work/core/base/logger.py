@@ -21,12 +21,10 @@ class LogSetup: # this is container that has logger
         - .1 is the newest
         - .n is the oldest
         """
-        if fname == None:
-            f = inspect.stack()[2].filename # caller name
-            fname = os.path.splitext(os.path.basename(f))[0]
+        if fname is None:
+            fname = os.path.splitext(os.path.basename(inspect.currentframe().f_back.f_code.co_filename))[0]
 
         fname += "_" + service
-        fname = 'cool_fix'  ###_
 
         os.makedirs(LOG_DIR, exist_ok=True)
         log_file = os.path.join(LOG_DIR, f'{fname}.log')

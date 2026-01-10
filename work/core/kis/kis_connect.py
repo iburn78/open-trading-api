@@ -24,7 +24,7 @@ class KIS_Connector:
     _ws_api_url ="/tryitout" 
 
     # control settings
-    _max_ws_retries = 5
+    _max_ws_tries = 5
 
     def __init__(self, logger, service: Service, on_result=None):
         self.logger = logger
@@ -41,7 +41,7 @@ class KIS_Connector:
             self.url_ws = self._url_demo_ws + self._ws_api_url
             self.sleep = demo_sleep
 
-        self.get_account_info()
+        self.read_config_file()
         self.base_header = {
             "content-type": "application/json",
             "charset": "utf-8",
@@ -52,7 +52,6 @@ class KIS_Connector:
 
         self.token = None
         self.token_exp = None
-        self.set_token()
         self.httpx_client: httpx.AsyncClient = httpx.AsyncClient()
         # Websocket part ----------------
         self.base_header_ws = { 
@@ -62,15 +61,15 @@ class KIS_Connector:
 
         self.token_ws = None
         self.token_ws_exp = None
-        self.set_token_ws()
 
         self.ws = None # websocket to be initialized in runner
         self.ws_ready = asyncio.Event()
 
-        self._ws_retry_count = 0
+        self._ws_try_count = 0
         self.tr_id_map = {}
+        self._tr_id_map_lock = asyncio.Lock()
 
-    def get_account_info(self):
+    def read_config_file(self): # shouldn't be called too frequently
         with open(config_file, encoding="UTF-8") as f:
             _cfg = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -89,7 +88,7 @@ class KIS_Connector:
             self.account_no = _cfg['paper_acct_stock']
 
     ###_ 1분 이내 재요청 fail - may not need to implement ... 
-    def set_token(self):
+    async def set_token(self):
         if self.token:
             if self.token_exp > datetime.now() + timedelta(seconds = reauth_margin_sec):
                 return 
@@ -100,9 +99,14 @@ class KIS_Connector:
         }
         token_url = f"{self.url}/oauth2/tokenP"
 
-        resp = requests.post(token_url, json=p) 
+        try:
+            resp = await self.httpx_client.post(token_url, json=p)
+        except httpx.RequestError as e:
+            self.logger.error(f"[KIS_Connector] getting token failed: {e}")
+            raise
+        
         if resp.status_code != 200:
-            self.logger.error(f"[KIS_Connector] getting token failed for {self.service}: {resp.status_code} | {resp.text}")
+            self.logger.error(f"[KIS_Connector] getting token failed, {self.service}: {resp.status_code} | {resp.text}")
             raise Exception("token error")
 
         r = resp.json()
@@ -112,7 +116,7 @@ class KIS_Connector:
 
     ###_ make sleep at the level
     async def url_fetch(self, api_url, tr_id, tr_cont, params, post=False):
-        self.set_token()
+        await self.set_token()
         url = self.url + api_url
         h = {
             "tr_id": tr_id,
@@ -148,7 +152,7 @@ class KIS_Connector:
     # -------------------------------------------------------------------
     # WebSocket part
     # -------------------------------------------------------------------
-    def set_token_ws(self):
+    async def set_token_ws(self):
         if self.token_ws:
             if self.token_ws_exp > datetime.now() + timedelta(seconds = reauth_margin_sec):
                 return 
@@ -158,10 +162,17 @@ class KIS_Connector:
             "secretkey": self.sec_key,
         }
         token_ws_url = f"{self.url}/oauth2/Approval" 
-        resp = requests.post(token_ws_url, json=p)
+
+        try:
+            resp = await self.httpx_client.post(token_ws_url, json=p)
+        except httpx.RequestError as e:
+            self.logger.error(f"[KIS_Connector] getting token_ws failed: {e}")
+            raise
+
         if resp.status_code != 200:
-            self.logger.error(f"[KIS_Connector] getting token_ws failed for {self.service}: {resp.status_code} | {resp.text}")
+            self.logger.error(f"[KIS_Connector] getting token_ws failed, {self.service}: {resp.status_code} | {resp.text}")
             raise Exception("token_ws error")
+
         r = resp.json()
         self.token_ws = r['approval_key'] 
         self.token_ws_exp = datetime.now() + timedelta(hours=24)
@@ -170,7 +181,7 @@ class KIS_Connector:
     async def ws_send(self, tr_type, tr_id, tr_key): 
         if self.ws is None: return # when socket is lost (e.g., closing up)
 
-        self.set_token_ws()
+        await self.set_token_ws()
         # tr_type: "1" subscribe, "2" unsubscribe
         headers = self.base_header_ws | {"tr_type": tr_type}
         input = {
@@ -199,22 +210,28 @@ class KIS_Connector:
                     d = dr[3].split("^")
                 # safety check: len(d) == n_rows * n_cols:
 
+                if self.on_result:
+                    self.on_result(tr_id, n_rows, d)
+
             else:
                 rsp = self.system_resp(raw)
-                tr_id = rsp.tr_id.strip()
-                self.logger.info(rsp) ###_ log system response... 
-                if not tr_id.strip() or 'null' in tr_id.lower(): ###_ check if any other... 
-                    self.logger.warning(rsp) ###_ just again
-                    continue
-                self.register_tr_id(
-                    tr_id=rsp.tr_id, key=rsp.ekey, iv=rsp.iv
-                )
                 if rsp.isPingPong:
                     await self.ws.pong(raw)
-                continue
+                    continue
+
+                self.logger.info(self.print_sys_resp(rsp))
+                if not rsp.tr_id.strip() or 'null' in rsp.tr_id.lower(): 
+                    continue
+                await self.register_tr_id(
+                    tr_id=rsp.tr_id, key=rsp.ekey, iv=rsp.iv
+                )
             
-            if self.on_result:
-                self.on_result(tr_id, n_rows, d)
+    def print_sys_resp(self, rsp):
+        parts = []
+        parts.append("SysMsg:OK" if rsp.isOk else "SysMsg:Not_OK")
+        parts.append(f"tr_id:{rsp.tr_id}")
+        parts.append(rsp.tr_msg)
+        return ', '.join(parts)
 
     def system_resp(self, data):
         isPingPong = False
@@ -271,12 +288,12 @@ class KIS_Connector:
     def aes_cbc_base64_dec(self, key, iv, cipher_text):
         if key is None or iv is None:
             self.logger.error("[KIS_Connector] key and iv cannot be None")
-            raise
+            raise ValueError
 
         cipher = AES.new(key.encode("utf-8"), AES.MODE_CBC, iv.encode("utf-8"))
         return bytes.decode(unpad(cipher.decrypt(b64decode(cipher_text)), AES.block_size))
 
-    def register_tr_id(
+    async def register_tr_id(
             self, 
             tr_id: str,
             columns: list = None,
@@ -284,22 +301,23 @@ class KIS_Connector:
             key: str = None,
             iv: str = None,
     ):
-        entry = self.tr_id_map.setdefault(tr_id, {"key": None, "iv": None})
+        async with self._tr_id_map_lock:
+            entry = self.tr_id_map.setdefault(tr_id, {"key": None, "iv": None})
 
-        updates = {
-            "columns": columns,
-            "encrypt": encrypt,
-            "key": key,
-            "iv": iv,
-        }
+            updates = {
+                "columns": columns,
+                "encrypt": encrypt,
+                "key": key,
+                "iv": iv,
+            }
 
-        for k, v in updates.items():
-            if v is not None:
-                entry[k] = v
+            for k, v in updates.items():
+                if v is not None:
+                    entry[k] = v
 
     async def run_websocket(self):
         WEBSOCKET_RUN_DURATION_UNTIL_RESET = 300
-        while self._ws_retry_count < self._max_ws_retries:
+        while self._ws_try_count < self._max_ws_tries:
             try:
                 async with websockets.connect(self.url_ws) as ws:
                     self.ws = ws
@@ -311,17 +329,15 @@ class KIS_Connector:
                     # ---- normal exit (no exception) ----
                     session = asyncio.get_event_loop().time() - started
                     if session > WEBSOCKET_RUN_DURATION_UNTIL_RESET:
-                        self._ws_retry_count = 0
-            except asyncio.CancelledError: # to escape from retry
-                raise
-            except Exception as e:
-                self._ws_retry_count += 1
-                self.logger.error(f"[KIS_Connector] ws error [{self._ws_retry_count}/{self._max_ws_retries}] {e}", exc_info=True)
-                await asyncio.sleep(self.sleep) 
+                        self._ws_try_count = 0
+            except Exception as e: # asyncio.CancelledError is not caught here, so escape while
+                self._ws_try_count += 1
+                rec = "closed" if self._ws_try_count == self._max_ws_tries else "reconnecting"
+                self.logger.error(f"[KIS_Connector] ws error {self._ws_try_count}/{self._max_ws_tries}, {rec}: {e}")
             finally:
                 self.ws_ready.clear()
                 self.ws = None
-
+                
     async def close_httpx(self):
         if self.httpx_client is not None:
             try:

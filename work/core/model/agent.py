@@ -121,65 +121,56 @@ class Agent:
         if not self.initialized: 
             self.logger.error(f"[Agent] agent not initialized - agent run aborted", extra={"owner":self.id})
             return 
+        self.logger.info(f"[Agent] start running =============================================", extra={"owner":self.id})
 
-        await self.client.connect()
+        async with asyncio.TaskGroup() as tg:
+            # [DashBoard enact part]
+            tg.create_task(self.client.connect())
+            await self.client.connected.wait()
+            tg.create_task(self.dashboard.run())
 
-        # [DashBoard enact part]
-        await self.dashboard.start()
+            # [Registration part]
+            register_request = ClientRequest(command=RequestCommand.REGISTER_AGENT_CARD)
+            register_request.set_request_data(self.card) 
+            register_resp: ServerResponse = await self.client.send_client_request(register_request)
+            self.logger.info(f"[Agent] ServerResponse {register_resp}", extra={"owner":self.id})
+            if not register_resp.success:
+                raise asyncio.CancelledError # to cancel long running tasks like dashboard 
 
-        # [Registration part]
-        register_request = ClientRequest(command=RequestCommand.REGISTER_AGENT_CARD)
-        register_request.set_request_data(self.card) 
-        register_resp: ServerResponse = await self.client.send_client_request(register_request)
-        self.logger.info(f"[Agent] ServerResponse {register_resp}", extra={"owner":self.id})
-        if not register_resp.success:
-            await self.client.close()
-            return 
+            # [Sync part - getting sync data]
+            sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
+            sync_request.set_request_data(self.sync_start_date)
+            sync_resp: ServerResponse = await self.client.send_client_request(sync_request)
+            self.logger.info(f"[Agent] ServerResponse {sync_resp}", extra={"owner":self.id})
+            sync: Sync = sync_resp.data_dict.get("sync_data") 
+            await self.order_book.process_sync(sync)
+            self.pm.update()
 
-        # [Sync part - getting sync data]
-        sync_request = ClientRequest(command=RequestCommand.SYNC_ORDER_HISTORY)
-        sync_request.set_request_data(self.sync_start_date)
-        sync_resp: ServerResponse = await self.client.send_client_request(sync_request)
-        self.logger.info(f"[Agent] ServerResponse {sync_resp}", extra={"owner":self.id})
-        sync: Sync = sync_resp.data_dict.get("sync_data") 
-        await self.order_book.process_sync(sync)
-        self.pm.update()
-
-        # [Sync part - releasing lock]
-        release_request = ClientRequest(command=RequestCommand.SYNC_COMPLETE_NOTICE)
-        release_resp: ServerResponse = await self.client.send_client_request(release_request)
-        if release_resp.success:
-            self.logger.info(f"[Agent] ServerResponse {release_resp}", extra={"owner":self.id})
-        else: 
-            self.logger.error(f"[Agent] ServerResponse lock release failed", extra={"owner":self.id})
+            # [Sync part - releasing lock]
+            release_request = ClientRequest(command=RequestCommand.SYNC_COMPLETE_NOTICE)
+            release_resp: ServerResponse = await self.client.send_client_request(release_request)
+            if release_resp.success:
+                self.logger.info(f"[Agent] ServerResponse {release_resp}", extra={"owner":self.id})
+            else: 
+                self.logger.error(f"[Agent] ServerResponse lock release failed", extra={"owner":self.id})
         
-        # pending dispatches will be delivered here - async way
-        ###_ guarantee needed if pending_dispatchs has arrived or not
-        ###_ should be ensure if sync is completed
+            # [Subscription part]
+            subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP)
+            res: ServerResponse = await self.client.send_client_request(subs_request)
+            self.logger.info(f"[Agent] ServerResponse {res}", extra={"owner":self.id})
 
-        # [Subscription part]
-        subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP)
-        res: ServerResponse = await self.client.send_client_request(subs_request)
-        self.logger.info(f"[Agent] ServerResponse {res}", extra={"owner":self.id})
+            # [Price initialization part]
+            self.logger.info(f"[Agent] waiting for initial market price", extra={"owner":self.id})
+            await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
+            self.agent_ready_to_run_strategy = True
+            self.logger.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", extra={"owner":self.id})
 
-        # [Price initialization part]
-        self.logger.info(f"[Agent] waiting for initial market price", extra={"owner":self.id})
-        await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
-        self.agent_ready_to_run_strategy = True
-        self.logger.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", extra={"owner":self.id})
-
-        # [Strategy enact part]
-        try:
-            str_task = asyncio.create_task(self.strategy.logic_run())
+            # [Strategy enact part]
+            tg.create_task(self.strategy.logic_run())
             await self.hardstop_event.wait()
-        except asyncio.CancelledError:
-            self.logger.info(f"[Agent] agent {self.id} cancelled.", extra={"owner":self.id}, exc_info=True)  ###_ exact info? here?
-        finally:
-            if str_task is not None and not str_task.done():
-                str_task.cancel()
-                await asyncio.gather(str_task, return_exceptions=True)
-            await self.dashboard.stop()
-            await self.client.close()
+
+        await self.client.close_writer()
+        self.logger.info(f"[Agent] run completed =============================================", extra={"owner":self.id})
 
     # ----------------------------------------------------------------------------------
     # order handling
@@ -258,3 +249,18 @@ async def dispatch(to: AgentCard | list[AgentCard], message):
             await agent.writer.drain() 
         except Exception:
             pass 
+
+# minimal agent running example
+if __name__ == "__main__":
+    from ..base.logger import LogSetup
+    from ..strategy.double_up import DoubleUpStrategy
+
+    service = Service.DEMO
+    logger = LogSetup(service).logger
+
+    A = Agent(id = '_Agent_001', code = '005930', service=service, dp = 8051, logger=logger, strategy=DoubleUpStrategy())
+    A.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-01')
+    try:
+        asyncio.run(A.run())
+    except KeyboardInterrupt: 
+        logger.info("[Agent] stopped by user (Ctrl+C)")

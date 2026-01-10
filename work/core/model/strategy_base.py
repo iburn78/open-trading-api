@@ -47,17 +47,14 @@ class StrategyBase(ABC):
             # choose which to start fresh waiting 
             if self.lazy_run: # if True, strategy does not run on every trn: only reacts to new trns
                 self._trn_receive_event.clear() 
-            tasks = [
-                asyncio.create_task(self._price_update_event.wait()),
-                asyncio.create_task(self._trn_receive_event.wait()),
-            ]
 
-            _, pending = await asyncio.wait(
-                tasks, return_when=asyncio.FIRST_COMPLETED
-            )
-
-            for t in pending:
-                t.cancel()
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(self._price_update_event.wait())
+                tg.create_task(self._trn_receive_event.wait())
+                done, pending = await asyncio.wait( # without this, tg waits for all to completed
+                    [t for t in tg._tasks],  
+                    return_when=asyncio.FIRST_COMPLETED
+                )
 
             if self._price_update_event.is_set():
                 self._price_update_event.clear()
@@ -72,11 +69,9 @@ class StrategyBase(ABC):
         try:
             async with self._on_update_lock:
                 await self.on_update(update_event)
-        except asyncio.CancelledError:
-            raise  # re-raise
         except Exception as e:
             self.logger.error(f"[Strategy] on_update failed ({update_event.name}): {e}", extra={"owner":self.agent_id}, exc_info=True)
-            raise  
+            raise
 
     @abstractmethod
     async def on_update(self, update_event: UpdateEvent):
@@ -102,57 +97,75 @@ class StrategyBase(ABC):
 
     # ---------------------------------------------------------------
     # should use returned orders for further operation on the orders
-    # returned orders are the same orders saved in the order_book
+    # returned orders are the same orders as saved in the order_book
     # ---------------------------------------------------------------
     async def execute_rebind(self, orders: list[Order | CancelOrder] | Order | CancelOrder):
         if not isinstance(orders, list):
             orders = [orders]
-        processed_orders = {}
 
+        results: list[Order | CancelOrder | None] = [None] * len(orders)
+
+        # Validate first
         for order in orders:
             if order.is_regular_order:
-                if not self.validate_strategy_order(order): 
-                    self.logger.error(f"[Strategy] order validation failed: {order}", extra={"owner":self.agent_id})
-                    return None
+                if not self.validate_strategy_order(order):
+                    self.logger.error(
+                        f"[Strategy] order validation failed: {order}",
+                        extra={"owner": self.agent_id},
+                    )
+                    return results  # [None, None, ...]
 
         # this ensures furture exists in pending strategy order dict as the dispatch_order could arrive faster
         loop = asyncio.get_running_loop()
-        futures = []
 
-        for order in orders: 
+        futures: list[asyncio.Future] = [] # needed to process only orders in the input argument
+        uid_to_index: dict[str, int] = {} # stable ordering
+
+        for idx, order in enumerate(orders):
             fut = loop.create_future()
             futures.append(fut)
-            self.pending_strategy_orders[order.unique_id] = fut
-            processed_orders[order.unique_id] = None # prepare placeholders
 
-        submitted = await self.submit_order(orders) 
+            uid_to_index[order.unique_id] = idx
+            self.pending_strategy_orders[order.unique_id] = fut
+
+        submitted = await self.submit_order(orders)
 
         if not submitted: # none submitted
             for order in orders:
-                del self.pending_strategy_orders[order.unique_id]
-                self.logger.error(f"[Strategy] order submission to KIS failed at server: no {order.order_no} uid {order.unique_id}", extra={"owner":self.agent_id})
-            return None
-        
+                self.pending_strategy_orders.pop(order.unique_id, None)
+                self.logger.error(
+                    f"[Strategy] order submission failed: no {order.order_no} uid {order.unique_id}",
+                    extra={"owner": self.agent_id},
+                )
+            return results 
+
         try:
             for fut in asyncio.as_completed(futures):
-                processed: Order | CancelOrder = await fut
-                processed_orders[processed.unique_id] = processed
+                processed: Order | CancelOrder = await fut # prepare placeholders
+                idx = uid_to_index[processed.unique_id]
+                results[idx] = processed
+
                 if processed.submitted:
-                    self.logger.info(f"[Strategy] order submit success: no {processed.order_no} uid {processed.unique_id}", extra={"owner":self.agent_id})
-                else: 
-                    self.logger.error(f"[Strategy] order not processed at KIS: no {processed.order_no} uid {processed.unique_id}", extra={"owner":self.agent_id})
-            
+                    self.logger.info(
+                        f"[Strategy] order submit success: no {processed.order_no} uid {processed.unique_id}",
+                        extra={"owner": self.agent_id},
+                    )
+                else:
+                    self.logger.error(
+                        f"[Strategy] order not processed: no {processed.order_no} uid {processed.unique_id}",
+                        extra={"owner": self.agent_id},
+                    )
+
         except asyncio.CancelledError:
-            ###_ ??? 
-            for order in orders:
-                self.pending_strategy_orders.pop(order.unique_id, None)
+            # Clean only unfinished futures
+            for uid, fut in list(self.pending_strategy_orders.items()): # mutating the dict while iterating, so list(copy) needed
+                if not fut.done():
+                    self.pending_strategy_orders.pop(uid, None)
             raise
-        
-        res = list(processed_orders.values())
-        return res if len(res) > 1 else res[0]
+
+        return results if len(results) > 1 else results[0]
 
     def handle_order_dispatch(self, dispatched_order: Order | CancelOrder):
-        ###_ strategy has to save its future status too... 
         fut = self.pending_strategy_orders.pop(dispatched_order.unique_id, None)
         if not fut:
             self.logger.error(f"[Strategy] no pending future exists for the dispatched_order: uid {dispatched_order.unique_id}", extra={"owner":self.agent_id})

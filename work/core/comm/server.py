@@ -35,12 +35,12 @@ class Server:
         if target == "TransactionNotice":
             trn = TransactionNotice(n_rows, d, self.aux_info)
             self.logger.info(trn)
-            asyncio.create_task(self.order_manager.process_tr_notice(trn))
+            self._tg.create_task(self.order_manager.process_tr_notice(trn))
 
         elif target == "TransactionPrices": 
             trp = TransactionPrices(n_rows, d)
-            self.logger.info(trp)
-            asyncio.create_task(dispatch(self.connected_agents.get_target_agents_by_trp(trp), trp)) 
+            # self.logger.info(trp)
+            self._tg.create_task(dispatch(self.connected_agents.get_target_agents_by_trp(trp), trp)) 
 
         self.get_status()
     
@@ -72,11 +72,13 @@ class Server:
             self.logger.info(self.get_status())
 
     async def run(self): 
+        self.logger.info(f"[Server] start running =============================================")
         try: 
-            self.logger.info(f"[Server] start running \n=============================================")
             async with asyncio.TaskGroup() as tg: 
-                await self.dashboard.start()
-                await self.connected_agents.dashboard_manager.start()
+                self._tg = tg
+
+                tg.create_task(self.dashboard.run())
+                tg.create_task(self.connected_agents.dashboard_manager.run())
 
                 tg.create_task(self.kc.run_websocket())
                 await self.kc.ws_ready.wait()
@@ -84,26 +86,23 @@ class Server:
                 # default subscriptions
                 await self.kf.ccnl_notice()
 
+                # server + periodic tasks
                 tg.create_task(self.run_comm_server())
                 tg.create_task(self.broadcast_to_clients())
                 tg.create_task(self.order_manager.persist_to_disk())
                 tg.create_task(self.order_manager.pending_trns_timeout())
-        except asyncio.CancelledError: 
-            pass
+
         finally: 
             await self.kc.close_httpx()
-            await self.dashboard.stop()
-            await self.connected_agents.dashboard_manager.stop()
             saved_date = await self.order_manager.persist_to_disk(immediate = True)
             self.logger.info(f"[Server] order_manager saved for {saved_date}")
-            self.logger.info(f"[Server] shutdown complete \n=============================================")
+            self.logger.info(f"[Server] shutdown completed =============================================")
 
 if __name__ == "__main__":
     service = Service.DEMO
     logger = LogSetup(service).logger
-
     server = Server(service, logger)
     try:
         asyncio.run(server.run())
     except KeyboardInterrupt: # to suppress reraised KI
-        pass 
+        logger.info("[Server] stopped by user (Ctrl+C)")
