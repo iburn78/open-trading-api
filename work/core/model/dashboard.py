@@ -14,7 +14,7 @@ class DashBoard:
         self._clients = set()
         self._queue = asyncio.Queue()
         self._server = None
-
+        
     def enqueue(self, msg):
         self._queue.put_nowait(str(msg))
 
@@ -24,8 +24,12 @@ class DashBoard:
             tg.create_task(self._broadcaster_loop())
 
     async def _start_server(self):
-        ###_ catch OSError for dubplicated ports
-        self._server = await websockets.serve(self._handler, self.host, self.port)
+        try: 
+            self._server = await websockets.serve(self._handler, self.host, self.port)
+        except OSError as e:
+            self.logger.error(f"[DashBoard] ws error {e}", extra={"owner": self.owner_name})
+            return
+
         self.logger.info(f"[DashBoard] websocket broadcasting running on ws://{self.host}:{self.port}", extra={"owner": self.owner_name})
 
         try:

@@ -31,8 +31,6 @@ class AgentSession:
     connected: bool = False
     send_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
 
-    sync_completed: bool = False
-    sync_completed_event: asyncio.Event = field(default_factory=asyncio.Event)
     subscriptions: set = field(default_factory=set) # subscribed functions
 
     def __str__(self):
@@ -47,7 +45,7 @@ class AgentSession:
         if not to:
             return
         for agent in to:
-            await agent.dispatch(message) ###_ may make it parallel
+            await agent.dispatch(message)
 
 @dataclass
 class ClientRequest:

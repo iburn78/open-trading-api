@@ -46,9 +46,9 @@ class PersistentClient:
             self._tg = None
             self.connected.clear()
 
-            # Cancelling futures is necessary because pending / unfulfilled request
+            # cancelling futures is necessary because pending / unfulfilled request
             # state must be handled at a higher (protocol/application) layer.
-            # The client object is transport-only and must not own request truth.
+            # the client object is transport-only and must not own request truth.
             for fut in self.pending_requests.values():
                 if not fut.done():
                     fut.cancel()
@@ -96,6 +96,7 @@ class PersistentClient:
         except Exception as e:
             self.logger.error(f"[Client] unexpected error in listen_server: {e}", extra={"owner": self.agent_id}, exc_info=True)
 
+    # send_client_request will return server_response or None on failure
     async def send_client_request(self, client_request: ClientRequest, timeout: float = None) -> ServerResponse | None:
         """Send a request; short-lived task under the same TG."""
         tg = self._tg # copying object reference as connect() might assign self._tg == None
@@ -117,7 +118,7 @@ class PersistentClient:
                 # Wait for response
                 return await asyncio.wait_for(fut, timeout) if timeout else await fut
             finally:
-                self.pending_requests.pop(client_request.request_id, None)
+                self.pending_requests.pop(client_request.request_id, None) # in case of timeout, cancel, failure etc
 
         return await tg.create_task(_send_and_wait())
 

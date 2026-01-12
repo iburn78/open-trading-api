@@ -223,3 +223,5 @@ Cleanup after async with is not guaranteed
 try/finally is still mandatory
 
 ###_ note.md reorganize
+
+finally is for closing not for logic. finally is executed regardless exception or return (does affect the return value though)

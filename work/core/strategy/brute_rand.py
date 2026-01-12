@@ -15,7 +15,7 @@ class BruteForceRandStrategy(StrategyBase):
     
     async def on_update(self, update_event: UpdateEvent):
         if update_event != UpdateEvent.PRICE_UPDATE:
-            self.logger.info(f"{self.code}-{update_event.name}", extra={"owner":self.agent_id})
+            self.logger.info(f"{self.code}-{update_event.name}", extra={"owner": self.agent_id})
 
         # q = random.randint(1, 5)
         if self.run_once:

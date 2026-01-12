@@ -76,7 +76,7 @@ class Agent:
     def initialize(self, init_cash_allocated = 0, init_holding_qty = 0, 
                             init_avg_price = 0, sync_start_date = None):
         if init_cash_allocated < 0 or init_holding_qty < 0 or init_avg_price < 0: 
-            self.logger.error(f"[Agent] negative initialization not allowed - not initialized", extra={"owner":self.id})
+            self.logger.error(f"[Agent] negative initialization not allowed - not initialized", extra={"owner": self.id})
             return
         self.pm.init_cash_allocated = init_cash_allocated
         self.pm.init_holding_qty = init_holding_qty
@@ -94,9 +94,9 @@ class Agent:
         - orders can be made afterward
         """
         if not self.initialized: 
-            self.logger.error(f"[Agent] agent not initialized - agent run aborted", extra={"owner":self.id})
+            self.logger.error(f"[Agent] agent not initialized - agent run aborted", extra={"owner": self.id})
             return 
-        self.logger.info(f"[Agent] start running =============================================", extra={"owner":self.id})
+        self.logger.info(f"[Agent] start running =============================================", extra={"owner": self.id})
 
         try:
             async with asyncio.TaskGroup() as tg:
@@ -113,7 +113,7 @@ class Agent:
                 register_resp: ServerResponse | None = await self.client.send_client_request(register_request)
                 if register_resp is None: 
                     raise asyncio.CancelledError 
-                self.logger.info(f"[Agent] ServerResponse {register_resp}", extra={"owner":self.id})
+                self.logger.info(f"[Agent] ServerResponse {register_resp}", extra={"owner": self.id})
                 if not register_resp.success:
                     raise asyncio.CancelledError 
 
@@ -123,7 +123,7 @@ class Agent:
                 sync_resp: ServerResponse | None = await self.client.send_client_request(sync_request)
                 if sync_resp is None: 
                     raise asyncio.CancelledError 
-                self.logger.info(f"[Agent] ServerResponse {sync_resp}", extra={"owner":self.id})
+                self.logger.info(f"[Agent] ServerResponse {sync_resp}", extra={"owner": self.id})
                 sync: Sync = sync_resp.data_dict.get("sync_data") 
                 await self.order_book.process_sync(sync)
                 self.pm.update()
@@ -134,22 +134,22 @@ class Agent:
                 if release_resp is None: 
                     raise asyncio.CancelledError 
                 if release_resp.success:
-                    self.logger.info(f"[Agent] ServerResponse {release_resp}", extra={"owner":self.id})
+                    self.logger.info(f"[Agent] ServerResponse {release_resp}", extra={"owner": self.id})
                 else: 
-                    self.logger.error(f"[Agent] ServerResponse lock release failed", extra={"owner":self.id})
+                    self.logger.error(f"[Agent] ServerResponse lock release failed", extra={"owner": self.id})
         
                 # [Subscription part]
                 subs_request = ClientRequest(command=RequestCommand.SUBSCRIBE_TRP)
                 subs_resp: ServerResponse | None = await self.client.send_client_request(subs_request)
                 if subs_resp is None:
                     raise asyncio.CancelledError 
-                self.logger.info(f"[Agent] ServerResponse {subs_resp}", extra={"owner":self.id})
+                self.logger.info(f"[Agent] ServerResponse {subs_resp}", extra={"owner": self.id})
 
                 # [Price initialization part]
-                self.logger.info(f"[Agent] waiting for initial market price", extra={"owner":self.id})
+                self.logger.info(f"[Agent] waiting for initial market price", extra={"owner": self.id})
                 # await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
                 self.agent_ready_to_run_strategy = True
-                self.logger.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", extra={"owner":self.id})
+                self.logger.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", extra={"owner": self.id})
 
                 # [Strategy enact part]
                 tasks.append(tg.create_task(self.strategy.logic_run()))
@@ -161,7 +161,7 @@ class Agent:
                     t.cancel()
         
         finally:
-            self.logger.info(f"[Agent] run completed =============================================", extra={"owner":self.id})
+            self.logger.info(f"[Agent] run completed =============================================", extra={"owner": self.id})
 
     # ----------------------------------------------------------------------------------
     # order handling
@@ -177,7 +177,7 @@ class Agent:
             if isinstance(res, ServerResponse):
                 return res.success
         else:
-            self.logger.error(f"[Agent] submit order not processed - client not connected", extra={"owner":self.id})
+            self.logger.error(f"[Agent] submit order not processed - client not connected", extra={"owner": self.id})
         return False
 
     # ----------------------------------------------------------------------------------
@@ -195,14 +195,14 @@ class Agent:
         if handler:
             await handler(data)
         else:
-            self.logger.error(f"[Agent] unhandled dispatch type: {type(data)}", extra={"owner":self.id})
+            self.logger.error(f"[Agent] unhandled dispatch type: {type(data)}", extra={"owner": self.id})
             self.logger.debug(data)
 
     async def handle_str(self, msg):
-        self.logger.info(f"[Agent] dispatched message: {msg}", extra={"owner":self.id})
+        self.logger.info(f"[Agent] dispatched message: {msg}", extra={"owner": self.id})
 
     async def handle_order(self, order: Order | CancelOrder):
-        # self.logger.info(f"[Agent] dispatched order: no {order.order_no} uid {order.unique_id}", extra={"owner":self.id})
+        # self.logger.info(f"[Agent] dispatched order: no {order.order_no} uid {order.unique_id}", extra={"owner": self.id})
         await self.order_book.handle_order_dispatch(order)
         self.pm.update() 
         self.strategy.handle_order_dispatch(order)
@@ -214,7 +214,7 @@ class Agent:
         self.strategy._price_update_event.set()
         
     async def handle_notice(self, trn: TransactionNotice):
-        self.logger.info(trn, extra={"owner":self.id}) # show trn before processing
+        self.logger.info(trn, extra={"owner": self.id}) # show trn before processing
         notice_beep() # make a sound upton trn
         await self.order_book.process_tr_notice(trn)
         self.pm.update()

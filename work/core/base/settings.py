@@ -61,7 +61,7 @@ DASHBOARD_SERVER_PORT = {
 # server may run for each service
 OM_save_filename = 'order_manager_' # + service type + date + .pkl
 order_manager_keep_days = 7 # days
-disk_save_period = 900 # sec
+disk_save_period = 1800 # sec
 server_broadcast_interval = 30 # sec
 
 # ----------------------------------------------------

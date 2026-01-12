@@ -9,7 +9,6 @@ from ..kis.ws_data import SIDE, MTYPE, EXG, TransactionNotice
 class Order:
     # required vars
     agent_id: str 
-    logger: logging.Logger
     code: str
     side: SIDE 
     mtype: MTYPE 
@@ -43,26 +42,19 @@ class Order:
 
     def __post_init__(self):
         if type(self.quantity) != int or type(self.price) != int:
-            self.logger.error("submit with quantity and/or price as int", extra={"owner":self.agent_id})
-            raise ValueError
+            raise ValueError("submit with quantity and/or price as int")
         if self.quantity < 0 or self.price  < 0:
-            self.logger.error("negative quantity or price not allowed", extra={"owner":self.agent_id})
-            raise ValueError
+            raise ValueError("negative quantity or price not allowed")
         if self.side not in ("buy", "sell"):
-            self.logger.error("side must be 'buy' or 'sell'", extra={"owner":self.agent_id})
-            raise ValueError
+            raise ValueError("side must be 'buy' or 'sell'")
         if self.mtype == MTYPE.LIMIT and self.price == 0:
-            self.logger.error("Limit orders require a price", extra={"owner":self.agent_id})
-            raise ValueError
+            raise ValueError("Limit orders require a price")
         if self.mtype == MTYPE.MARKET and self.price != 0: # for market orders, price has to be set to 0
-            self.logger.error("Market orders should not have a price", extra={"owner":self.agent_id})
-            raise ValueError
+            raise ValueError("Market orders should not have a price")
         if self.mtype == MTYPE.MIDDLE and self.price != 0: # for middle orders, price has to be set to 0
-            self.logger.error("Middle orders should not have a price", extra={"owner":self.agent_id})
-            raise ValueError
+            raise ValueError("Middle orders should not have a price")
         if not self.mtype.is_allowed_in(self.exchange):
-            self.logger.error(f"Order type {self.mtype.name} not allowed on exchange {self.exchange}", extra={"owner":self.agent_id})
-            raise ValueError
+            raise ValueError(f"Order type {self.mtype.name} not allowed on exchange {self.exchange}")
 
     def _str_base(self):
         ordn = f"{int(self.order_no):>6d}" if self.order_no else f"  none"
@@ -96,7 +88,7 @@ class Order:
         self.submitted_time = submitted_time
         self.org_no = org_no
         self.submitted = True
-        self.logger.info(f"[Order] order {self.order_no} submitted", extra={"owner":self.agent_id})
+        return f"[Order] order {self.order_no} submitted"
 
     # internal update logic 
     # notice:
@@ -107,28 +99,23 @@ class Order:
     # - 022: order processed
     def update(self, notice: TransactionNotice):
         if self.order_no != notice.order_no: # checking order_no (or double-checking)
-            self.logger.error(f"Notice does not match with order {self.order_no}", extra={"owner":self.agent_id})
-            raise ValueError
+            raise ValueError(f"Notice does not match with order {self.order_no}")
         if self.completed: 
-            print(self)
-            self.logger.error(f"Notice for completed order {self.order_no} arrived", extra={"owner":self.agent_id})
-            raise ValueError
+            raise ValueError(f"Notice for completed order {self.order_no} arrived")
         if notice.rfus_yn != "0": # "0": 승인
-            self.logger.error(f"Order {self.order_no} refused", extra={"owner":self.agent_id})
-            raise ValueError
-
+            raise ValueError(f"Order {self.order_no} refused")
+        
+        res = "" # result mesage
         if notice.cntg_yn == "1": # 주문, 정정, 취소, 거부
             if notice.acpt_yn == "1": # 주문접수 (최초 주문)
                 self.accepted = True
             elif notice.acpt_yn == "2": # 확인
                 if notice.orignal_order_no is None:
-                    self.logger.error("Check logic (original order no of notice)", extra={"owner":self.agent_id})
-                    raise ValueError
+                    raise ValueError("Check logic (original order no of notice)")
                 self.accepted = True
-                self.update_cancel_specific(notice)
+                res = self.update_cancel_specific(notice)
             else: # notice.acpt_yn == "3": # 취소(FOK/IOC)
-                self.logger.error("Not implemented yet", extra={"owner":self.agent_id})
-                raise ValueError
+                raise ValueError("Not implemented yet")
 
         else: # notice.cntg_yn == "2": # 체결
             if notice.acpt_yn == "2": # 확인
@@ -141,14 +128,13 @@ class Order:
                 self.tax_ += notice.tax_
 
                 if self.processed > self.quantity:
-                    self.logger.error("Check order processed quantity", extra={"owner":self.agent_id})
-                    raise ValueError
+                    raise ValueError("Check order processed quantity")
                 if self.processed == self.quantity:
                     self.completed = True
-                    self.logger.info(f"[Order] order {self.order_no} completed\n    {self}", extra={"owner":self.agent_id})
+                    res = f"[Order] order {self.order_no} completed\n    {self}"
             else: 
-                self.logger.error("Check logic", extra={"owner":self.agent_id})
-                raise ValueError
+                raise ValueError("Check logic")
+        return res
 
     def update_cancel_specific(self):
         # to be overrided by CancelOrder
@@ -156,8 +142,7 @@ class Order:
 
     def make_a_cancel_order(self, partial: bool = False, to_cancel_qty: int = 0): 
         if self.completed:
-            self.logger.error(f"[Order] tried to make a cancel order for a completed order: {self}", extra={"owner":self.agent_id})
-            raise ValueError
+            raise ValueError(f"[Order] tried to make a cancel order for a completed order: {self}")
 
         if partial: 
             qty_all_yn = "N"
@@ -166,7 +151,6 @@ class Order:
 
         return CancelOrder(
             agent_id=self.agent_id, 
-            logger = self.logger, 
             code = self.code,
             side = self.side,
             mtype = self.mtype,
@@ -227,8 +211,7 @@ class CancelOrder(Order):
         self.is_regular_order = False 
 
         if self.original_order_no is None or self.original_order_org_no is None:
-            self.logger.error(f"[CancelOrder] original order info is missing {self}", extra={"owner":self.agent_id})
-            raise ValueError
+            raise ValueError(f"[CancelOrder] original order info is missing {self}")
 
     def __str__(self): 
         txt = self._str_base()
@@ -244,10 +227,10 @@ class CancelOrder(Order):
         self.submitted_time = submitted_time
         self.org_no = org_no
         self.submitted = True
-        self.logger.info(f"[CancelOrder] a cancel-order {self.order_no} submitted to cancel order {self.original_order_no}", extra={"owner":self.agent_id})
+        return f"[CancelOrder] a cancel-order {self.order_no} submitted to cancel order {self.original_order_no}"
 
     def update_cancel_specific(self, notice: TransactionNotice):
         self.completed = True
         self.quantity = notice.oder_qty # fill with to cancel quantity
         self.processed = notice.cntg_qty # fill with cancel processed
-        self.logger.info(f"[CancelOrder] {self.order_no} completed: original order {self.original_order_no}", extra={"owner":self.agent_id})
+        return f"[CancelOrder] {self.order_no} completed: original order {self.original_order_no}"

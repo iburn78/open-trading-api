@@ -97,7 +97,7 @@ class OrderBook:
     # ----------------------------------------------------------------------------------
     async def process_sync(self, sync: Sync):
         async with self._lock:
-            self.logger.info(f"[OrderBook] sync data received: {sync}", extra={"owner":self.agent_id})
+            self.logger.info(f"[OrderBook] sync data received: {sync}", extra={"owner": self.agent_id})
             
             # sync has to be done when agent is initialized... 
             self._check_if_start_from_empty()
@@ -122,14 +122,14 @@ class OrderBook:
                 if v.is_regular_order:
                     self._record_increase(v, v.processed, v.fee_+v.tax_, v.amount)
                     self._pending_increase(v, v.quantity-v.processed)
-            self.logger.info(f"[OrderBook] sync completed: {self}", extra={"owner":self.agent_id})
+            self.logger.info(f"[OrderBook] sync completed: {self}", extra={"owner": self.agent_id})
 
     def _check_if_start_from_empty(self):
         # checking representative ones
-        if self._indexed_incompleted_orders: self.logger.error(f"[OrderBook] parse_orders, initial state not empty - 1", extra={"owner":self.agent_id})
-        if self._indexed_completed_orders: self.logger.error(f"[OrderBook] parse_orders, initial state not empty - 2", extra={"owner":self.agent_id})
-        if self.orderbook_holding_qty != 0: self.logger.error(f"[OrderBook] key_stat is not zero - 1", extra={"owner":self.agent_id})
-        if self.total_cash_used != 0: self.logger.error(f"[OrderBook] key_stat is not zero - 2", extra={"owner":self.agent_id})
+        if self._indexed_incompleted_orders: self.logger.error(f"[OrderBook] parse_orders, initial state not empty - 1", extra={"owner": self.agent_id})
+        if self._indexed_completed_orders: self.logger.error(f"[OrderBook] parse_orders, initial state not empty - 2", extra={"owner": self.agent_id})
+        if self.orderbook_holding_qty != 0: self.logger.error(f"[OrderBook] key_stat is not zero - 1", extra={"owner": self.agent_id})
+        if self.total_cash_used != 0: self.logger.error(f"[OrderBook] key_stat is not zero - 2", extra={"owner": self.agent_id})
 
     # ----------------------------------------------------------------------------------
     # executed order portion stat update (체결된 사항에 대한 update)
@@ -181,14 +181,16 @@ class OrderBook:
                 prev_accepted = order.accepted
 
                 # update order itself 
-                order.update(notice)
+                res = order.update(notice)
+                if res:
+                    self.logger.info(res, extra={"owner": self.agent_id})
 
                 # update order_book stat
                 delta_qty = order.processed - prev_qty
                 delta_cost = (order.fee_ + order.tax_) - prev_cost
                 delta_amount = order.amount - prev_amount
                 if delta_qty < 0: 
-                    self.logger.error(f"[OrderBook] delta quantity negative: {order}", extra={"owner":self.agent_id})
+                    self.logger.error(f"[OrderBook] delta quantity negative: {order}", extra={"owner": self.agent_id})
 
                 if order.is_regular_order:
                     if not prev_accepted and order.accepted:
@@ -208,12 +210,12 @@ class OrderBook:
                     if not order.is_regular_order: 
                         original_order = self._indexed_incompleted_orders.get(order.original_order_no)
                         if original_order is None: 
-                            self.logger.error(f"[OrderBook] cancel order update error {order}", extra={"owner":self.agent_id})
+                            self.logger.error(f"[OrderBook] cancel order update error {order}", extra={"owner": self.agent_id})
                             return
 
                         original_order.quantity = original_order.quantity - order.processed
                         if original_order.quantity < original_order.processed:
-                            self.logger.error(f"[OrderBook] cancel quantity error {order}, {original_order}", extra={"owner":self.agent_id})
+                            self.logger.error(f"[OrderBook] cancel quantity error {order}, {original_order}", extra={"owner": self.agent_id})
                             return 
 
                         if original_order.quantity == original_order.processed:

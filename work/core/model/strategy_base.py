@@ -62,7 +62,7 @@ class StrategyBase(ABC):
 
             if self._trn_receive_event.is_set():
                 self._trn_receive_event.clear()
-                self.logger.info(self.pm, extra={"owner":self.agent_id})
+                self.logger.info(self.pm, extra={"owner": self.agent_id})
                 await self.on_update_shell(UpdateEvent.TRN_RECEIVE)
 
     async def on_update_shell(self, update_event: UpdateEvent):
@@ -70,7 +70,7 @@ class StrategyBase(ABC):
             async with self._on_update_lock:
                 await self.on_update(update_event)
         except Exception as e:
-            self.logger.error(f"[Strategy] on_update failed ({update_event.name}): {e}", extra={"owner":self.agent_id}, exc_info=True)
+            self.logger.error(f"[Strategy] on_update failed ({update_event.name}): {e}", extra={"owner": self.agent_id}, exc_info=True)
             raise
 
     @abstractmethod
@@ -168,13 +168,13 @@ class StrategyBase(ABC):
     def handle_order_dispatch(self, dispatched_order: Order | CancelOrder):
         fut = self.pending_strategy_orders.pop(dispatched_order.unique_id, None)
         if not fut:
-            self.logger.error(f"[Strategy] no pending future exists for the dispatched_order: uid {dispatched_order.unique_id}", extra={"owner":self.agent_id})
+            self.logger.error(f"[Strategy] no pending future exists for the dispatched_order: uid {dispatched_order.unique_id}", extra={"owner": self.agent_id})
             return
 
         if not fut.done():
             fut.set_result(dispatched_order)        
         else: 
-            self.logger.error(f"[Strategy] future is already done for the dispatched_order: uid {dispatched_order.unique_id}", extra={"owner":self.agent_id})
+            self.logger.error(f"[Strategy] future is already done for the dispatched_order: uid {dispatched_order.unique_id}", extra={"owner": self.agent_id})
 
     # -----------------------------------------------------------------
     # validators
@@ -200,7 +200,6 @@ class StrategyBase(ABC):
         # if error handling is necessary, for errors return None
         return Order(
             agent_id=self.agent_id, 
-            logger=self.logger,
             code=self.code, 
             side=side, 
             mtype=mtype, 
