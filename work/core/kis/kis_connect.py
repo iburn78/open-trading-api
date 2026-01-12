@@ -1,16 +1,16 @@
 import asyncio
 import json
-import requests
 import websockets
 import yaml
 import httpx 
+import time
 from base64 import b64decode
 from collections import namedtuple
 from datetime import datetime, timedelta
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
 
-from ..base.settings import Service, config_file, real_sleep, demo_sleep, reauth_margin_sec
+from ..base.settings import Service, config_file, token_file, real_sleep, demo_sleep, reauth_margin_hr
 
 class KIS_Connector: 
     # default values
@@ -50,17 +50,19 @@ class KIS_Connector:
             "custtype": "P",
         }
 
-        self.token = None
-        self.token_exp = None
+        self.token, self.token_exp = self.load_token(token_file) # token_exp datetime object 
+
         self.httpx_client: httpx.AsyncClient = httpx.AsyncClient()
+        self._last_call_time = None
+
         # Websocket part ----------------
         self.base_header_ws = { 
             "content-type": "utf-8", # not "charset"
             "custtype": "P",
         }
 
+        # for websocket, do not save token in file
         self.token_ws = None
-        self.token_ws_exp = None
 
         self.ws = None # websocket to be initialized in runner
         self.ws_ready = asyncio.Event()
@@ -87,11 +89,25 @@ class KIS_Connector:
             self.sec_key = _cfg['paper_sec']
             self.account_no = _cfg['paper_acct_stock']
 
-    ###_ 1분 이내 재요청 fail - may not need to implement ... 
+    def save_token(self, path: str, token: str, token_exp: datetime):
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(f"{token_exp.strftime('%Y-%m-%d %H:%M:%S')}|{token}")
+
+    def load_token(self, path: str):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                line = f.read().strip()
+
+            exp_str, token = line.split("|", 1)
+            token_exp = datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S")
+            return token, token_exp
+        except: 
+            return None, None
+
     async def set_token(self):
         if self.token:
-            if self.token_exp > datetime.now() + timedelta(seconds = reauth_margin_sec):
-                return 
+            if self.token_exp > datetime.now() + timedelta(hours = reauth_margin_hr):
+                return
         p = {
             "grant_type": "client_credentials",
             "appkey": self.app_key,
@@ -102,7 +118,7 @@ class KIS_Connector:
         try:
             resp = await self.httpx_client.post(token_url, json=p)
         except httpx.RequestError as e:
-            self.logger.error(f"[KIS_Connector] getting token failed: {e}")
+            self.logger.error(f"[KIS_Connector] getting token failed: {e}", exc_info=True)
             raise
         
         if resp.status_code != 200:
@@ -113,10 +129,19 @@ class KIS_Connector:
         self.token = r['access_token'] 
         self.token_exp = datetime.strptime(r['access_token_token_expired'], "%Y-%m-%d %H:%M:%S")
         self.base_header["authorization"] = f"Bearer {self.token}"
+        self.save_token(token_file, self.token, self.token_exp)
 
-    ###_ make sleep at the level
     async def url_fetch(self, api_url, tr_id, tr_cont, params, post=False):
         await self.set_token()
+
+        # guarantees self.sleep time dealy between calls
+        now = time.monotonic() # less overhead and ever increasing (error proof)
+        if self._last_call_time is not None:
+            delay = self._last_call_time + self.sleep - now
+            if delay > 0:
+                await asyncio.sleep(delay)
+        self._last_call_time = time.monotonic()
+
         url = self.url + api_url
         h = {
             "tr_id": tr_id,
@@ -137,7 +162,7 @@ class KIS_Connector:
                 )
         except httpx.RequestError as e: # network level / transport errros
             self.logger.error(f"[url_fetch] request failed: {e}", exc_info=True)
-            return None
+            return None, None
 
         # resp is an httpx.Response object
         if resp.status_code == 200:
@@ -145,17 +170,16 @@ class KIS_Connector:
             h = resp.headers
             if res['rt_cd'] == "0": # if success 
                 return res, h
-        else:
-            self.logger.error(f"[url_fetch] error code: {resp.status_code} | {resp.text}")
-            return None, None
+
+        self.logger.error(f"[url_fetch] error code: {resp.status_code} | {resp.text}")
+        return None, None
 
     # -------------------------------------------------------------------
     # WebSocket part
     # -------------------------------------------------------------------
     async def set_token_ws(self):
-        if self.token_ws:
-            if self.token_ws_exp > datetime.now() + timedelta(seconds = reauth_margin_sec):
-                return 
+        if self.token_ws: return
+
         p = {
             "grant_type": "client_credentials",
             "appkey": self.app_key,
@@ -166,7 +190,7 @@ class KIS_Connector:
         try:
             resp = await self.httpx_client.post(token_ws_url, json=p)
         except httpx.RequestError as e:
-            self.logger.error(f"[KIS_Connector] getting token_ws failed: {e}")
+            self.logger.error(f"[KIS_Connector] getting token_ws failed: {e}", exc_info=True)
             raise
 
         if resp.status_code != 200:
@@ -175,7 +199,6 @@ class KIS_Connector:
 
         r = resp.json()
         self.token_ws = r['approval_key'] 
-        self.token_ws_exp = datetime.now() + timedelta(hours=24)
         self.base_header_ws["approval_key"] = self.token_ws
 
     async def ws_send(self, tr_type, tr_id, tr_key): 
@@ -219,14 +242,14 @@ class KIS_Connector:
                     await self.ws.pong(raw)
                     continue
 
-                self.logger.info(self.print_sys_resp(rsp))
+                self.logger.info(self.sys_resp_to_str(rsp))
                 if not rsp.tr_id.strip() or 'null' in rsp.tr_id.lower(): 
                     continue
                 await self.register_tr_id(
                     tr_id=rsp.tr_id, key=rsp.ekey, iv=rsp.iv
                 )
             
-    def print_sys_resp(self, rsp):
+    def sys_resp_to_str(self, rsp):
         parts = []
         parts.append("SysMsg:OK" if rsp.isOk else "SysMsg:Not_OK")
         parts.append(f"tr_id:{rsp.tr_id}")
@@ -334,7 +357,7 @@ class KIS_Connector:
             except Exception as e: # asyncio.CancelledError is not caught here, so escape while
                 self._ws_try_count += 1
                 rec = "closed" if self._ws_try_count == self._max_ws_tries else "reconnecting"
-                self.logger.error(f"[KIS_Connector] ws error {self._ws_try_count}/{self._max_ws_tries}, {rec}: {e}")
+                self.logger.error(f"[KIS_Connector] ws error {self._ws_try_count}/{self._max_ws_tries}, {rec}: {e}", exc_info=True)
             finally:
                 self.ws_ready.clear()
                 self.ws = None

@@ -1,16 +1,53 @@
 from dataclasses import dataclass, field
 from enum import Enum, auto
 import uuid
+import asyncio
 
 from ..base.tools import dict_key_number
 
 class RequestCommand(Enum):
     SUBMIT_ORDERS = auto()
-    REGISTER_AGENT_CARD = auto()
+    REGISTER_AGENT = auto()
     SYNC_ORDER_HISTORY = auto()
     SYNC_COMPLETE_NOTICE = auto()
     SUBSCRIBE_TRP = auto()
     GET_PSBL_ORDER = auto()
+
+# an agent's session info in the server
+# all server operation on agent is done with AgentSession instance
+@dataclass
+class AgentSession:
+    """
+    Server managed info / may change per connection
+    - e.g., server memos additional info to the agent's business card
+    An agent card is removed once disconnected, so order history etc should not be here.
+    """
+    id: str | None = None 
+    code: str | None = None 
+    dp: int | None = None 
+
+    reader: asyncio.StreamReader | None = None 
+    writer: asyncio.StreamWriter | None = None 
+    connected: bool = False
+    send_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+
+    sync_completed: bool = False
+    sync_completed_event: asyncio.Event = field(default_factory=asyncio.Event)
+    subscriptions: set = field(default_factory=set) # subscribed functions
+
+    def __str__(self):
+        return f'agent {self.id}, code {self.code}, dp {self.dp}'
+
+    async def dispatch(self, message): 
+        # should not use writer directly
+        await self.send_queue.put(message)
+    
+    @classmethod
+    async def dispatch_multiple(cls, to: list, message):
+        if not to:
+            return
+        for agent in to:
+            await agent.dispatch(message) ###_ may make it parallel
 
 @dataclass
 class ClientRequest:

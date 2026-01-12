@@ -5,12 +5,12 @@ import pickle
 import os
 import time
 
+from .comm_interface import AgentSession
 from .comm_interface import Sync, OM_Dispatch, Dispatch_ACK
 from ..base.settings import DATA_DIR, OM_save_filename, disk_save_period, order_manager_keep_days
 from ..base.tools import merge_with_suffix_on_A, list_str, dict_key_number
 from ..kis.kis_tools import KIS_Functions
 from ..kis.ws_data import TransactionNotice
-from ..model.agent import AgentCard, dispatch
 from ..model.order import Order, CancelOrder
 from ..comm.conn_agents import ConnectedAgents
 
@@ -139,7 +139,7 @@ class OrderManager:
 
     # sync is based first by code, and then by checking if agent.id exists
     # sync_start_date should be an isoformat ("YYYY-MM-DD")
-    async def get_agent_sync(self, agent: AgentCard, sync_start_date: str | None = None):
+    async def get_agent_sync(self, agent: AgentSession, sync_start_date: str | None = None):
         lock = self._locks[agent.code]
         await lock.acquire()
 
@@ -176,7 +176,7 @@ class OrderManager:
         self.logger.info(f"[OrderManager] agent sync data sent", extra={"owner":agent.id})
         return Sync(agent.id, pios, ios, cos, ptrns)
 
-    async def agent_sync_completed_lock_release(self, agent: AgentCard):
+    async def agent_sync_completed_lock_release(self, agent: AgentSession):
         lock = self._locks[agent.code]
         if lock and lock.locked():
             # to avoid deadlock with ack_received(), release first
@@ -229,8 +229,7 @@ class OrderManager:
                     code_map[INCOMPLETED_ORDERS].get(order.agent_id).pop(order.original_order_no)
                     code_map[COMPLETED_ORDERS].setdefault(order.agent_id, {})[original_order.order_no] = original_order
 
-    async def submit_orders_and_register(self, orders: list[Order | CancelOrder]):
-        agent = self.connected_agents.get_agent_by_id(orders[0].agent_id)
+    async def submit_orders_and_register(self, agent, orders: list[Order | CancelOrder]):
         if any(o.submitted for o in orders):
             self.logger.error(f"[OrderManager] orders already submitted: no actions taken", extra={"owner": agent.id})
             return False
@@ -269,6 +268,8 @@ class OrderManager:
             await self.dispatch_handler(agent, order)
             if not order.submitted:
                 continue
+            
+            ###_ _______________________________________________
 
             async with self._locks[order.code]:
                 # register incompleted order
@@ -377,11 +378,11 @@ class OrderManager:
                 self.map[date_] = pickle.load(f)
             self.logger.info(f"[OrderManager] loaded history for {date_} ({fname})")
 
-    async def dispatch_handler(self, agent: AgentCard, data):
+    async def dispatch_handler(self, agent: AgentSession, data):
         d = OM_Dispatch(data)
         code_map = self._get_code_map(agent.code)
         code_map[PENDING_DISPATCHES].setdefault(agent.id, {})[d.id] = data
-        await dispatch(agent, d)
+        await agent.dispatch(d)
         
     async def ack_received(self, dispatch_ack: Dispatch_ACK):
         agent = self.connected_agents.get_agent_by_id(dispatch_ack.agent_id)
@@ -393,5 +394,44 @@ class OrderManager:
                 self.logger.error(f"[OrderManager] stale ACK: {dispatch_ack}", extra={"owner": agent.id})
                 return
             del agent_map[dispatch_ack.id]
+
+
             if not agent.sync_completed and not agent_map:
                 agent.sync_completed_event.set()
+
+
+###_
+"""
+defaultdict(<function OrderManager.__init__.<locals>.<lambda> at 0x00000161857DFE20>, 
+            {'2026-01-10': {'000660': {'pending_trns': {}, 'incompleted_orders': {}, 'completed_orders': {}, 'pending_dispatches': {}}}, 
+             '2026-01-11': {'000660': {'pending_trns': {}, 'incompleted_orders': {}, 'completed_orders': {}, 'pending_dispatches': {}}}, 
+             '2026-01-12': {'000660': {'pending_trns': {}, 'incompleted_orders': {'A5': {}, 'A7': {}}, 
+            'completed_orders': {'A5': {'0000007379': Order(agent_id='A5', logger=<Logger agent_runner_demo (WARNING)>, code='000660', side=<SIDE.BUY: 'buy'>, mtype=<MTYPE.MARKET: '01'>, quantity=1, price=0, exchange=<EXG.SOR: 'SOR'>, unique_id='7f4f3f7758a64119aaba635cb3f2143e', gen_time='0112122353.878389', org_no='00950', order_no='0000007379', submitted_time='122359', is_regular_order=True, submitted=True, accepted=True, completed=True, amount=754000, avg_price=754000.0, processed=1, fee_=107, tax_=0), 
+                                        '0000007404': Order(agent_id='A5', logger=<Logger agent_runner_demo (WARNING)>, code='000660', side=<SIDE.BUY: 'buy'>, mtype=<MTYPE.MARKET: '01'>, quantity=2, price=0, exchange=<EXG.SOR: 'SOR'>, unique_id='7e383d16e37f4704842894650aad4bfd', gen_time='0112122532.277560', org_no='00950', order_no='0000007404', submitted_time='122533', is_regular_order=True, submitted=True, accepted=True, completed=True, amount=1506000, avg_price=753000.0, processed=2, fee_=214, tax_=0)}, 
+                                'A7': {'0000007474': Order(agent_id='A7', logger=<Logger agent_runner_demo (WARNING)>, code='000660', side=<SIDE.BUY: 'buy'>, mtype=<MTYPE.MARKET: '01'>, quantity=10, price=0, exchange=<EXG.SOR: 'SOR'>, unique_id='394d2a178ca2433da4f51cf993a5b2c6', gen_time='0112123013.113691', org_no='00950', order_no='0000007474', submitted_time='123014', is_regular_order=True, submitted=True, accepted=True, completed=True, amount=7528000, avg_price=752800.0, processed=10, fee_=1070, tax_=0), 
+                                       '0000007475': Order(agent_id='A7', logger=<Logger agent_runner_demo (WARNING)>, code='000660', side=<SIDE.BUY: 'buy'>, mtype=<MTYPE.MARKET: '01'>, quantity=10, price=0, exchange=<EXG.SOR: 'SOR'>, unique_id='61ebb681e0814e5d863c458292c6c78e', gen_time='0112123013.113691', org_no='00950', order_no='0000007475', submitted_time='123014', is_regular_order=True, submitted=True, accepted=True, completed=True, amount=7530000, avg_price=753000.0, processed=10, fee_=1069, tax_=0)}}, 
+            'pending_dispatches': {'A5': {}, 'A7': {'1e69a4de87ac4d46b15531b2241e1a31': Order(agent_id='A7', logger=<Logger agent_runner_demo (WARNING)>, code='000660', side=<SIDE.BUY: 'buy'>, mtype=<MTYPE.MARKET: '01'>, quantity=10, price=0, exchange=<EXG.SOR: 'SOR'>, unique_id='394d2a178ca2433da4f51cf993a5b2c6', gen_time='0112123013.113691', org_no='00950', order_no='0000007474', submitted_time='123014', is_regular_order=True, submitted=True, accepted=True, completed=True, amount=7528000, avg_price=752800.0, processed=10, fee_=1070, tax_=0), 
+                                  '4950bf8e4f1f44258f44494c2faeb484': <core.kis.ws_data.TransactionNotice object at 0x00000161997DC190>, 
+                                  'd646984f28fb4a9aaec9d36563c7679b': <core.kis.ws_data.TransactionNotice object at 0x00000161997DC910>, 
+                                  'c25d954a6d0246559689e92f36b2ce5d': Order(agent_id='A7', logger=<Logger agent_runner_demo (WARNING)>, code='000660', side=<SIDE.BUY: 'buy'>, mtype=<MTYPE.MARKET: '01'>, quantity=10, price=0, exchange=<EXG.SOR: 'SOR'>, unique_id='61ebb681e0814e5d863c458292c6c78e', gen_time='0112123013.113691', org_no='00950', order_no='0000007475', submitted_time='123014', is_regular_order=True, submitted=True, accepted=True, completed=True, amount=7530000, avg_price=753000.0, processed=10, fee_=1069, tax_=0), 
+                                  'c3568a92a4fd4a428a36fcd168aa0a37': <core.kis.ws_data.TransactionNotice object at 0x00000161997DCC10>, 
+                                  '226f8bf1ac324a60a710addcb0b2ada1': <core.kis.ws_data.TransactionNotice object at 0x00000161997DCED0>}}}}})
+                                  
+
+###_ gravious errors
+1) pending dispatch... order manager has check it as completed, but notices not gone yet. mismatch could arise
+    - should perfectly match order manager vs order book 
+    - when ack received should only be updated at the same time for both (revise total logic)
+    - asyncio doesn't stop at CPU, it is raised at next await, so ensure both be the same 
+    - it includes order and notices
+
+2) default dict -> care, once you put key, it will be generated 
+
+3) order has logger could be wrong... 
+
+4) 0112_123014.206 [ERROR] > [CommHandler] handler error at client port 11676: cannot unpack non-iterable NoneType object
+
+5) dashboard port collison issue
+
+6) discunnect later trns are not quued to the pending trns
+"""

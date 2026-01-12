@@ -24,6 +24,7 @@ class DashBoard:
             tg.create_task(self._broadcaster_loop())
 
     async def _start_server(self):
+        ###_ catch OSError for dubplicated ports
         self._server = await websockets.serve(self._handler, self.host, self.port)
         self.logger.info(f"[DashBoard] websocket broadcasting running on ws://{self.host}:{self.port}", extra={"owner": self.owner_name})
 
@@ -61,15 +62,17 @@ class DashboardManager(DashBoard):
         8002: "agent_id 2"
         8003: "agent_id 3"
         ...
+    endpoints let the browser client know what are the currently serving dashboard ports
+    the brower client only need to connect to the manager
     }
     """
     def __init__(self, logger, owner_name, port):
         super().__init__(logger, owner_name, port)
         self.endpoints = {} 
-        self.register_dp(self.port, self.owner_name)
+        self.register_dp(self.owner_name, self.port)
 
     # done when agent is registerd to the conn_agents
-    def register_dp(self, port, id): # id: "manager", "server" or agent.id
+    def register_dp(self, id, port): # id: "manager", "server" or agent.id
         tid = self.endpoints.get(port)
         if tid and tid != id: # port already in use
             return False

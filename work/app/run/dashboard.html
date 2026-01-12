@@ -79,13 +79,15 @@ const mgr = new WebSocket("ws://127.0.0.1:9020");
 mgr.onmessage = (event) => {
     let endpoints;
     try {
-        endpoints = JSON.parse(event.data);
+        endpoints = JSON.parse(event.data); 
     } catch (e) {
         console.error("Invalid manager payload:", event.data);
         return;
     }
 
-    const ports = Object.keys(endpoints).map(Number);
+    // keys are always strings
+    // ports are ordered and showed in that sequence
+    const ports = Object.keys(endpoints); 
 
     // Add / update ports
     ports.forEach(port => {
@@ -94,8 +96,8 @@ mgr.onmessage = (event) => {
 
     // Remove ports that no longer exist
     for (const port of Object.keys(sockets)) {
-        if (!ports.includes(Number(port))) {
-            removePort(Number(port));
+        if (!ports.includes(port)) {  
+            removePort(port);  
         }
     }
 };

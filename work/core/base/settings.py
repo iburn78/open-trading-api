@@ -10,13 +10,14 @@ LOG_DIR = WORK_DIR / 'log'
 DATA_DIR = WORK_DIR / 'data'
 
 config_file = PROJECTS_DIR / 'config' / 'kis_devlp.yaml'
+token_file = PROJECTS_DIR / 'config' / 'kis_token.dat'
 
 # ----------------------------------------------------
 # API control settings
 # ----------------------------------------------------
 real_sleep = 0.1 # min 0.05
 demo_sleep = 0.5 # min 0.5
-reauth_margin_sec = 300
+reauth_margin_hr = 3
 
 # ----------------------------------------------------
 # local communication settings
@@ -29,25 +30,30 @@ class Service(StrEnum):
     def is_real(self): 
         return self is not Service.DEMO
 
+# clients(agents) to server
 HOST = "127.0.0.1"   # Localhost
 SERVER_PORT = {
     Service.PROD: 30001,
     Service.AUTO: 30002,
     Service.DEMO: 30003,
 }
-# 1024–49151 → registered/user ports → safe for your server
-# 49152–65535 → ephemeral → usually assigned automatically to clients
+# note: server assigns a distinct port to each incoming client
 
+# browers to dashboard manager (main screen)
 DASHBOARD_MANAGER_PORT = {
     Service.PROD: 9000,
     Service.AUTO: 9010,
     Service.DEMO: 9020,
 }
+
+# server's dashboard port by service type
 DASHBOARD_SERVER_PORT = {
     Service.PROD: 9001,
     Service.AUTO: 9011,
     Service.DEMO: 9021,
 }
+
+# each agent has its own server
 
 # ----------------------------------------------------
 # server status save settings

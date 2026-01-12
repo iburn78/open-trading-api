@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 
+from .comm_interface import AgentSession
 from .comm_handler import CommHandler
 from .conn_agents import ConnectedAgents
 from .subs_manager import SubscriptionManager
@@ -11,7 +12,6 @@ from ..kis.kis_connect import KIS_Connector
 from ..kis.kis_tools import KIS_Functions
 from ..kis.ws_data import TransactionNotice, TransactionPrices
 from ..model.aux_info import AuxInfo
-from ..model.agent import dispatch
 from ..model.dashboard import DashBoard, DashboardManager
 
 class Server:
@@ -23,7 +23,7 @@ class Server:
         self.aux_info = AuxInfo(self.service)
         self.dashboard_manager = DashboardManager(self.logger, "manager", DASHBOARD_MANAGER_PORT[self.service])
         self.dashboard = DashBoard(self.logger, "server", DASHBOARD_SERVER_PORT[self.service]) # server's own dashboard
-        self.dashboard_manager.register_dp(self.dashboard.port, self.dashboard.owner_name)
+        self.dashboard_manager.register_dp(self.dashboard.owner_name, self.dashboard.port)
         self.connected_agents = ConnectedAgents(self.logger, self.dashboard_manager, self.aux_info) 
         self.order_manager = OrderManager(self.logger, self.connected_agents, self.kf, self.service)
         self.subs_manager = SubscriptionManager()
@@ -40,7 +40,7 @@ class Server:
         elif target == "TransactionPrices": 
             trp = TransactionPrices(n_rows, d)
             # self.logger.info(trp)
-            self._tg.create_task(dispatch(self.connected_agents.get_target_agents_by_trp(trp), trp)) 
+            self._tg.create_task(AgentSession.dispatch_multiple(self.connected_agents.get_target_agents_by_trp(trp), trp)) 
 
         self.get_status()
     
@@ -68,7 +68,7 @@ class Server:
             await asyncio.sleep(server_broadcast_interval)
             message = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
             message += ' ping from the server '
-            await dispatch(self.connected_agents.get_all_agents(), message)
+            await AgentSession.dispatch_multiple(self.connected_agents.get_all_agents(), message)
             self.logger.info(self.get_status())
 
     async def run(self): 
@@ -77,17 +77,21 @@ class Server:
             async with asyncio.TaskGroup() as tg: 
                 self._tg = tg
 
-                tg.create_task(self.dashboard.run())
-                tg.create_task(self.connected_agents.dashboard_manager.run())
+                # websocket dashboard servers
+                tg.create_task(self.dashboard.run()) # server own dashboard
+                tg.create_task(self.connected_agents.dashboard_manager.run()) # collects dashboards to a brower client
 
-                tg.create_task(self.kc.run_websocket())
+                # API - server (in addition to the REST connection)
+                tg.create_task(self.kc.run_websocket()) 
                 await self.kc.ws_ready.wait()
 
                 # default subscriptions
                 await self.kf.ccnl_notice()
 
-                # server + periodic tasks
-                tg.create_task(self.run_comm_server())
+                # server - clients(agents) using asyncio reader/writer streams
+                tg.create_task(self.run_comm_server()) 
+
+                # other periodic tasks
                 tg.create_task(self.broadcast_to_clients())
                 tg.create_task(self.order_manager.persist_to_disk())
                 tg.create_task(self.order_manager.pending_trns_timeout())

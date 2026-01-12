@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 import asyncio
-import pickle
 import logging
 
 from .order import Order, CancelOrder
@@ -16,28 +15,6 @@ from ..kis.ws_data import TransactionPrices, TransactionNotice, MTYPE
 from ..model.dashboard import DashBoard
 from ..comm.comm_interface import RequestCommand, ClientRequest, ServerResponse, Sync
 
-# an agent's business card (e.g., agents submit their business cards in registration)
-# all server operation on agent is done with AgentCard instance
-@dataclass
-class AgentCard: 
-    """
-    Server managed info / may change per connection
-    - e.g., server memos additional info to the agent's business card
-    An agent card is removed once disconnected, so order history etc should not be here.
-    """
-    id: str
-    code: str
-    dp: int # dashboard port - from agent init
-
-    client_port: str | None = None # assigned by the server/OS 
-    writer: object | None = None 
-    sync_completed: bool = False
-    sync_completed_event: asyncio.Event = field(default_factory=asyncio.Event)
-    subscriptions: set = field(default_factory=set) # subscribed functions
-
-    def __str__(self):
-        return f'agent {self.id}, code {self.code}, dp {self.dp}, client port {self.client_port}'
-
 @dataclass
 class Agent:
     id: str  
@@ -50,7 +27,6 @@ class Agent:
     dashboard: DashBoard = field(default_factory=DashBoard) 
 
     # for server communication
-    card: AgentCard = field(default_factory=lambda: AgentCard(id="", code="", dp=None))
     client: PersistentClient = field(default_factory=PersistentClient)
     hardstop_event: asyncio.Event = field(default_factory=asyncio.Event) # to finish agent activity
 
@@ -67,10 +43,6 @@ class Agent:
     sync_start_date: str | None = None # isoformat date ("yyyy-mm-dd") # should be assigned in initialize() 
 
     def __post_init__(self):
-        self.card.id = self.id
-        self.card.code = self.code
-        self.card.dp = self.dp
-
         self.client.logger = self.logger
         self.client.agent_id = self.id
         self.client.port = SERVER_PORT[self.service]
@@ -129,14 +101,15 @@ class Agent:
         try:
             async with asyncio.TaskGroup() as tg:
                 tasks = []
-                # [DashBoard enact part]
                 tasks.append(tg.create_task(self.client.connect()))
                 await self.client.connected.wait()
+
+                # [DashBoard enact part]
                 tasks.append(tg.create_task(self.dashboard.run()))
 
                 # [Registration part]
-                register_request = ClientRequest(command=RequestCommand.REGISTER_AGENT_CARD)
-                register_request.set_request_data(self.card) 
+                register_request = ClientRequest(command=RequestCommand.REGISTER_AGENT)
+                register_request.set_request_data((self.id, self.code, self.dp)) 
                 register_resp: ServerResponse | None = await self.client.send_client_request(register_request)
                 if register_resp is None: 
                     raise asyncio.CancelledError 
@@ -174,7 +147,7 @@ class Agent:
 
                 # [Price initialization part]
                 self.logger.info(f"[Agent] waiting for initial market price", extra={"owner":self.id})
-                await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
+                # await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
                 self.agent_ready_to_run_strategy = True
                 self.logger.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", extra={"owner":self.id})
 
@@ -259,18 +232,6 @@ class Agent:
         (a_, q_, p_) = res.data_dict['psbl_data'] 
         # order quantity should be less than or equal to q_
         return q_
-
-async def dispatch(to: AgentCard | list[AgentCard], message):
-    if not to: return
-    if isinstance(to, AgentCard): to = [to]
-    data = pickle.dumps(message)
-    msg_bytes = len(data).to_bytes(4, 'big') + data
-    for agent in to:
-        try:
-            agent.writer.write(msg_bytes)
-            await agent.writer.drain() 
-        except Exception:
-            pass 
 
 # minimal agent running example
 if __name__ == "__main__":

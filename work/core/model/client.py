@@ -28,7 +28,7 @@ class PersistentClient:
         try: 
             self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
         except ConnectionRefusedError as e:
-            self.logger.error(f"[Client] connection failed: {e}", extra={"owner": self.agent_id})
+            self.logger.error(f"[Client] connection failed: {e}", extra={"owner": self.agent_id}, exc_info=True)
             return
         self.logger.info(f"[Client] connected to {self.host}:{self.port}", extra={"owner": self.agent_id})
 
@@ -38,6 +38,10 @@ class PersistentClient:
                 self._tg = tg
                 self.connected.set()
                 await self.listen_server()  # never returns until cancelled
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+            self.logger.warning(f"[Client] connection error {e}", extra={"owner": self.agent_id})
+
+            
         finally:
             self._tg = None
             self.connected.clear()
@@ -52,7 +56,10 @@ class PersistentClient:
 
             if self.writer:
                 self.writer.close()
-                await self.writer.wait_closed()
+                try:
+                    await self.writer.wait_closed()
+                except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as e:
+                    pass # suppress windows errors
             self.logger.info("[Client] server connection closed", extra={"owner": self.agent_id})
 
     async def listen_server(self):
@@ -84,7 +91,7 @@ class PersistentClient:
                     tg.create_task(self.on_dispatch(msg))
 
         except asyncio.IncompleteReadError:
-            self.logger.warning("[Client] server closed connection", extra={"owner": self.agent_id})
+            self.logger.warning("[Client] server closed connection", extra={"owner": self.agent_id}, exc_info=True)
 
         except Exception as e:
             self.logger.error(f"[Client] unexpected error in listen_server: {e}", extra={"owner": self.agent_id}, exc_info=True)
@@ -93,7 +100,7 @@ class PersistentClient:
         """Send a request; short-lived task under the same TG."""
         tg = self._tg # copying object reference as connect() might assign self._tg == None
         if not self.is_connected or tg is None:
-            self.logger.error(f"[Client] not connected", extra={"owner": self.agent_id}, exc_info=True)
+            self.logger.error(f"[Client] not connected", extra={"owner": self.agent_id})
             return None
 
         async def _send_and_wait():
@@ -113,7 +120,6 @@ class PersistentClient:
                 self.pending_requests.pop(client_request.request_id, None)
 
         return await tg.create_task(_send_and_wait())
-
 
     @property
     def is_connected(self) -> bool:

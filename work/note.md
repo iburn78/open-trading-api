@@ -42,7 +42,6 @@ or more modern way (only for development situation)
 - Race conditions could occur when getting responses from API server: e.g., 1) direct response of the command, 2) websocket response 
 - Cancelled order is only progressed up to order.processed quantity
 - Each agent has a client instance (one to one)
-- Agent registration is done by AgentCard
 - A client can send a command but the corresponding agent has to be registered already
 - let's use "###(underbar_)" to mark places that need attention / fix / develop
 - Order submission: Strategy-Agent(Client)-OrderBook: single order communication, Client-Server: List[Order] communication, Server-API: single order communication
@@ -223,6 +222,4 @@ Cleanup after async with is not guaranteed
 
 try/finally is still mandatory
 
-###_ clarify what ports are used and what
-###_ dashboard manager / dashboard structure / understand dashboard logic
-###_ note reorganize
+###_ note.md reorganize

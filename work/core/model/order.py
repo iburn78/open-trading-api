@@ -110,6 +110,7 @@ class Order:
             self.logger.error(f"Notice does not match with order {self.order_no}", extra={"owner":self.agent_id})
             raise ValueError
         if self.completed: 
+            print(self)
             self.logger.error(f"Notice for completed order {self.order_no} arrived", extra={"owner":self.agent_id})
             raise ValueError
         if notice.rfus_yn != "0": # "0": 승인

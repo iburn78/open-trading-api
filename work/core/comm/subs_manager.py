@@ -1,6 +1,6 @@
 import asyncio
 
-from ..model.agent import AgentCard
+from .comm_interface import AgentSession
 
 class SubscriptionManager:
     """
@@ -33,7 +33,7 @@ class SubscriptionManager:
             return '[SubsManager] no agent-specific subscriptions'
 
     # add and subscribe
-    async def add(self, agent: AgentCard, func): # func: websocket subscription functions in KIS_Functions 
+    async def add(self, agent: AgentSession, func): # func: websocket subscription functions in KIS_Functions 
         async with self._lock:
             func_map = self.subs_map.setdefault(func, {})
             agent_list = func_map.get(agent.code)
@@ -50,7 +50,7 @@ class SubscriptionManager:
 
     # remove and unsubscribe
     # agent could have multiple subscriptions (i.e., multiple funcs)
-    async def remove(self, agent: AgentCard, func=None): # if func = None, remove all
+    async def remove(self, agent: AgentSession, func=None): # if func = None, remove all
         async with self._lock:
             if func is None:
                 res = []
@@ -60,7 +60,7 @@ class SubscriptionManager:
             else:
                 return await self._remove(agent, func)
 
-    async def _remove(self, agent: AgentCard, func): 
+    async def _remove(self, agent: AgentSession, func): 
         if func not in self.subs_map:
             return f"[SubsManager] {func.__name__} not found in subscription map"
 
