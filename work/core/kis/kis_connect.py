@@ -68,6 +68,7 @@ class KIS_Connector:
 
         # for websocket, do not save token in file
         self.token_ws = None
+        self.token_ws_exp = None
 
         self.ws = None # websocket to be initialized in runner
         self.ws_ready = asyncio.Event()
@@ -169,7 +170,9 @@ class KIS_Connector:
     # WebSocket part
     # -------------------------------------------------------------------
     async def set_token_ws(self):
-        if self.token_ws: return
+        if self.token_ws: 
+            if self.token_ws_exp > datetime.now() + timedelta(hours = reauth_margin_hr):
+                return
 
         p = {
             "grant_type": "client_credentials",
@@ -190,6 +193,7 @@ class KIS_Connector:
 
         r = resp.json()
         self.token_ws = r['approval_key'] 
+        self.token_ws_exp = datetime.now() + timedelta(hours=24)
         self.base_header_ws["approval_key"] = self.token_ws
 
     async def ws_send(self, tr_type, tr_id, tr_key): 

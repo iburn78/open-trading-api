@@ -20,6 +20,7 @@ class Server:
         self.service = service
         self.logger = logger 
         self.server_env = self.get_server_env() # for not leave it as dict
+        print(self.server_env)
         self.kc = KIS_Connector(self.logger, self.service, self.on_result, self.server_env)
         self.kf = KIS_Functions(self.kc)
         self.aux_info = AuxInfo(self.service)
@@ -32,18 +33,17 @@ class Server:
         self.comm_handler = CommHandler(self.logger, self)
 
     def get_server_env(self) -> dict:
-        if not server_env_file.exists():
-            return {}
-        with open(server_env_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        if not server_env_file.exists(): return {}
+        with open(server_env_file, 'r', encoding='utf-8') as f: return json.load(f)
 
-    def save_server_env(self):        
+    def save_server_env(self):
+        # kc token data
         self.server_env['token'] = self.kc.token
-        if self.kc.token_exp: 
-            self.server_env['token_exp'] = self.kc.token_exp.strftime('%Y-%m-%d %H:%M:%S')
-        else: 
-            self.server_env['token_exp'] = None # saved as 'null' but back to None
+        self.server_env['token_exp'] = self.kc.token_exp.strftime('%Y-%m-%d %H:%M:%S') if self.kc.token_exp else None
+        # other server data
+        # ... to be added ...
 
+        self.server_env['token'] = self.kc.token
         with open(server_env_file, 'w', encoding='utf-8') as f:
             json.dump(self.server_env, f, ensure_ascii=False, indent=4)
 
