@@ -49,7 +49,8 @@ class ConnectedAgents:
 
             self.code_agent_map.setdefault(agent.code, []).append(agent)
             if agent.code not in self.code_market_map:
-                self.code_market_map[agent.code] = get_listed_market(agent.code) 
+                # self.code_market_map[agent.code] = get_listed_market(agent.code) 
+                self.code_market_map[agent.code] = None  # currently fdr function does not work properly.
             self.agent_id_map[agent.id] = agent
             return True, f'agent {agent.id} registered in the server'
 

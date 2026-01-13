@@ -10,7 +10,6 @@ LOG_DIR = WORK_DIR / 'log'
 DATA_DIR = WORK_DIR / 'data'
 
 config_file = PROJECTS_DIR / 'config' / 'kis_devlp.yaml'
-token_file = PROJECTS_DIR / 'config' / 'kis_token.dat'
 
 # ----------------------------------------------------
 # API control settings

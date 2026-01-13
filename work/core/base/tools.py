@@ -85,6 +85,8 @@ def get_listed_market(code):
 
 def get_df_krx_price(code):
     df_krx = get_df_krx()
+    print(df_krx)
+    print(df_krx.columns)
     return int(df_krx.loc[code, 'Close'])
 
 # indexed_listing = {key: item, key: item}

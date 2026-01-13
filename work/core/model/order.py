@@ -30,6 +30,7 @@ class Order:
     submitted: bool = False # if order_no is assgined by KIS, then submitted = True
     accepted: bool = False
     completed: bool = False
+    null_order: bool = False # CancelOrder that should be ignored (not used in regular orders)
 
     # for tax and fee calculation
     amount: int = 0 # total purchased/sold cumulative amount (sum of quantity x price)
@@ -141,26 +142,28 @@ class Order:
         pass
 
     def make_a_cancel_order(self, partial: bool = False, to_cancel_qty: int = 0): 
-        if self.completed:
-            raise ValueError(f"[Order] tried to make a cancel order for a completed order: {self}")
-
+        msg = ""
         if partial: 
             qty_all_yn = "N"
         else: 
             qty_all_yn = "Y"
-
-        return CancelOrder(
-            agent_id=self.agent_id, 
-            code = self.code,
-            side = self.side,
-            mtype = self.mtype,
-            quantity = to_cancel_qty,
-            price = self.price,
-            exchange = self.exchange,
-            original_order_org_no = self.org_no, 
-            original_order_no = self.order_no, 
-            qty_all_yn=qty_all_yn, 
+        co = CancelOrder(
+                agent_id=self.agent_id, 
+                code = self.code,
+                side = self.side,
+                mtype = self.mtype,
+                quantity = to_cancel_qty,
+                price = self.price,
+                exchange = self.exchange,
+                original_order_org_no = self.org_no, 
+                original_order_no = self.order_no, 
+                qty_all_yn=qty_all_yn, 
             )
+        if self.completed:
+            msg = f"[Order] tried to make a cancel order for a completed order: {self}"
+            co.null_order = True
+
+        return co, msg
 
 @dataclass
 class CancelOrder(Order):
@@ -205,13 +208,14 @@ class CancelOrder(Order):
     original_order_org_no: str | None = None
     original_order_no: str | None = None
     qty_all_yn: str = "Y"
+    null_order: bool = False
 
     def __post_init__(self):
         # doesn't call super() automatically
-        self.is_regular_order = False 
+        self.is_regular_order = False  # vs CancelOrder
 
         if self.original_order_no is None or self.original_order_org_no is None:
-            raise ValueError(f"[CancelOrder] original order info is missing {self}")
+            self.null_order = True
 
     def __str__(self): 
         txt = self._str_base()

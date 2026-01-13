@@ -107,8 +107,15 @@ class StrategyBase(ABC):
 
         # Validate first
         for order in orders:
+            if order.null_order:
+                    self.logger.error(
+                        f"[Strategy] invalid cancellation order is included: {order}",
+                        extra={"owner": self.agent_id},
+                    )
+                    return results  # [None, None, ...]
+
             if order.is_regular_order:
-                if not self.validate_strategy_order(order):
+                if not self._validate_strategy_order(order):
                     self.logger.error(
                         f"[Strategy] order validation failed: {order}",
                         extra={"owner": self.agent_id},
@@ -179,17 +186,21 @@ class StrategyBase(ABC):
     # -----------------------------------------------------------------
     # validators
     # -----------------------------------------------------------------
-    def validate_strategy_order(self, order: Order | None) -> bool:
+    def _validate_strategy_order(self, order: Order | None) -> bool:
         if order is None: return False
 
         if order.side == SIDE.BUY:
             if order.mtype == MTYPE.LIMIT:
                 if order.quantity*order.price > self.pm.get_max_limit_buy_amt():
-                    return False
+                    self.logger.error(f'account limit reached - order cancelled', extra={"owner": self.agent_id})
+                    raise asyncio.CancelledError # this case to be checked with logic
+                    # return False
             else: # MARKET or MIDDLE
                 exp_amount = excel_round(order.quantity*self.pm.market_prices.current_price) # check with current price
                 if exp_amount > self.pm.get_max_market_buy_amt():
-                    return False
+                    self.logger.error(f'account limit reached - order cancelled', extra={"owner": self.agent_id})
+                    raise asyncio.CancelledError # this case to be checked with logic
+                    # return False
 
         else: # str_cmd.side == SIDE.SELL:
             if order.quantity > self.pm.max_sell_qty:

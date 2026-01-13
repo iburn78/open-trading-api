@@ -57,7 +57,8 @@ class Agent:
         self.order_book.code = self.code
 
         self.market_prices.code = self.code
-        self.market_prices.current_price = get_df_krx_price(self.code)
+        # self.market_prices.current_price = get_df_krx_price(self.code)
+        self.market_prices.current_price = None # initiate with None
 
         self.pm.agent_id = self.id
         self.pm.code = self.code
@@ -126,7 +127,6 @@ class Agent:
                 self.logger.info(f"[Agent] ServerResponse {sync_resp}", extra={"owner": self.id})
                 sync: Sync = sync_resp.data_dict.get("sync_data") 
                 await self.order_book.process_sync(sync)
-                self.pm.update()
 
                 # [Sync part - releasing lock]
                 release_request = ClientRequest(command=RequestCommand.SYNC_COMPLETE_NOTICE)
@@ -147,7 +147,8 @@ class Agent:
 
                 # [Price initialization part]
                 self.logger.info(f"[Agent] waiting for initial market price", extra={"owner": self.id})
-                # await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
+                await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
+                self.pm.update()
                 self.agent_ready_to_run_strategy = True
                 self.logger.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", extra={"owner": self.id})
 
