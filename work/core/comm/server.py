@@ -1,4 +1,5 @@
 import asyncio
+import json
 import datetime
 
 from .comm_interface import AgentSession
@@ -7,7 +8,7 @@ from .conn_agents import ConnectedAgents
 from .subs_manager import SubscriptionManager
 from .order_manager import OrderManager
 from ..base.logger import LogSetup
-from ..base.settings import Service, HOST, SERVER_PORT, DASHBOARD_SERVER_PORT, DASHBOARD_MANAGER_PORT, server_broadcast_interval 
+from ..base.settings import Service, HOST, SERVER_PORT, DASHBOARD_SERVER_PORT, DASHBOARD_MANAGER_PORT, server_broadcast_interval, server_env_file
 from ..kis.kis_connect import KIS_Connector 
 from ..kis.kis_tools import KIS_Functions
 from ..kis.ws_data import TransactionNotice, TransactionPrices
@@ -18,7 +19,8 @@ class Server:
     def __init__(self, service: Service, logger): 
         self.service = service
         self.logger = logger 
-        self.kc = KIS_Connector(self.logger, self.service, self.on_result)
+        self.server_env = self.get_server_env() # for not leave it as dict
+        self.kc = KIS_Connector(self.logger, self.service, self.on_result, self.server_env)
         self.kf = KIS_Functions(self.kc)
         self.aux_info = AuxInfo(self.service)
         self.dashboard_manager = DashboardManager(self.logger, "manager", DASHBOARD_MANAGER_PORT[self.service])
@@ -28,6 +30,22 @@ class Server:
         self.order_manager = OrderManager(self.logger, self.connected_agents, self.kf, self.service)
         self.subs_manager = SubscriptionManager()
         self.comm_handler = CommHandler(self.logger, self)
+
+    def get_server_env(self) -> dict:
+        if not server_env_file.exists():
+            return {}
+        with open(server_env_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+    def save_server_env(self):        
+        self.server_env['token'] = self.kc.token
+        if self.kc.token_exp: 
+            self.server_env['token_exp'] = self.kc.token_exp.strftime('%Y-%m-%d %H:%M:%S')
+        else: 
+            self.server_env['token_exp'] = None # saved as 'null' but back to None
+
+        with open(server_env_file, 'w', encoding='utf-8') as f:
+            json.dump(self.server_env, f, ensure_ascii=False, indent=4)
 
     def on_result(self, tr_id, n_rows, d):
         target = self.kf.tr_id.get_target(tr_id)
@@ -99,6 +117,7 @@ class Server:
         finally: 
             await self.kc.close_httpx()
             saved_date = await self.order_manager.persist_to_disk(immediate = True)
+            self.save_server_env()
             self.logger.info(f"[Server] order_manager saved for {saved_date}")
             self.logger.info(f"[Server] shutdown completed =============================================")
 

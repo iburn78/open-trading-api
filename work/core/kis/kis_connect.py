@@ -26,7 +26,7 @@ class KIS_Connector:
     # control settings
     _max_ws_tries = 5
 
-    def __init__(self, logger, service: Service, on_result=None):
+    def __init__(self, logger, service: Service, on_result=None, server_env:dict=None):
         self.logger = logger
         self.service = service
         self.on_result = on_result
@@ -50,8 +50,12 @@ class KIS_Connector:
             "custtype": "P",
         }
 
-        self.token = None
-        self.token_exp = None
+        self.token = server_env.get('token')
+        _exp_time = server_env.get('token_exp')
+        if _exp_time:
+            self.token_exp = datetime.strptime(_exp_time,'%Y-%m-%d %H:%M:%S')
+        else: 
+            self.token_exp = None
 
         self.httpx_client: httpx.AsyncClient = httpx.AsyncClient()
         self._last_call_time = None
@@ -89,22 +93,6 @@ class KIS_Connector:
             self.app_key = _cfg['paper_app']
             self.sec_key = _cfg['paper_sec']
             self.account_no = _cfg['paper_acct_stock']
-
-    # this saving/reading does not work
-    # def save_token(self, path: str, token: str, token_exp: datetime):
-    #     with open(path, "w", encoding="utf-8") as f:
-    #         f.write(f"{token_exp.strftime('%Y-%m-%d %H:%M:%S')}|{token}")
-
-    # def load_token(self, path: str):
-    #     try:
-    #         with open(path, "r", encoding="utf-8") as f:
-    #             line = f.read().strip()
-
-    #         exp_str, token = line.split("|", 1)
-    #         token_exp = datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S")
-    #         return token, token_exp
-    #     except: 
-    #         return None, None
 
     async def set_token(self):
         if self.token:
