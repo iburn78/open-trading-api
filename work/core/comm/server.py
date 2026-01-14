@@ -20,7 +20,6 @@ class Server:
         self.service = service
         self.logger = logger 
         self.server_env = self.get_server_env() # for not leave it as dict
-        print(self.server_env)
         self.kc = KIS_Connector(self.logger, self.service, self.on_result, self.server_env)
         self.kf = KIS_Functions(self.kc)
         self.aux_info = AuxInfo(self.service)
@@ -37,10 +36,8 @@ class Server:
         with open(server_env_file, 'r', encoding='utf-8') as f: return json.load(f)
 
     def save_server_env(self):
-        # kc token data
         self.server_env['token'] = self.kc.token
         self.server_env['token_exp'] = self.kc.token_exp.strftime('%Y-%m-%d %H:%M:%S') if self.kc.token_exp else None
-        # other server data
         # ... to be added ...
 
         self.server_env['token'] = self.kc.token

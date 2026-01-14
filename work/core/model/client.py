@@ -91,7 +91,7 @@ class PersistentClient:
                     tg.create_task(self.on_dispatch(msg))
 
         except asyncio.IncompleteReadError:
-            self.logger.warning("[Client] server closed connection", extra={"owner": self.agent_id}, exc_info=True)
+            self.logger.warning("[Client] server closed connection", extra={"owner": self.agent_id})
 
         except Exception as e:
             self.logger.error(f"[Client] unexpected error in listen_server: {e}", extra={"owner": self.agent_id}, exc_info=True)

@@ -48,13 +48,16 @@ class StrategyBase(ABC):
             if self.lazy_run: # if True, strategy does not run on every trn: only reacts to new trns
                 self._trn_receive_event.clear() 
 
-            async with asyncio.TaskGroup() as tg:
-                tg.create_task(self._price_update_event.wait())
-                tg.create_task(self._trn_receive_event.wait())
-                done, pending = await asyncio.wait( # without this, tg waits for all to completed
-                    [t for t in tg._tasks],  
-                    return_when=asyncio.FIRST_COMPLETED
-                )
+            price_task = asyncio.create_task(self._price_update_event.wait())
+            trn_task   = asyncio.create_task(self._trn_receive_event.wait())
+
+            done, pending = await asyncio.wait(
+                {price_task, trn_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            for task in pending:
+                task.cancel()
 
             if self._price_update_event.is_set():
                 self._price_update_event.clear()
@@ -71,7 +74,7 @@ class StrategyBase(ABC):
                 await self.on_update(update_event)
         except Exception as e:
             self.logger.error(f"[Strategy] on_update failed ({update_event.name}): {e}", extra={"owner": self.agent_id}, exc_info=True)
-            raise
+            raise asyncio.CancelledError
 
     @abstractmethod
     async def on_update(self, update_event: UpdateEvent):
