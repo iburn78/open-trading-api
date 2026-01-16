@@ -33,7 +33,7 @@ class ConnectedAgents:
                 "[ConnectedAgents]"
             ]
             for c, l in self.code_agent_map.items():
-                tl = [f'{a.id} ({a.dp}' for a in l]
+                tl = [f'{a.id} ({a.dp})' for a in l]
                 parts.append(f'- {c}: ' + list_str(tl))
             return '\n'.join(parts)
         else: 

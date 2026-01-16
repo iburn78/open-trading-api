@@ -30,12 +30,11 @@ class CommHandler:
     async def writer_loop(self, agent: AgentSession):
         try:
             while True:
-                msg = await agent.send_queue.get()
-                if msg is None:  # shutdown signal
+                data = await agent._send_queue.get()
+                if data is None:  # shutdown signal
                     break
 
-                data = pickle.dumps(msg)
-                agent.writer.write(len(data).to_bytes(4, "big") + data)
+                agent.writer.write(len(data).to_bytes(4, "big") + data) # only bytes are accepted
                 await agent.writer.drain()
 
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
@@ -90,13 +89,13 @@ class CommHandler:
                 response.request_id = client_request.request_id
 
                 # Send response back
-                await agent.send_queue.put(response)
+                await agent.dispatch(response)
         
         except Exception as e:
             self.logger.error(f"[CommHandler] handler error at client port {peer[1]}: {e}", exc_info=True)
 
         finally:
-            await agent.send_queue.put(None) # stop writer
+            await agent._send_queue.put(None) # stop writer
             await writer_task
 
             if agent.connected:

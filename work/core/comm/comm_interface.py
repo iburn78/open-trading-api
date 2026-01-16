@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 import uuid
 import asyncio
+import pickle
 
 from ..base.tools import dict_key_number
 
@@ -29,7 +30,7 @@ class AgentSession:
     reader: asyncio.StreamReader | None = None 
     writer: asyncio.StreamWriter | None = None 
     connected: bool = False
-    send_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    _send_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
 
     subscriptions: set = field(default_factory=set) # subscribed functions
 
@@ -38,7 +39,8 @@ class AgentSession:
 
     async def dispatch(self, message): 
         # should not use writer directly
-        await self.send_queue.put(message)
+        data = pickle.dumps(message) # data freezed this moment
+        await self._send_queue.put(data)
     
     @classmethod
     async def dispatch_multiple(cls, to: list, message):

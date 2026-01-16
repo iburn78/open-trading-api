@@ -38,7 +38,7 @@ class DoubleUpStrategy(StrategyBase):
         if self.pm.bep_return_rate is not None and self.pm.bep_return_rate >= self.SELL_BEP_RETURN_RATE:
             # sell all
             q = self.pm.holding_qty  # quantity to sell
-            self.logger.info(f"SELL ALLL {q}", extra={"owner": self.agent_id})
+            self.logger.info(f"SELL ALL {q}", extra={"owner": self.agent_id})
             sc = self.create_an_order(side=SIDE.SELL, mtype=MTYPE.MARKET, price=0, quantity=q)
             await self.execute_rebind(sc)
             return
@@ -50,4 +50,3 @@ class DoubleUpStrategy(StrategyBase):
             sc = self.create_an_order(side=SIDE.BUY, mtype=MTYPE.MARKET, price=0, quantity=q)
             await self.execute_rebind(sc)
             return
-

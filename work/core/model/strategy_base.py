@@ -118,12 +118,13 @@ class StrategyBase(ABC):
                     return results  # [None, None, ...]
 
             if order.is_regular_order:
-                if not self._validate_strategy_order(order):
-                    self.logger.error(
-                        f"[Strategy] order validation failed: {order}",
-                        extra={"owner": self.agent_id},
-                    )
-                    return results  # [None, None, ...]
+                self._validate_strategy_order(order) ###_ cancels the agent run for now
+                # if not self._validate_strategy_order(order):
+                #     self.logger.error(
+                #         f"[Strategy] order validation failed: {order}",
+                #         extra={"owner": self.agent_id},
+                #     )
+                #     return results  # [None, None, ...]
 
         # this ensures furture exists in pending strategy order dict as the dispatch_order could arrive faster
         loop = asyncio.get_running_loop()

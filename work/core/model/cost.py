@@ -39,11 +39,11 @@ class CostCalculator:
     TAX = {  
         # On-exchange (장내)
         'KOSPI': {
-            'TransactionTax': 0, # to increase to 0.05 (2026.1.1)
+            'TransactionTax': 0.05, # increased to 0.05 (2026.1.1)
             'RuralDevTax': 0.15,
         },
         'KOSDAQ': {
-            'TransactionTax': 0.15, # to increase to 0.20 (2026.1.1)
+            'TransactionTax': 0.20, # increased to 0.20 (2026.1.1)
             'RuralDevTax': 0,
         },
 
@@ -59,9 +59,10 @@ class CostCalculator:
     # rounding rule 
     # 0: # 1원 미만 rounding
     # -1: # 10원 미만 rounding 
+    # 체결 단위로 계산하고, 주문/일 단위로 합산한 뒤 1회 절사, 국내 증권사 수수료 라운딩의 사실상 표준
     RD_rule = { 
         'MIN_FEE': 0, 
-        'FEE': 0, # maybe -1; need check (seems better tracking with 0)
+        'FEE': 0, 
         'TAX': 0, 
     }
 
@@ -76,7 +77,6 @@ class CostCalculator:
 
     # 각각의 Order가 중간 체결 될때는 각 Fee 및 Tax를 float로 합산하고, 매 순간 Excel Rounding (int) 진행함
     # 완료되거나 중단될 경우, rounded 값 사용
-    # 보수적 접근으로 실제 증권사 Logic을 정확히 알 수 없으므로 근사치임 (체결간 시간 간격등 추가 Rule이 있을 수 있음)
     @classmethod
     def calculate(cls, side: SIDE, quantity, price, service, listed_market=None, traded_exchange=None, maker_taker="taker"): 
         # default to be conservative

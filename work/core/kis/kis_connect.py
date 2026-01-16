@@ -49,12 +49,11 @@ class KIS_Connector:
             "appsecret": self.sec_key, 
             "custtype": "P",
         }
-
-        self.token = server_env.get('token')
-        _exp_time = server_env.get('token_exp')
-        if _exp_time:
-            self.token_exp = datetime.strptime(_exp_time,'%Y-%m-%d %H:%M:%S')
+        if server_env:
+            self.token = server_env.get('token')
+            self.token_exp = datetime.strptime(server_env.get('token_exp'),'%Y-%m-%d %H:%M:%S')
         else: 
+            self.token = None
             self.token_exp = None
 
         self.httpx_client: httpx.AsyncClient = httpx.AsyncClient()
@@ -128,8 +127,8 @@ class KIS_Connector:
         now = time.monotonic() # less overhead and ever increasing (error proof)
         if self._last_call_time is not None:
             delay = self._last_call_time + self.sleep - now
-            print('now: ', now)  ###_ check 
-            print('delay: ', delay) ###_ ... 
+            self.logger.info(f'now: {now}')  ###_ check 
+            self.logger.info(f'delay: {delay}')  ###_ check 
             if delay > 0:
                 await asyncio.sleep(delay)
         self._last_call_time = time.monotonic()
