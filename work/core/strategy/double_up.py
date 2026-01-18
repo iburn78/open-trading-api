@@ -1,4 +1,4 @@
-from ..kis.ws_data import SIDE, MTYPE 
+from ..kis.kis_tools import SIDE, MTYPE 
 from ..model.strategy_base import StrategyBase
 from ..model.strategy_util import UpdateEvent
 

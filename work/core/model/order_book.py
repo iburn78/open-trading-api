@@ -3,7 +3,8 @@ from dataclasses import dataclass, field
 import logging
 
 from .order import Order, CancelOrder
-from ..kis.ws_data import MTYPE, SIDE, TransactionNotice
+from ..kis.kis_tools import SIDE, MTYPE
+from ..kis.ws_data import TransactionNotice
 from ..comm.comm_interface import Sync
 
 @dataclass

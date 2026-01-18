@@ -1,14 +1,14 @@
 ## Purpose
-To develop a robust stock 'trader' using the KIS Open API for Korean public stocks
-
+To develop a robust stock 'trader' using the KIS Open API
 
 ## Architecture
 ### core
 independent modules 
-
-- common: independent 
+- base: independent
+- comm (communication): 
 - kis: independent 
 - model: import common, kis 
+###_ reorganize this but not now, later after having 20 working strategies
 
 ### app
 intermediate applications to be used in \base

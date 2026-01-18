@@ -1,6 +1,6 @@
 from ..base.settings import Service
 from ..base.tools import excel_round
-from ..kis.ws_data import SIDE, EXG
+from ..kis.kis_tools import SIDE, EXG
 
 # ----------------------------------------
 # Transaction cost calculation

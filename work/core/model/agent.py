@@ -11,7 +11,8 @@ from .strategy_base import StrategyBase
 from ..base.logger import notice_beep
 from ..base.settings import Service, SERVER_PORT
 from ..base.tools import get_df_krx_price
-from ..kis.ws_data import TransactionPrices, TransactionNotice, MTYPE
+from ..kis.kis_tools import MTYPE
+from ..kis.ws_data import TransactionPrices, TransactionNotice
 from ..model.dashboard import DashBoard
 from ..comm.comm_interface import RequestCommand, ClientRequest, ServerResponse, Sync
 

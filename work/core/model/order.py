@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field 
 from datetime import datetime
 import uuid
-import logging
 
-from ..kis.ws_data import SIDE, MTYPE, EXG, TransactionNotice
+from ..kis.kis_tools import SIDE, MTYPE, EXG
+from ..kis.ws_data import TransactionNotice
 
 @dataclass
 class Order:

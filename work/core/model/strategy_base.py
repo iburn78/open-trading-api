@@ -4,7 +4,7 @@ import asyncio
 from .perf_metric import PerformanceMetric
 from .strategy_util import UpdateEvent
 from ..base.tools import excel_round
-from ..kis.ws_data import SIDE, MTYPE, EXG
+from ..kis.kis_tools import SIDE, MTYPE, EXG
 from ..model.order import Order, CancelOrder
 
 class StrategyBase(ABC):
