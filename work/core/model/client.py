@@ -28,7 +28,7 @@ class PersistentClient:
         try: 
             self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
         except ConnectionRefusedError as e:
-            self.logger.error(f"[Client] connection failed: {e}", extra={"owner": self.agent_id}, exc_info=True)
+            self.logger.error(f"[Client] connection failed: {e}", extra={"owner": self.agent_id})
             return
         self.logger.info(f"[Client] connected to {self.host}:{self.port}", extra={"owner": self.agent_id})
 

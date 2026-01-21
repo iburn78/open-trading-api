@@ -11,7 +11,7 @@ async def agent_runner(logger):
     AGENT_RUNTIME = 1000 # sec
     # A = Agent(id = 'A1', code = '000660', service=service, dp = 8001, logger=logger, strategy=BruteForceRandStrategy())
     A = Agent(id = 'A3', code = '005930', service=service, dp = 8003, logger=logger, strategy=DoubleUpStrategy())
-    A.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=735000, sync_start_date='2026-01-01')
+    A.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-01')
 
     run_task = asyncio.create_task(A.run())
     await asyncio.sleep(AGENT_RUNTIME)

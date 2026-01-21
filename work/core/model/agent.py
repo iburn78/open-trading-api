@@ -211,6 +211,8 @@ class Agent:
 
     async def handle_prices(self, trp: TransactionPrices):
         self.market_prices.update_from_trp(trp)
+        self.logger.info(trp, extra={"owner": self.id})
+        self.logger.info(self.market_prices, extra={"owner": self.id})
         self.pm.update(price_update_only=True) 
         if not self.agent_ready_to_run_strategy: self.agent_initial_price_set_up.set() 
         self.strategy._price_update_event.set()

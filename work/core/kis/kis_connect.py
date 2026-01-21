@@ -350,8 +350,10 @@ class KIS_Connector:
                         self._ws_try_count = 0
             except Exception as e: # asyncio.CancelledError is not caught here, so escape while
                 self._ws_try_count += 1
-                rec = "closed" if self._ws_try_count == self._max_ws_tries else "reconnecting"
+                exp_delay = min(2 ** self._ws_try_count, 30)
+                rec = "closed" if self._ws_try_count == self._max_ws_tries else f"reconnecting in {exp_delay} sec"
                 self.logger.error(f"[KIS_Connector] ws error {self._ws_try_count}/{self._max_ws_tries}, {rec}: {e}", exc_info=True)
+                await asyncio.sleep(exp_delay)
             finally:
                 self.ws_ready.clear()
                 self.ws = None

@@ -46,12 +46,14 @@ class MarketPrices:
         # initialize sliding windows for price, volume, and amount
         L = 10000 # reasonable - might be enough
         self.maxlen = int(min(L, self.window_size*60*self.max_trans_per_sec*(1+self.safety_margin)))
-        self._price_window = deque(maxlen=self.maxlen)   # (timestamp, price)
+        self._price_ticks = deque(maxlen=self.maxlen)   # (timestamp, price)
         self._volume_window = deque(maxlen=self.maxlen)  # (timestamp, volume)
         self._amount_window = deque(maxlen=self.maxlen)  # (timestamp, amount)
+        self._min_price_dq = deque()  # (timestamp, price)
+        self._max_price_dq = deque()
 
         # running sums for O(1) updates
-        self._sum_price = 0
+        self._sum_trade_price = 0
         self._sum_volume = 0
         self._sum_amount = 0
 
@@ -59,9 +61,8 @@ class MarketPrices:
         self.cumulative_volume = 0
         self.cumulative_amount = 0
 
-    def _trim_and_update_sum(self, dq, total_attr, value, tr_time):
+    def _trim_and_update_sum(self, cutoff, dq, total_attr, value, tr_time):
         """Shared logic for adding new value and trimming old ones."""
-        cutoff = tr_time - timedelta(minutes=self.window_size)
         total = getattr(self, total_attr) # getattr is appropriate, as otherwise if directly var is used, then its values are passed by value (not reference)
         while dq and dq[0][0] < cutoff:
             _, old_val = dq.popleft()
@@ -73,23 +74,37 @@ class MarketPrices:
 
         setattr(self, total_attr, total)
 
+    ###_ dynamic window size change -> check ... shrink case 
+    ###_ add deque to track volume per window (as discrete data, last N data...) => devise logic first, and then implement
     def update(self, price: int, quantity: int, tr_time: datetime, _window_resize: bool = False):
         """Main update — handles trimming and recalculating all moving metrics."""
-        self._trim_and_update_sum(self._price_window, "_sum_price", price, tr_time)
-        self._trim_and_update_sum(self._volume_window, "_sum_volume", quantity, tr_time)
-        self._trim_and_update_sum(self._amount_window, "_sum_amount", price * quantity, tr_time)
+        cutoff = tr_time - timedelta(minutes=self.window_size)
+        self._trim_and_update_sum(cutoff, self._price_ticks, "_sum_price", price, tr_time)
+        self._trim_and_update_sum(cutoff, self._volume_window, "_sum_volume", quantity, tr_time)
+        self._trim_and_update_sum(cutoff, self._amount_window, "_sum_amount", price * quantity, tr_time)
 
         self.current_price = price
         self.current_time = tr_time
 
-        # update derived metrics
-        if self._price_window:
-            prices = [p for _, p in self._price_window]
-            self.low_price = min(prices)
-            self.high_price = max(prices)
-            self.moving_avg = int(self._sum_price / len(prices))
-        else:
-            self.low_price = self.high_price = self.moving_avg = None
+        while self._min_price_dq and self._min_price_dq[0][0] < cutoff:
+            self._min_price_dq.popleft()
+
+        while self._max_price_dq and self._max_price_dq[0][0] < cutoff:
+            self._max_price_dq.popleft()
+
+        # min deque
+        while self._min_price_dq and self._min_price_dq[-1][1] >= price:
+            self._min_price_dq.pop()
+        self._min_price_dq.append((tr_time, price))
+
+        # max deque
+        while self._max_price_dq and self._max_price_dq[-1][1] <= price:
+            self._max_price_dq.pop()
+        self._max_price_dq.append((tr_time, price))
+
+        self.low_price = self._min_price_dq[0][1] if self._min_price_dq else None
+        self.high_price = self._max_price_dq[0][1] if self._max_price_dq else None
+        self.moving_avg = int(self._sum_trade_price / len(self._price_ticks)) if self._price_ticks else None
 
         # update cumulative and moving values
         if not _window_resize:
@@ -106,9 +121,9 @@ class MarketPrices:
         if new_size == self.window_size:
             return
         self.window_size = new_size
-        if self._price_window:
+        if self._price_ticks:
             # Re-run update using last record to re-trim based on new window
-            last_time, last_price = self._price_window[-1]
+            last_time, last_price = self._price_ticks[-1]
             last_qty = self._volume_window[-1][1] if self._volume_window else 0
             self.update(last_price, last_qty, last_time, _window_resize=True)
 
