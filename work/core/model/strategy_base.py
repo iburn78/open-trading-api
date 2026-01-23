@@ -6,6 +6,7 @@ from .strategy_util import UpdateEvent
 from ..base.tools import excel_round
 from ..kis.kis_tools import SIDE, MTYPE, EXG
 from ..model.order import Order, CancelOrder
+from ..model.price import PriceTrendEvent
 
 class StrategyBase(ABC):
     """
@@ -34,6 +35,10 @@ class StrategyBase(ABC):
         self._price_update_event: asyncio.Event = asyncio.Event()
         self._trn_receive_event: asyncio.Event = asyncio.Event()
 
+        # market price event channel
+        self.mp_signals: asyncio.Queue = asyncio.Queue()
+        self.last_mp_signal: PriceTrendEvent | None = None
+
         # others
         self.str_name = self.__class__.__name__ # subclass name
         self._on_update_lock: asyncio.Lock = asyncio.Lock()
@@ -50,9 +55,10 @@ class StrategyBase(ABC):
 
             price_task = asyncio.create_task(self._price_update_event.wait())
             trn_task   = asyncio.create_task(self._trn_receive_event.wait())
+            mp_signals_task = asyncio.create_task(self.mp_signals.get())
 
             done, pending = await asyncio.wait(
-                {price_task, trn_task},
+                {price_task, trn_task, mp_signals_task},
                 return_when=asyncio.FIRST_COMPLETED,
             )
 
@@ -67,6 +73,11 @@ class StrategyBase(ABC):
                 self._trn_receive_event.clear()
                 self.logger.info(self.pm, extra={"owner": self.agent_id})
                 await self.on_update_shell(UpdateEvent.TRN_RECEIVE)
+            
+            if mp_signals_task in done: 
+                self.last_mp_signal: PriceTrendEvent = mp_signals_task.result()
+                self.logger.info(self.last_mp_signal, extra={"owner": self.agent_id})
+                await self.on_update_shell(UpdateEvent.PRICE_TREND_EVENT)
 
     async def on_update_shell(self, update_event: UpdateEvent):
         try:

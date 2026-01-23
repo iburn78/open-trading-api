@@ -77,6 +77,7 @@ class Agent:
         self.strategy.logger = self.logger
         self.strategy.pm = self.pm
         self.strategy.submit_order = self.submit_order
+        self.strategy.mp_signals = self.mp_signals
 
     def initialize(self, init_cash_allocated = 0, init_holding_qty = 0, 
                             init_avg_price = 0, sync_start_date = None):
@@ -214,9 +215,11 @@ class Agent:
 
     async def handle_prices(self, trp: TransactionPrices):
         self.market_prices.update_from_trp(trp)
+        ###_ check 
         print('================')
         print(trp)
         print(datetime.datetime.now())
+        print('================')
         self.logger.info(trp, extra={"owner": self.id})
         self.logger.info(self.market_prices, extra={"owner": self.id})
         self.pm.update(price_update_only=True) 

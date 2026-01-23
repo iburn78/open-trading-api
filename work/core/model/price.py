@@ -11,7 +11,6 @@ class MarketPrices:
     code: str = ""
 
     current_price: int | None = None # latest transaction price
-    current_time: datetime | None = None # latest transaction time
     low_price: int | None = None # per window_size
     high_price: int | None = None # per window_size
     moving_avg: int | None = None # price, per window_size
@@ -47,13 +46,13 @@ class MarketPrices:
         self._current_bucket_start: datetime | None = None
         self._current_bucket_volume: int = 0   # not the same as _volume (moving volume) due to the last transaction
 
+    ###_ suppose time is fom API and could be off by local time (rounded to sec)
     def update_from_trp(self, trp: TransactionPrices):
         p, q, t = trp.get_price_quantity_time()
         self.update(p, q, t)
 
     def update(self, price: int, quantity: int, tr_time: datetime):
         self.current_price = price
-        self.current_time = tr_time
 
         cutoff = tr_time - timedelta(minutes=self.window_duration)
         while self._price_quantity_data and self._price_quantity_data[0][0] < cutoff:
@@ -94,66 +93,88 @@ class MarketPrices:
             ) - timedelta(minutes=tr_time.minute % self.window_duration)
             self._current_bucket_start = aligned
 
+    def _init_bucket(self, tr_time: datetime):
+        if self._current_bucket_start is None:
+            # Convert total time to seconds within the hour
+            total_seconds = tr_time.minute * 60 + tr_time.second + tr_time.microsecond / 1e6
+
+            # Align to nearest lower multiple of window_seconds
+            aligned_seconds = total_seconds - (total_seconds % (self.window_duration*60))
+
+            # Build aligned datetime
+            self._current_bucket_start = tr_time.replace(minute=0, second=0, microsecond=0) + timedelta(seconds=aligned_seconds)
+
     # while: advances buckets until the current trade fits.
     def _advance_bucket(self, tr_time: datetime):
         while tr_time >= self._current_bucket_start + self._bucket_delta:
             # close current bucket
             self._volume_buckets.append(self._current_bucket_volume) # save before adding last transaction quantitiy
-            self._on_bucket_close()
 
             # advance
             self._current_bucket_start += self._bucket_delta
+            
+            # assess and reset
+            self._on_bucket_close()
             self._current_bucket_volume = 0
-
-    def _on_bucket_close(self):
-            # calculate status of the last buckets
-            ###_ info and signaling
-            ###_ use event queue from agent
-            print(self.detect_volume_surge(ratio=2.0))
-            print(self.detect_volume_trend(slope_ratio=1.3))
-            print(self._current_bucket_volume)
-            print(self._volume)
-            print(self.current_time)
-            print('--------------------------------------------------')
 
     # --------------------------------------------
     # volume status detect functions
     # --------------------------------------------
+    # calculate status of the last buckets
+    def _on_bucket_close(self):
+            va = self.get_vol_to_avg()
+            svr = self.get_shifted_vol_ratio()
 
-    def detect_volume_surge(self, ratio: float) -> bool:
-        """
-        Returns True if current bucket volume is significantly larger than bucket average
-        """
-        if len(self._volume_buckets) < self.num_buckets:
-            return False
+            pte = PriceTrendEvent(va, svr)
+            if pte.is_event(self):
+                pte.event_time = self._current_bucket_start
+                self.mp_signals.put(pte)
 
+    def get_vol_to_avg(self):
+        if len(self._volume_buckets) < self.num_buckets: return None
         avg_past = sum(self._volume_buckets) / len(self._volume_buckets)
+        if avg_past == 0: return None
 
-        # protect against zero-volume periods
-        if avg_past == 0:
-            return False
-
-        return self._current_bucket_volume >= ratio * avg_past
+        return self._current_bucket_volume / avg_past
     
-    def detect_volume_trend(self, slope_ratio: float, shift: int | None = None) -> bool: 
-        """
-        True/False if slope_ratio > (last N-shift buckets)/(first N-shift buckets)
-        """
-        if len(self._volume_buckets) < self.num_buckets:
-            return False
+    def get_shifted_vol_ratio(self, shift: int | None = None):
+        if len(self._volume_buckets) < self.num_buckets: return None
+        if shift is None: shift = max(1, self.num_buckets // 4)
 
         past = list(self._volume_buckets)
-
-        if shift is None:
-            shift = max(1, self.num_buckets // 4)
-
         early = past[:-shift]
         late = past[shift:]
-
         early_avg = sum(early) / len(early)
         late_avg = sum(late) / len(late)
 
-        if early_avg == 0:
-            return False
+        if early_avg == 0: return None
+        return late_avg / early_avg # (last N-shift buckets)/(first N-shift buckets) 
 
-        return late_avg / early_avg >= slope_ratio
+@dataclass
+class PriceTrendEvent:
+    volume_to_avg: float | None = None
+    shifted_vol_ratio: float | None = None
+
+    volume_surge: bool = False
+    volume_up_trend: bool = False
+    event_time: datetime | None = None
+
+    # decision criteria
+    VOLUME_RATIO: float = 2.0
+    SLOPE_RATIO: float  = 1.3
+
+    def __str__(self): 
+        res = f"[PriceTrendEvent] vta: {self.volume_to_avg}/{self.VOLUME_RATIO}, svr: {self.shifted_vol_ratio}/{self.SLOPE_RATIO} ({self.event_time.strftime('%M:%S')})"
+        if self.volume_surge: 
+            res += f" | Volume Surge detected"
+        if self.volume_up_trend: 
+            res += f" | Volume Up Trend detected"
+        return res
+
+    def is_event(self):
+        if self.volume_to_avg and self.volume_to_avg > self.VOLUME_RATIO:
+            self.volume_surge = True
+        if self.shifted_vol_ratio and self.shifted_vol_ratio > self.SLOPE_RATIO:
+            self.volume_up_trend = True
+
+        return self.volume_surge or self.volume_up_trend

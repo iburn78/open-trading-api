@@ -147,6 +147,17 @@ TRPriceData = namedtuple('TRPriceData', TRPriceColumns)
 ###_ check API time is the future (or off)
 ###_ API time is only up to sec 
 ###_ may assign local time upon arrival
+###_ 1) test WGHN_AVRG_STCK_PRC
+###_ 2) test lt is correctly set 
+###_ 3) test when creation, if time really not set
+###_ 4) see full record of TRP
+###_ 5) may assign local time (is this really important)
+
+
+###_ suppose this time is exact time and to sec (no milisec), and reviewed price.py part
+
+
+
 class TransactionPrices:
     def __init__(self, n_rows, d): # d is a list of data
         n_cols = len(TRPriceColumns)
