@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import asyncio
 import logging
+import datetime
 
 from .order import Order, CancelOrder
 from .client import PersistentClient
@@ -10,7 +11,7 @@ from .perf_metric import PerformanceMetric
 from .strategy_base import StrategyBase
 from ..base.logger import notice_beep
 from ..base.settings import Service, SERVER_PORT
-from ..base.tools import get_df_krx_price
+# from ..base.tools import get_df_krx_price
 from ..kis.kis_tools import MTYPE
 from ..kis.ws_data import TransactionPrices, TransactionNotice
 from ..model.dashboard import DashBoard
@@ -36,6 +37,7 @@ class Agent:
     market_prices: MarketPrices = field(default_factory=MarketPrices)
     strategy: StrategyBase = field(default_factory=StrategyBase) 
     pm: PerformanceMetric = field(default_factory=PerformanceMetric)
+    mp_signals: asyncio.Queue = field(default_factory=asyncio.Queue)
 
     # other flags
     initialized: bool = False
@@ -60,6 +62,7 @@ class Agent:
         self.market_prices.code = self.code
         # self.market_prices.current_price = get_df_krx_price(self.code)
         self.market_prices.current_price = None # initiate with None
+        self.market_prices.mp_signals = self.mp_signals
 
         self.pm.agent_id = self.id
         self.pm.code = self.code
@@ -211,6 +214,9 @@ class Agent:
 
     async def handle_prices(self, trp: TransactionPrices):
         self.market_prices.update_from_trp(trp)
+        print('================')
+        print(trp)
+        print(datetime.datetime.now())
         self.logger.info(trp, extra={"owner": self.id})
         self.logger.info(self.market_prices, extra={"owner": self.id})
         self.pm.update(price_update_only=True) 

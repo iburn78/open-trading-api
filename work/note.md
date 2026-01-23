@@ -68,7 +68,10 @@ or more modern way (only for development situation)
 - in Linux: install Intel MKL NumPy to boost speed 
     - pip install numpy -U --extra-index-url https://pypi.anaconda.org/intel/simple
 - caution: once an object is over the stream(reader/writer), no longer it is the same object
-
+- deque is for performance guarantees, not just maxlen. (deque gives O(1) append, appendleft, pop, popleft. list is O(n) for left-side ops. maxlen is just an optional policy layer)
+- Python always passes object references; only mutable objects can be changed through them. If an object passed as an argument is immutable (int, str, etc.), you cannot mutate it — only rebind the local name, which does not affect the caller.
+    - r=5; f(r) 
+    - what is passed is a reference to 5, not a reference to r. that is crux.
 
 ### Tips
 - Update windows terminal from old CMD to windows terminal and use this: winget install --id Microsoft.WindowsTerminal -e 
@@ -129,6 +132,7 @@ or more modern way (only for development situation)
 - Foreign follower
 - Value / Volatility tracker
 - Volume trigger strategy
+- PER base valuation 
 
 
 ### KeyboardInterrupt & asyncio cancellation model

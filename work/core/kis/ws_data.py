@@ -144,6 +144,9 @@ TRPriceColumns = [
 ]
 TRPriceData = namedtuple('TRPriceData', TRPriceColumns)
 
+###_ check API time is the future (or off)
+###_ API time is only up to sec 
+###_ may assign local time upon arrival
 class TransactionPrices:
     def __init__(self, n_rows, d): # d is a list of data
         n_cols = len(TRPriceColumns)
