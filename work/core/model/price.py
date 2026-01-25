@@ -19,7 +19,6 @@ class MarketPrices:
     num_buckets: int = 12 # last N windows 
 
     # market price signal 
-    ###_ further develop
     mp_signals: asyncio.Queue | None = None
 
     def __str__(self):
@@ -88,13 +87,6 @@ class MarketPrices:
     # aligns time bucket to start from xx:xx:00.000 
     def _init_bucket(self, tr_time: datetime):
         if self._current_bucket_start is None:
-            aligned = tr_time.replace(
-                second=0, microsecond=0
-            ) - timedelta(minutes=tr_time.minute % self.window_duration)
-            self._current_bucket_start = aligned
-
-    def _init_bucket(self, tr_time: datetime):
-        if self._current_bucket_start is None:
             # Convert total time to seconds within the hour
             total_seconds = tr_time.minute * 60 + tr_time.second + tr_time.microsecond / 1e6
 
@@ -125,7 +117,7 @@ class MarketPrices:
             va = self.get_vol_to_avg()
             svr = self.get_shifted_vol_ratio()
 
-            pte = PriceTrendEvent(va, svr)
+            pte = VolumeTrendEvent(va, svr)
             if pte.is_event(self):
                 pte.event_time = self._current_bucket_start
                 self.mp_signals.put(pte)
@@ -151,9 +143,9 @@ class MarketPrices:
         return late_avg / early_avg # (last N-shift buckets)/(first N-shift buckets) 
 
 @dataclass
-class PriceTrendEvent:
-    volume_to_avg: float | None = None
-    shifted_vol_ratio: float | None = None
+class VolumeTrendEvent:
+    volume_to_avg: float | None = None # vta
+    shifted_vol_ratio: float | None = None # svr
 
     volume_surge: bool = False
     volume_up_trend: bool = False
@@ -164,7 +156,7 @@ class PriceTrendEvent:
     SLOPE_RATIO: float  = 1.3
 
     def __str__(self): 
-        res = f"[PriceTrendEvent] vta: {self.volume_to_avg}/{self.VOLUME_RATIO}, svr: {self.shifted_vol_ratio}/{self.SLOPE_RATIO} ({self.event_time.strftime('%M:%S')})"
+        res = f"[VolumeTrendEvent] vta: {self.volume_to_avg}/{self.VOLUME_RATIO}, svr: {self.shifted_vol_ratio}/{self.SLOPE_RATIO} ({self.event_time.strftime('%M:%S')})"
         if self.volume_surge: 
             res += f" | Volume Surge detected"
         if self.volume_up_trend: 

@@ -6,7 +6,7 @@ from .strategy_util import UpdateEvent
 from ..base.tools import excel_round
 from ..kis.kis_tools import SIDE, MTYPE, EXG
 from ..model.order import Order, CancelOrder
-from ..model.price import PriceTrendEvent
+from ..model.price import VolumeTrendEvent
 
 class StrategyBase(ABC):
     """
@@ -37,7 +37,7 @@ class StrategyBase(ABC):
 
         # market price event channel
         self.mp_signals: asyncio.Queue = asyncio.Queue()
-        self.last_mp_signal: PriceTrendEvent | None = None
+        self.last_mp_signal: VolumeTrendEvent | None = None
 
         # others
         self.str_name = self.__class__.__name__ # subclass name
@@ -75,9 +75,9 @@ class StrategyBase(ABC):
                 await self.on_update_shell(UpdateEvent.TRN_RECEIVE)
             
             if mp_signals_task in done: 
-                self.last_mp_signal: PriceTrendEvent = mp_signals_task.result()
+                self.last_mp_signal: VolumeTrendEvent = mp_signals_task.result()
                 self.logger.info(self.last_mp_signal, extra={"owner": self.agent_id})
-                await self.on_update_shell(UpdateEvent.PRICE_TREND_EVENT)
+                await self.on_update_shell(UpdateEvent.VOLUME_TREND_EVENT)
 
     async def on_update_shell(self, update_event: UpdateEvent):
         try:
@@ -222,6 +222,7 @@ class StrategyBase(ABC):
                 return False
         return True
 
+    # this requires to use SIDE and MTYPE classes
     def create_an_order(self, side, mtype, quantity, price, exchange=EXG.SOR) -> Order:
         # if error handling is necessary, for errors return None
         return Order(
@@ -233,3 +234,19 @@ class StrategyBase(ABC):
             price=price, 
             exchange=exchange, 
             )
+
+    # following: no need to use SIDE and MTYPE
+    def market_buy(self, quantity):
+        return self.create_an_order(SIDE.BUY, MTYPE.MARKET, quantity=quantity, price=0)
+
+    def limit_buy(self, quantity, price): 
+        return self.create_an_order(SIDE.BUY, MTYPE.LIMIT, quantity=quantity, price=price)
+
+    def market_sell(self, quantity):
+        return self.create_an_order(SIDE.BUY, MTYPE.MARKET, quantity=quantity, price=0)
+
+    def limit_sell(self, quantity, price): 
+        return self.create_an_order(SIDE.BUY, MTYPE.MARKET, quantity=quantity, price=price)
+    
+    # may add middle too 
+
