@@ -3,10 +3,10 @@ import asyncio
 
 from .perf_metric import PerformanceMetric
 from .strategy_util import UpdateEvent
+from .order import Order, CancelOrder
+from .bar_analysis import MarketEvent
 from ..base.tools import excel_round
 from ..kis.kis_tools import SIDE, MTYPE, EXG
-from ..model.order import Order, CancelOrder
-from ..model.price import VolumeTrendEvent
 
 class StrategyBase(ABC):
     """
@@ -27,8 +27,6 @@ class StrategyBase(ABC):
         # -----------------------------------------------------------------
         self.pm: PerformanceMetric | None = None 
         # - through pm, access to initial data of the agent possible
-        # - also, access to market_prices and order_book possible
-        # - self.update_pm() is called on every on_update through on_update_shell
         # -----------------------------------------------------------------
 
         # Strategy - Agent communication channel (only used in StrategyBase and Agent - internal for both)
@@ -36,8 +34,8 @@ class StrategyBase(ABC):
         self._trn_receive_event: asyncio.Event = asyncio.Event()
 
         # market price event channel
-        self.mp_signals: asyncio.Queue = asyncio.Queue()
-        self.last_mp_signal: VolumeTrendEvent | None = None
+        self.market_signals: asyncio.Queue = asyncio.Queue()
+        self.last_market_signal: MarketEvent | None = None
 
         # others
         self.str_name = self.__class__.__name__ # subclass name
@@ -55,10 +53,10 @@ class StrategyBase(ABC):
 
             price_task = asyncio.create_task(self._price_update_event.wait())
             trn_task   = asyncio.create_task(self._trn_receive_event.wait())
-            mp_signals_task = asyncio.create_task(self.mp_signals.get())
+            market_signals_task = asyncio.create_task(self.market_signals.get())
 
             done, pending = await asyncio.wait(
-                {price_task, trn_task, mp_signals_task},
+                {price_task, trn_task, market_signals_task},
                 return_when=asyncio.FIRST_COMPLETED,
             )
 
@@ -74,10 +72,10 @@ class StrategyBase(ABC):
                 self.logger.info(self.pm, extra={"owner": self.agent_id})
                 await self.on_update_shell(UpdateEvent.TRN_RECEIVE)
             
-            if mp_signals_task in done: 
-                self.last_mp_signal: VolumeTrendEvent = mp_signals_task.result()
-                self.logger.info(self.last_mp_signal, extra={"owner": self.agent_id})
-                await self.on_update_shell(UpdateEvent.VOLUME_TREND_EVENT)
+            if market_signals_task in done: 
+                self.last_market_signal: MarketEvent = market_signals_task.result()
+                self.logger.info(self.last_market_signal, extra={"owner": self.agent_id})
+                await self.on_update_shell(UpdateEvent.MARKET_EVENT)
 
     async def on_update_shell(self, update_event: UpdateEvent):
         try:
@@ -98,7 +96,6 @@ class StrategyBase(ABC):
             * on_update runs frequently anyway
         ----------------------------------------------------------------------------------------------------------------
         - strategy should be based on the snapshot(states) of the agent: pm 
-            # pm has market_prices and order_book
         ----------------------------------------------------------------------------------------------------------------
         - on_update should not await inside; fast deterministic decisions should be made 
             * if it takes time, pm could not be correct anymore (outdated)
@@ -121,7 +118,7 @@ class StrategyBase(ABC):
 
         # Validate first
         for order in orders:
-            if order.null_order:
+            if order.creation_success:
                     self.logger.error(
                         f"[Strategy] invalid cancellation order is included: {order}",
                         extra={"owner": self.agent_id},
@@ -211,7 +208,7 @@ class StrategyBase(ABC):
                     raise asyncio.CancelledError # this case to be checked with logic
                     # return False
             else: # MARKET or MIDDLE
-                exp_amount = excel_round(order.quantity*self.pm.market_prices.current_price) # check with current price
+                exp_amount = excel_round(order.quantity*self.pm.moving_bar.current_price) # check with current price
                 if exp_amount > self.pm.get_max_market_buy_amt():
                     self.logger.error(f'account limit reached - order cancelled', extra={"owner": self.agent_id})
                     raise asyncio.CancelledError # this case to be checked with logic

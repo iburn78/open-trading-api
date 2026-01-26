@@ -142,7 +142,6 @@ class Order:
         pass
 
     def make_a_cancel_order(self, partial: bool = False, to_cancel_qty: int = 0): 
-        msg = ""
         if partial: 
             qty_all_yn = "N"
         else: 
@@ -160,10 +159,10 @@ class Order:
                 qty_all_yn=qty_all_yn, 
             )
         if self.completed:
-            msg = f"[Order] tried to make a cancel order for a completed order: {self}"
-            co.null_order = True
+            co.creation_success = True
+            co.creation_msg = f"[Order] tried to make a cancel order for a completed order: {self}"
 
-        return co, msg
+        return co
 
 @dataclass
 class CancelOrder(Order):
@@ -208,14 +207,15 @@ class CancelOrder(Order):
     original_order_org_no: str | None = None
     original_order_no: str | None = None
     qty_all_yn: str = "Y"
-    null_order: bool = False
+    creation_success: bool = False
+    creation_msg: str = ""
 
     def __post_init__(self):
         # doesn't call super() automatically
         self.is_regular_order = False  # vs CancelOrder
 
         if self.original_order_no is None or self.original_order_org_no is None:
-            self.null_order = True
+            self.creation_success = True
 
     def __str__(self): 
         txt = self._str_base()

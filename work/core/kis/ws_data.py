@@ -96,12 +96,12 @@ class TransactionNotice:
 # ------------------------------------------------------
 TRPriceColumns = [
     "MKSC_SHRN_ISCD", # code
-    "STCK_CNTG_HOUR", # hour (%H%M%S)
+    "STCK_CNTG_HOUR", # hour (%H%M%S), ###_ it is sometimes future time in Demo server (at least)
     "STCK_PRPR", # 체결가
     "PRDY_VRSS_SIGN", 
     "PRDY_VRSS", 
     "PRDY_CTRT",
-    "WGHN_AVRG_STCK_PRC",
+    "WGHN_AVRG_STCK_PRC", # Definition is not known (may be from the start of the market)
     "STCK_OPRC", # opening
     "STCK_HGPR", # high
     "STCK_LWPR", # low
@@ -144,67 +144,30 @@ TRPriceColumns = [
 ]
 TRPriceData = namedtuple('TRPriceData', TRPriceColumns)
 
-###_ check API time is the future (or off)
-###_ API time is only up to sec 
-###_ may assign local time upon arrival
-###_ 1) test WGHN_AVRG_STCK_PRC
-###_ 2) test lt is correctly set 
-###_ 3) test when creation, if time really not set
-###_ 4) see full record of TRP
-###_ 5) may assign local time (is this really important)
-
-
-###_ suppose this time is exact time and to sec (no milisec), and reviewed price.py part
-
-
-
 class TransactionPrices:
-    def __init__(self, n_rows, d): # d is a list of data
-        n_cols = len(TRPriceColumns)
-        assert len(d) == n_rows * n_cols, f"TRP data {len(d)} cols {n_cols} x rows {n_rows} mismatch"
-        self.records = [TRPriceData(*d[i:i+n_cols]) for i in range(0, n_rows * n_cols, n_cols)]
+    n_cols = len(TRPriceColumns)
+
+    def __init__(self, n_rows, d):
+        assert len(d) == n_rows * self.n_cols, (
+            f"TRP data {len(d)} cols {self.n_cols} x rows {n_rows} mismatch"
+        )
+        self.records = [
+            TRPriceData(*d[i:i + self.n_cols])
+            for i in range(0, n_rows * self.n_cols, self.n_cols)
+        ]
+        self.time = datetime.now()
+        if not self.records:
+            self.code = ""
+            self.price = None
+            self.quantity = 0
+            return
+
+        self.code = self.records[0].MKSC_SHRN_ISCD
+        self.price = int(self.records[-1].STCK_PRPR)
+        self.quantity = sum(int(r.CNTG_VOL) for r in self.records)
 
     def __str__(self):
-        parts = [f"[TR prices] {self.get_code()}:"]
+        parts = [f"[TR prices] {self.code}:"]
         for r in self.records:
             parts.append(f"    {r.STCK_CNTG_HOUR} {r.STCK_PRPR} {r.CNTG_VOL}")
         return '\n'.join(parts)
-
-    def get_code(self):
-        code = self.records[0].MKSC_SHRN_ISCD if self.records else ""
-        return code
-
-    def get_price_quantity_time(self):
-        """
-        Returns price and quantity and time if there is only one record
-        Returns avg(price), sum(quantity), latest(time) if there are more than one record
-        """
-        if not self.records:
-            return None, None, None
-
-        if len(self.records) == 1:
-            r = self.records[0]
-            lt = datetime.strptime(r.BSOP_DATE +' '+ r.STCK_CNTG_HOUR, '%Y%m%d %H%M%S')
-            return int(r.STCK_PRPR), int(r.CNTG_VOL), lt
-
-        else:
-            # Compute weighted average price, sum of quantity, and latest time
-            total_qty = 0
-            weighted_sum = 0
-            latest_time = None
-
-            for r in self.records:
-                price = int(r.STCK_PRPR)
-                qty = int(r.CNTG_VOL)
-                lt = datetime.strptime(r.BSOP_DATE + ' ' + r.STCK_CNTG_HOUR, '%Y%m%d %H%M%S')
-
-                weighted_sum += price * qty
-                total_qty += qty
-                if lt and (latest_time is None or lt > latest_time):
-                    latest_time = lt
-
-            if total_qty == 0:
-                return None, None, None
-
-            pr_avg = excel_round_vector(weighted_sum / total_qty)
-            return pr_avg, total_qty, latest_time

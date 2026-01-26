@@ -78,5 +78,4 @@ class ConnectedAgents:
         return list(self.agent_id_map.values())
 
     def get_target_agents_by_trp(self, trp: TransactionPrices):
-        code = trp.get_code()
-        return self.code_agent_map.get(code, []).copy()
+        return self.code_agent_map.get(trp.code, []).copy()

@@ -1,17 +1,17 @@
 from dataclasses import dataclass, field
 import asyncio
 import logging
-import datetime
+from datetime import timedelta
 
 from .order import Order, CancelOrder
 from .client import PersistentClient
 from .order_book import OrderBook
-from .price import MarketPrices
+from .bar import MovingBar, BarSeries
+from .bar_analysis import BarAnalyzer
 from .perf_metric import PerformanceMetric
 from .strategy_base import StrategyBase
 from ..base.logger import notice_beep
-from ..base.settings import Service, SERVER_PORT
-# from ..base.tools import get_df_krx_price
+from ..base.settings import Service, SERVER_PORT, BAR_DELTA_MIN, COVER_DURATION_HOURS
 from ..kis.kis_tools import MTYPE
 from ..kis.ws_data import TransactionPrices, TransactionNotice
 from ..model.dashboard import DashBoard
@@ -34,10 +34,12 @@ class Agent:
 
     # data tracking and strategy
     order_book: OrderBook = field(default_factory=OrderBook)
-    market_prices: MarketPrices = field(default_factory=MarketPrices)
+    moving_bar: MovingBar = field(default_factory=MovingBar)
+    bar_series: BarSeries | None = None
+    bar_analyzer: BarAnalyzer | None = None
     strategy: StrategyBase = field(default_factory=StrategyBase) 
     pm: PerformanceMetric = field(default_factory=PerformanceMetric)
-    mp_signals: asyncio.Queue = field(default_factory=asyncio.Queue)
+    market_signals: asyncio.Queue = field(default_factory=asyncio.Queue)
 
     # other flags
     initialized: bool = False
@@ -59,25 +61,26 @@ class Agent:
         self.order_book.agent_id = self.id
         self.order_book.code = self.code
 
-        self.market_prices.code = self.code
-        # self.market_prices.current_price = get_df_krx_price(self.code)
-        self.market_prices.current_price = None # initiate with None
-        self.market_prices.mp_signals = self.mp_signals
+        self.moving_bar.code = self.code
+        self.moving_bar.current_price = None # initiate with None
+
+        self.bar_series = BarSeries(bar_delta=timedelta(minutes=BAR_DELTA_MIN), cover_duration=timedelta(hours=COVER_DURATION_HOURS))
+        self.bar_analyzer = BarAnalyzer(self.moving_bar, self.bar_series, self.market_signals)
 
         self.pm.agent_id = self.id
         self.pm.code = self.code
         self.pm.service = self.service
         self.pm.order_book = self.order_book
-        self.pm.market_prices = self.market_prices
+        self.pm.moving_bar = self.moving_bar
         self.pm.dashboard = self.dashboard
-        self.pm.current_price = self.market_prices.current_price
+        self.pm.current_price = self.moving_bar.current_price
 
         self.strategy.agent_id = self.id
         self.strategy.code = self.code
         self.strategy.logger = self.logger
         self.strategy.pm = self.pm
         self.strategy.submit_order = self.submit_order
-        self.strategy.mp_signals = self.mp_signals
+        self.strategy.market_signals = self.market_signals
 
     def initialize(self, init_cash_allocated = 0, init_holding_qty = 0, 
                             init_avg_price = 0, sync_start_date = None):
@@ -152,7 +155,7 @@ class Agent:
 
                 # [Price initialization part]
                 self.logger.info(f"[Agent] waiting for initial market price", extra={"owner": self.id})
-                await self.agent_initial_price_set_up.wait() # ensures that market_prices and pm are set with latest market data
+                await self.agent_initial_price_set_up.wait() # ensures set with latest market data
                 self.pm.update()
                 self.agent_ready_to_run_strategy = True
                 self.logger.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", extra={"owner": self.id})
@@ -214,14 +217,13 @@ class Agent:
         self.strategy.handle_order_dispatch(order)
 
     async def handle_prices(self, trp: TransactionPrices):
-        self.market_prices.update_from_trp(trp)
-        ###_ check 
-        print('================')
-        print(trp)
-        print(datetime.datetime.now())
-        print('================')
         self.logger.info(trp, extra={"owner": self.id})
-        self.logger.info(self.market_prices, extra={"owner": self.id})
+
+        self.moving_bar.update(trp.price, trp.quantity, trp.time)
+        self.logger.info(self.moving_bar, extra={"owner": self.id})
+
+        self.bar_series.update(trp.price, trp.quantity, trp.time)
+
         self.pm.update(price_update_only=True) 
         if not self.agent_ready_to_run_strategy: self.agent_initial_price_set_up.set() 
         self.strategy._price_update_event.set()

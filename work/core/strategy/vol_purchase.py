@@ -18,11 +18,8 @@ class VolumePurchase(StrategyBase):
         if update_event != UpdateEvent.PRICE_UPDATE:
             self.logger.info(f"{self.code}-{update_event.name}", extra={"owner": self.agent_id})
         
-        if update_event == UpdateEvent.VOLUME_TREND_EVENT:
-            self.logger.info(self.last_mp_signal)
-        
-        ###_ may store price trend too
-
+        if update_event == UpdateEvent.MARKET_EVENT:
+            self.logger.info(self.last_market_signal)
 
 
 

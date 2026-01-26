@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from .order_book import OrderBook
-from .price import MarketPrices
+from .bar import MovingBar
 from .cost import CostCalculator
 from ..base.settings import TradeSettings, Service
 from ..base.tools import excel_round
@@ -16,7 +16,7 @@ class PerformanceMetric:
     code: str | None = None
     service: Service | None = None
     order_book: OrderBook | None = None
-    market_prices: MarketPrices | None = None
+    moving_bar: MovingBar | None = None
 
     # set after agent registration
     dashboard: DashBoard | None = None
@@ -122,7 +122,7 @@ class PerformanceMetric:
         if not price_update_only:
             self._get_data_from_orderbook()
 
-        self._get_data_from_market_prices()
+        self._get_data_from_moving_bar()
         self._calculate_stats_on_price_update()
         self.dashboard.enqueue(self)
     
@@ -152,8 +152,8 @@ class PerformanceMetric:
         self.cash_balance = self.init_cash_allocated - self.total_cash_used
         self.init_value = self.init_cash_allocated + self.init_holding_qty*self.init_avg_price
 
-    def _get_data_from_market_prices(self):
-        self.current_price = self.market_prices.current_price
+    def _get_data_from_moving_bar(self):
+        self.current_price = self.moving_bar.current_price
 
     # on price update / ordering is important
     def _calculate_stats_on_price_update(self):

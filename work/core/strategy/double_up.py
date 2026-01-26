@@ -1,4 +1,3 @@
-from ..kis.kis_tools import SIDE, MTYPE 
 from ..model.strategy_base import StrategyBase
 from ..model.strategy_util import UpdateEvent
 
@@ -30,7 +29,7 @@ class DoubleUpStrategy(StrategyBase):
             # buy once
             q = self.INITIAL_BUY_QTY
             self.logger.info(f"INITIAL BUY {q}", extra={"owner": self.agent_id})
-            sc = self.create_an_order(side=SIDE.BUY, mtype=MTYPE.MARKET, price=0, quantity=q)
+            sc = self.market_buy(quantity=q)
             await self.execute_rebind(sc)
             return
 
@@ -39,7 +38,7 @@ class DoubleUpStrategy(StrategyBase):
             # sell all
             q = self.pm.holding_qty  # quantity to sell
             self.logger.info(f"SELL ALL {q}", extra={"owner": self.agent_id})
-            sc = self.create_an_order(side=SIDE.SELL, mtype=MTYPE.MARKET, price=0, quantity=q)
+            sc = self.market_sell(quantity=q)
             await self.execute_rebind(sc)
             return
 
@@ -47,6 +46,6 @@ class DoubleUpStrategy(StrategyBase):
             # buy double up to max buy amount
             q = min(self.pm.holding_qty*self.DOUBLEUP_MULTIPLIER, self.MAX_PURCHASE_QTY)
             self.logger.info(f"DOUBLE-UP BUY {q}", extra={"owner": self.agent_id})
-            sc = self.create_an_order(side=SIDE.BUY, mtype=MTYPE.MARKET, price=0, quantity=q)
+            sc = self.market_buy(quantity=q)
             await self.execute_rebind(sc)
             return
