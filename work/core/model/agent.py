@@ -6,12 +6,11 @@ from datetime import timedelta
 from .order import Order, CancelOrder
 from .client import PersistentClient
 from .order_book import OrderBook
-from .bar import MovingBar, BarSeries
-from .bar_analysis import BarAnalyzer
+from .bar import MovingBar, BarSeries, BarAggregator
 from .perf_metric import PerformanceMetric
 from .strategy_base import StrategyBase
 from ..base.logger import notice_beep
-from ..base.settings import Service, SERVER_PORT, BAR_DELTA_MIN, COVER_DURATION_HOURS
+from ..base.settings import Service, SERVER_PORT
 from ..kis.kis_tools import MTYPE
 from ..kis.ws_data import TransactionPrices, TransactionNotice
 from ..model.dashboard import DashBoard
@@ -36,10 +35,9 @@ class Agent:
     order_book: OrderBook = field(default_factory=OrderBook)
     moving_bar: MovingBar = field(default_factory=MovingBar)
     bar_series: BarSeries | None = None
-    bar_analyzer: BarAnalyzer | None = None
+    bar_aggr: BarAggregator | None = None
     strategy: StrategyBase = field(default_factory=StrategyBase) 
     pm: PerformanceMetric = field(default_factory=PerformanceMetric)
-    market_signals: asyncio.Queue = field(default_factory=asyncio.Queue)
 
     # other flags
     initialized: bool = False
@@ -61,11 +59,9 @@ class Agent:
         self.order_book.agent_id = self.id
         self.order_book.code = self.code
 
-        self.moving_bar.code = self.code
-        self.moving_bar.current_price = None # initiate with None
-
-        self.bar_series = BarSeries(bar_delta=timedelta(minutes=BAR_DELTA_MIN), cover_duration=timedelta(hours=COVER_DURATION_HOURS))
-        self.bar_analyzer = BarAnalyzer(self.moving_bar, self.bar_series, self.market_signals)
+        self.moving_bar.code = self.code # for logging 
+        self.bar_series = BarSeries() # default 1 sec 
+        self.bar_aggr = BarAggregator(self.bar_series) # default 10 sec, but adjustable through reset()
 
         self.pm.agent_id = self.id
         self.pm.code = self.code
@@ -80,7 +76,8 @@ class Agent:
         self.strategy.logger = self.logger
         self.strategy.pm = self.pm
         self.strategy.submit_order = self.submit_order
-        self.strategy.market_signals = self.market_signals
+        self.strategy.bar_aggr = self.bar_aggr
+        self.strategy._post_process()
 
     def initialize(self, init_cash_allocated = 0, init_holding_qty = 0, 
                             init_avg_price = 0, sync_start_date = None):

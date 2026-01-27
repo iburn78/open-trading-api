@@ -4,7 +4,8 @@ import asyncio
 from .perf_metric import PerformanceMetric
 from .strategy_util import UpdateEvent
 from .order import Order, CancelOrder
-from .bar_analysis import MarketEvent
+from .bar import BarAggregator
+from .bar_analysis import MarketEvent, BarAnalyzer
 from ..base.tools import excel_round
 from ..kis.kis_tools import SIDE, MTYPE, EXG
 
@@ -36,10 +37,16 @@ class StrategyBase(ABC):
         # market price event channel
         self.market_signals: asyncio.Queue = asyncio.Queue()
         self.last_market_signal: MarketEvent | None = None
+        self.bar_aggr: BarAggregator | None = None
+        self.bar_analyzer: BarAnalyzer | None = None
 
         # others
         self.str_name = self.__class__.__name__ # subclass name
         self._on_update_lock: asyncio.Lock = asyncio.Lock()
+
+    ###_ what is the best location and logic for each strategy to use it freely
+    def _post_process(self):
+        self.bar_analyzer = BarAnalyzer(self.bar_aggr, self.market_signals) # late binding 
 
     async def logic_run(self):
         # initial run

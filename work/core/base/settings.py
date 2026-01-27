@@ -73,9 +73,6 @@ class TradeSettings:
     # Market order safety margin
     MARKET_ORDER_SAFETY_MARGIN: float = 0.20
 
-
 # ----------------------------------------------------
 # bar settings
 # ----------------------------------------------------
-BAR_DELTA_MIN = 0.5 # in minutes
-COVER_DURATION_HOURS = 24 # in hours
