@@ -27,7 +27,7 @@ class BarAnalyzer:
         self.on_bar_update()
 
     def on_bar_update(self): # bar = aggr_bar
-        # to be called back in Strategy subclass
+        # to be called back (or called instead) in Strategy subclass
         pass
     
     def handle_mkt_event(self, mkt_event): # MarketEvent
@@ -57,6 +57,10 @@ class VolumeAnalysis:
         if early_avg == 0: return None
         return late_avg / early_avg # (last N-shift bars)/(first N-shift bars) 
 
+class PriceAnalysis:
+    ###_ add more analysis
+    ###_ price surge with volume
+    pass
 
 # -------------------------------------------------------------------------
 # MarketEvent definitions

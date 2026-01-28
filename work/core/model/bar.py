@@ -73,8 +73,8 @@ class BarSeries:
     BAR_DELTA_SEC = 1 # sec
 
     def __init__(self):
-        ###_ this bars are unbounded list now. don't use deque, and later when crossing overnight compress it to larger spaced bars
         ###_ [future] overnight logic necessary here
+        ###_ that is: this bars are unbounded list now. don't use deque, and later when crossing overnight compress it to larger spaced bars
         self.bar_delta = timedelta(seconds=self.BAR_DELTA_SEC)
         self.bars: list = []
 

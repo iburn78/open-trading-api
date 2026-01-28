@@ -17,7 +17,7 @@ class StrategyBase(ABC):
         super().__init__()
 
     """
-    def __init__(self): ###_
+    def __init__(self): 
         self.agent_id = None
         self.code = None
         self.logger = None

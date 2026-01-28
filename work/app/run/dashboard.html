@@ -148,7 +148,7 @@ function removePort(port) {
         delete sockets[port];
     }
     if (panels[port]) {
-        panels[port].textContent = "";   // EMPTY, as requested
+        panels[port].textContent = ""; // EMPTY
     }
 }
 
