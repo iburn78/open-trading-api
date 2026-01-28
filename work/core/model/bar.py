@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 # has moving window to record HLCV and weighted ma
 @dataclass
 class MovingBar:
-    code: str = ""
+    code: str 
 
     current_price: int | None = None # latest transaction price
     low_price: int | None = None # per window_size
@@ -147,7 +147,8 @@ class BarAggregator:
         self._cur_start: datetime | None = None
         self._cur_bar: Bar | None = None
 
-    def reset(self, aggr_delta: timedelta):
+    def reset(self, aggr_delta_sec: int):
+        aggr_delta = timedelta(seconds=aggr_delta_sec)
         assert aggr_delta >= self.bar_series.bar_delta
         self.aggr_delta = aggr_delta
         self.aggr_bars.clear() # makes references consistent 

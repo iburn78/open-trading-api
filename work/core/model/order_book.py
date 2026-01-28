@@ -12,9 +12,9 @@ class OrderBook:
     """
     Order/CancelOrder record boook used by agents, individually
     """
-    agent_id: str = ""
-    code: str = ""
-    logger: logging.Logger = None
+    agent_id: str 
+    code: str
+    logger: logging.Logger
 
     # order lists - should use setter/getter functions to calculate dashboard info real time
     _indexed_incompleted_orders: dict["order_no": str, Order | CancelOrder] = field(default_factory=dict)

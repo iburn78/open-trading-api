@@ -1,7 +1,5 @@
-from dataclasses import dataclass, field
 import asyncio
 import logging
-from datetime import timedelta
 
 from .order import Order, CancelOrder
 from .client import PersistentClient
@@ -16,68 +14,39 @@ from ..kis.ws_data import TransactionPrices, TransactionNotice
 from ..model.dashboard import DashBoard
 from ..comm.comm_interface import RequestCommand, ClientRequest, ServerResponse, Sync
 
-@dataclass
 class Agent:
-    id: str  
-    code: str
-    service: Service
-    dp: int # dashboard port
-    logger: logging.Logger
+    def __init__(self, id, code, service, dp, logger, strategy):
+        self.id: str = id
+        self.code: str = code
+        self.service: Service = service
+        self.dp: int = dp # dashboard port 
+        self.logger: logging.Logger = logger
 
-    # dashboard
-    dashboard: DashBoard = field(default_factory=DashBoard) 
+        # dashboard
+        self.dashboard = DashBoard(logger=self.logger, owner_name=self.id, port=self.dp) 
 
-    # for server communication
-    client: PersistentClient = field(default_factory=PersistentClient)
-    hardstop_event: asyncio.Event = field(default_factory=asyncio.Event) # to finish agent activity
+        # for server communication
+        self.client = PersistentClient(id = self.id, logger = self.logger, port=SERVER_PORT[self.service], on_dispatch=self.on_dispatch)
+        self.hardstop_event = asyncio.Event() # to finish agent activity
 
-    # data tracking and strategy
-    order_book: OrderBook = field(default_factory=OrderBook)
-    moving_bar: MovingBar = field(default_factory=MovingBar)
-    bar_series: BarSeries | None = None
-    bar_aggr: BarAggregator | None = None
-    strategy: StrategyBase = field(default_factory=StrategyBase) 
-    pm: PerformanceMetric = field(default_factory=PerformanceMetric)
+        # data tracking and strategy
+        self.order_book = OrderBook(agent_id=self.id, code=self.code, logger=self.logger)
+        self.moving_bar = MovingBar(code=self.code)
+        self.strategy: StrategyBase = strategy
+        self.pm = PerformanceMetric(agent_id=self.id, code=self.code, service=self.service, order_book=self.order_book, moving_bar=self.moving_bar, dashboard=self.dashboard)
 
-    # other flags
-    initialized: bool = False
-    agent_ready_to_run_strategy: bool = False
-    agent_initial_price_set_up: asyncio.Event = field(default_factory=asyncio.Event) # wheather the first TNP is received (so that pm can be properly initialized)
-    sync_start_date: str | None = None # isoformat date ("yyyy-mm-dd") # should be assigned in initialize() 
+        # other flags
+        self.initialized: bool = False
+        self.agent_ready_to_run_strategy: bool = False
+        self.agent_initial_price_set_up = asyncio.Event() # wheather the first TNP is received (so that pm can be properly initialized)
+        self.sync_start_date: str | None = None # isoformat date ("yyyy-mm-dd") # should be assigned in initialize() 
 
-    def __post_init__(self):
-        self.client.logger = self.logger
-        self.client.agent_id = self.id
-        self.client.port = SERVER_PORT[self.service]
-        self.client.on_dispatch = self.on_dispatch
-
-        self.dashboard.logger = self.logger
-        self.dashboard.owner_name = self.id
-        self.dashboard.port = self.dp
-
-        self.order_book.logger = self.logger
-        self.order_book.agent_id = self.id
-        self.order_book.code = self.code
-
-        self.moving_bar.code = self.code # for logging 
-        self.bar_series = BarSeries() # default 1 sec 
-        self.bar_aggr = BarAggregator(self.bar_series) # default 10 sec, but adjustable through reset()
-
-        self.pm.agent_id = self.id
-        self.pm.code = self.code
-        self.pm.service = self.service
-        self.pm.order_book = self.order_book
-        self.pm.moving_bar = self.moving_bar
-        self.pm.dashboard = self.dashboard
-        self.pm.current_price = self.moving_bar.current_price
-
+        # strategy specific (ABC subclass instance)
         self.strategy.agent_id = self.id
         self.strategy.code = self.code
         self.strategy.logger = self.logger
-        self.strategy.pm = self.pm
         self.strategy.submit_order = self.submit_order
-        self.strategy.bar_aggr = self.bar_aggr
-        self.strategy._post_process()
+        self.strategy.pm = self.pm
 
     def initialize(self, init_cash_allocated = 0, init_holding_qty = 0, 
                             init_avg_price = 0, sync_start_date = None):
@@ -214,12 +183,12 @@ class Agent:
         self.strategy.handle_order_dispatch(order)
 
     async def handle_prices(self, trp: TransactionPrices):
-        self.logger.info(trp, extra={"owner": self.id})
+        # self.logger.info(trp, extra={"owner": self.id})
 
         self.moving_bar.update(trp.price, trp.quantity, trp.time)
-        self.logger.info(self.moving_bar, extra={"owner": self.id})
+        # self.logger.info(self.moving_bar, extra={"owner": self.id})
 
-        self.bar_series.update(trp.price, trp.quantity, trp.time)
+        self.strategy.bar_series.update(trp.price, trp.quantity, trp.time)
 
         self.pm.update(price_update_only=True) 
         if not self.agent_ready_to_run_strategy: self.agent_initial_price_set_up.set() 

@@ -4,36 +4,45 @@ from abc import ABC, abstractmethod
 
 from .bar import BarAggregator, Bar
 
+# -------------------------------------------------------------------------
+# BarAnalyzer: set-up analysis 
+# -------------------------------------------------------------------------
+# analyze_bars to be overrided in Strategy
 class BarAnalyzer:
     NUM_BAR_TO_ANALYZE = 10
 
     def __init__(self, bar_aggr: BarAggregator, market_signals: asyncio.Queue):
         self.bar_aggr = bar_aggr
-        self.bar_aggr.on_bar_close = self.on_bar_close()
+        self.bar_aggr.on_bar_close = self.on_bar_close
         self.bars = self.bar_aggr.aggr_bars 
 
         self.market_signals = market_signals
-        self.num_bar: int = self.NUM_BAR_TO_ANALYZE 
+        self._num_bar: int = self.NUM_BAR_TO_ANALYZE 
 
-    def reset_num_bar(self, num_bar: int):
-        self.num_bar = num_bar
+    def reset(self, num_bar: int):
+        self._num_bar = num_bar
 
     def on_bar_close(self):
-        if len(self.bars) < self.num_bar:
+        if len(self.bars) < self._num_bar:
             return
 
-        bars = self.bars[-self.num_bar:]
-        self.analysis_bars(bars)
+        bars = self.bars[-self._num_bar:]
+        self.analyze_bars(bars)
 
-    ###_ how to make this more flexible
-    def analysis_bars(self, bars: list[Bar]):
-        # example
-        va = VolumeAnalysis.get_vol_to_avg(bars)
-        svr = VolumeAnalysis.get_shifted_vol_ratio(bars)
-
-        mkt_event = VolumeTrendEvent(va, svr)
+    @abstractmethod
+    def analyze_bars(self, bars: list[Bar]):
+        # 1) do analysis
+        # 2) create MarketEvent instance
+        # 2) call self.send_if_event(MarketEvent)
+        pass
+    
+    def handle_mkt_event(self, mkt_event): # MarketEvent
         if mkt_event.is_event():
-            self.market_signals.put(mkt_event)
+            self.market_signals.put_nowait(mkt_event)
+
+# -------------------------------------------------------------------------
+# Analysis classes
+# -------------------------------------------------------------------------
 
 class VolumeAnalysis:
     @staticmethod
@@ -54,9 +63,13 @@ class VolumeAnalysis:
         if early_avg == 0: return None
         return late_avg / early_avg # (last N-shift bars)/(first N-shift bars) 
 
+
+# -------------------------------------------------------------------------
+# MarketEvent definitions
+# -------------------------------------------------------------------------
 class MarketEvent(ABC):
     @abstractmethod
-    def temp(self):
+    def is_event(self) -> bool:
         pass
 
 @dataclass
@@ -64,12 +77,13 @@ class VolumeTrendEvent(MarketEvent):
     volume_to_avg: float | None = None # vta
     shifted_vol_ratio: float | None = None # svr
 
-    volume_surge: bool = False
-    volume_up_trend: bool = False
-
     # decision criteria
     VOLUME_RATIO: float = 2.0
     SLOPE_RATIO: float  = 1.3
+
+    # decision indicators
+    volume_surge: bool = False
+    volume_up_trend: bool = False
 
     def __str__(self): 
         res = f"[VolumeTrendEvent] vta: {self.volume_to_avg}/{self.VOLUME_RATIO}, svr: {self.shifted_vol_ratio}/{self.SLOPE_RATIO}"
@@ -87,5 +101,3 @@ class VolumeTrendEvent(MarketEvent):
 
         return self.volume_surge or self.volume_up_trend
     
-    def temp(self):
-        pass

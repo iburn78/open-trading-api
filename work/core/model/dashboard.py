@@ -5,7 +5,7 @@ import json
 from ..base.settings import HOST
 
 class DashBoard:
-    def __init__(self, logger=None, owner_name=None, port=None):
+    def __init__(self, logger, owner_name, port):
         self.logger = logger
         self.owner_name = owner_name
         self.host = HOST

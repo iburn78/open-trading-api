@@ -5,8 +5,11 @@ from ..base.settings import HOST
 from ..comm.comm_interface import ClientRequest, ServerResponse, OM_Dispatch, Dispatch_ACK
 
 class PersistentClient:
-    def __init__(self, host=HOST, port=None, on_dispatch=None):
-        self.host = host
+    def __init__(self, id, logger, port, on_dispatch):
+        self.agent_id = id
+        self.logger = logger
+
+        self.host = HOST
         self.port = port
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
@@ -17,9 +20,6 @@ class PersistentClient:
 
         self.pending_requests: dict[str, asyncio.Future] = {}
         self.on_dispatch = on_dispatch
-
-        self.agent_id = None
-        self.logger = None
 
     async def connect(self):
         """Connect and start the listener within the caller's TG."""

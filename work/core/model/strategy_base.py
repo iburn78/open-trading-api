@@ -4,7 +4,7 @@ import asyncio
 from .perf_metric import PerformanceMetric
 from .strategy_util import UpdateEvent
 from .order import Order, CancelOrder
-from .bar import BarAggregator
+from .bar import BarAggregator, BarSeries, Bar
 from .bar_analysis import MarketEvent, BarAnalyzer
 from ..base.tools import excel_round
 from ..kis.kis_tools import SIDE, MTYPE, EXG
@@ -21,14 +21,14 @@ class StrategyBase(ABC):
         self.code = None
         self.logger = None
         self.submit_order = None # callback assigned by agent
-        self.pending_strategy_orders: dict[str, asyncio.Future] = {}
-        self.lazy_run: bool = True
 
         # snapshot data to use in making strategy
         # -----------------------------------------------------------------
         self.pm: PerformanceMetric | None = None 
         # - through pm, access to initial data of the agent possible
         # -----------------------------------------------------------------
+        self.pending_strategy_orders: dict[str, asyncio.Future] = {}
+        self.lazy_run: bool = True
 
         # Strategy - Agent communication channel (only used in StrategyBase and Agent - internal for both)
         self._price_update_event: asyncio.Event = asyncio.Event()
@@ -37,16 +37,14 @@ class StrategyBase(ABC):
         # market price event channel
         self.market_signals: asyncio.Queue = asyncio.Queue()
         self.last_market_signal: MarketEvent | None = None
-        self.bar_aggr: BarAggregator | None = None
-        self.bar_analyzer: BarAnalyzer | None = None
+        self.bar_series = BarSeries() # default 1 sec
+        self.bar_aggr = BarAggregator(bar_series=self.bar_series) # default 10 sec, but adjustable through reset()
+        self.bar_analyzer = BarAnalyzer(self.bar_aggr, self.market_signals)
+        self.bar_analyzer.analyze_bars = self.analyze_bars # strategy-as-callback
 
         # others
         self.str_name = self.__class__.__name__ # subclass name
         self._on_update_lock: asyncio.Lock = asyncio.Lock()
-
-    ###_ what is the best location and logic for each strategy to use it freely
-    def _post_process(self):
-        self.bar_analyzer = BarAnalyzer(self.bar_aggr, self.market_signals) # late binding 
 
     async def logic_run(self):
         # initial run
@@ -91,6 +89,11 @@ class StrategyBase(ABC):
         except Exception as e:
             self.logger.error(f"[Strategy] on_update failed ({update_event.name}): {e}", extra={"owner": self.agent_id}, exc_info=True)
             raise asyncio.CancelledError
+
+    def analyze_bars(self, bars: list[Bar]):
+        # to be defined and called back by subclasses
+        # not an abstractmethod, cause it is not required to be used
+        pass
 
     @abstractmethod
     async def on_update(self, update_event: UpdateEvent):
