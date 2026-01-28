@@ -6,6 +6,7 @@ from .strategy_util import UpdateEvent
 from .order import Order, CancelOrder
 from .bar import BarAggregator, BarSeries, Bar
 from .bar_analysis import MarketEvent, BarAnalyzer
+from .dashboard import DashBoard
 from ..base.tools import excel_round
 from ..kis.kis_tools import SIDE, MTYPE, EXG
 
@@ -16,10 +17,11 @@ class StrategyBase(ABC):
         super().__init__()
 
     """
-    def __init__(self):
+    def __init__(self): ###_
         self.agent_id = None
         self.code = None
         self.logger = None
+        self.dashboard: DashBoard = None
         self.submit_order = None # callback assigned by agent
 
         # snapshot data to use in making strategy
@@ -40,7 +42,7 @@ class StrategyBase(ABC):
         self.bar_series = BarSeries() # default 1 sec
         self.bar_aggr = BarAggregator(bar_series=self.bar_series) # default 10 sec, but adjustable through reset()
         self.bar_analyzer = BarAnalyzer(self.bar_aggr, self.market_signals)
-        self.bar_analyzer.analyze_bars = self.analyze_bars # strategy-as-callback
+        self.bar_analyzer.on_bar_update = self.on_bar_update # strategy-as-callback
 
         # others
         self.str_name = self.__class__.__name__ # subclass name
@@ -90,10 +92,14 @@ class StrategyBase(ABC):
             self.logger.error(f"[Strategy] on_update failed ({update_event.name}): {e}", extra={"owner": self.agent_id}, exc_info=True)
             raise asyncio.CancelledError
 
-    def analyze_bars(self, bars: list[Bar]):
-        # to be defined and called back by subclasses
-        # not an abstractmethod, cause it is not required to be used
-        pass
+    def on_bar_update(self):
+        # - to be defined in subclasses
+        # - not an abstractmethod, cause it is not required to be used
+        # 1) do analysis
+        # 2) create MarketEvent instance
+        # 3) call self.send_if_event(MarketEvent)
+        if self.dashboard: 
+            self.dashboard.send_bars(self.bar_analyzer.bars)
 
     @abstractmethod
     async def on_update(self, update_event: UpdateEvent):

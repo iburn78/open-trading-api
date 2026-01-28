@@ -17,7 +17,7 @@ class DashBoard:
         
     def enqueue(self, msg):
         self._queue.put_nowait(str(msg))
-
+    
     async def run(self):
         async with asyncio.TaskGroup() as tg:
             tg.create_task(self._start_server())
@@ -55,6 +55,23 @@ class DashBoard:
                     await ws.send(msg)
                 except Exception:
                     self._clients.discard(ws)
+
+    def send_bars(self, bars):
+        payload = {
+            "type": "bars",
+            "bars": [
+                {
+                    "t": b.time.isoformat(),
+                    "o": b.open,
+                    "h": b.high,
+                    "l": b.low,
+                    "c": b.close,
+                }
+                for b in bars
+            ]
+        }
+        self.enqueue(json.dumps(payload))
+
 
 class DashboardManager(DashBoard):
     """

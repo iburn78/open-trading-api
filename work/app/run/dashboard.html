@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <title>OPTRADER Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
 </head>
 <body style="margin:0; padding:0; font-family:monospace;">
 
@@ -18,22 +22,72 @@ const sockets = {};
 const panels = {};
 
 // -------- create or return panel ----------
+// function ensurePanel(port, name) {
+//     if (panels[port]) return panels[port];
+
+//     const pre = document.createElement("pre");
+//     pre.style = `
+//         font-family: monospace;
+//         margin: 0;
+//         padding: 10px;
+//         border-bottom: 1px solid #ccc;
+//         white-space: pre-wrap;
+//     `;
+//     pre.id = `panel-${port}`;
+//     dashboards.appendChild(pre);
+
+//     panels[port] = pre;
+//     return pre;
+// }
 function ensurePanel(port, name) {
     if (panels[port]) return panels[port];
 
-    const pre = document.createElement("pre");
-    pre.style = `
-        font-family: monospace;
-        margin: 0;
-        padding: 10px;
-        border-bottom: 1px solid #ccc;
-        white-space: pre-wrap;
-    `;
-    pre.id = `panel-${port}`;
-    dashboards.appendChild(pre);
+    const container = document.createElement("div");
+    container.style = "border-bottom:1px solid #ccc; padding:8px";
 
-    panels[port] = pre;
-    return pre;
+    const title = document.createElement("div");
+    title.textContent = `[${port} - ${name}]`;
+    title.style = "font-weight:bold";
+
+    const pre = document.createElement("pre");
+    pre.style = "margin:0; white-space:pre-wrap;";
+
+    const canvas = document.createElement("canvas");
+    canvas.height = 200;
+
+    container.appendChild(title);
+    container.appendChild(canvas);
+    container.appendChild(pre);
+    dashboards.appendChild(container);
+
+    panels[port] = { pre, canvas, chart: null };
+    return panels[port];
+}
+
+function ensureChart(panel) {
+    if (panel.chart) return panel.chart;
+
+    panel.chart = new Chart(panel.canvas, {
+        type: "candlestick",
+        data: {
+            datasets: [{
+                label: "Bars",
+                data: []
+            }]
+        },
+        options: {
+            responsive: true,
+            parsing: false,
+            scales: {
+                x: {
+                    type: "time",
+                    time: { unit: "minute" }
+                }
+            }
+        }
+    });
+
+    return panel.chart;
 }
 
 // -------- connect a websocket ----------
@@ -47,8 +101,33 @@ function connectWS(port, name) {
         panel.textContent = `[${port} - ${name}] Connected\n`;
     };
 
+    // ws.onmessage = event => {
+    //     panel.textContent = `[${port} - ${name}]\n` + event.data;
+    // };
     ws.onmessage = event => {
-        panel.textContent = `[${port} - ${name}]\n` + event.data;
+        let msg;
+        try {
+            msg = JSON.parse(event.data);
+        } catch {
+            panel.pre.textContent = event.data;
+            return;
+        }
+
+        if (msg.type === "log") {
+            panel.pre.textContent = msg.text;
+        }
+
+        if (msg.type === "bars") {
+            const chart = ensureChart(panel);
+            chart.data.datasets[0].data = msg.bars.map(b => ({
+                x: b.t,
+                o: b.o,
+                h: b.h,
+                l: b.l,
+                c: b.c
+            }));
+            chart.update();
+        }
     };
 
     ws.onclose = () => {

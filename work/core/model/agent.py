@@ -4,7 +4,7 @@ import logging
 from .order import Order, CancelOrder
 from .client import PersistentClient
 from .order_book import OrderBook
-from .bar import MovingBar, BarSeries, BarAggregator
+from .bar import MovingBar
 from .perf_metric import PerformanceMetric
 from .strategy_base import StrategyBase
 from ..base.logger import notice_beep
@@ -45,6 +45,7 @@ class Agent:
         self.strategy.agent_id = self.id
         self.strategy.code = self.code
         self.strategy.logger = self.logger
+        self.strategy.dashboard = self.dashboard
         self.strategy.submit_order = self.submit_order
         self.strategy.pm = self.pm
 

@@ -68,6 +68,7 @@ class Bar:
     close: int
     volume: int
 
+
 class BarSeries:
     BAR_DELTA_SEC = 1 # sec
 
@@ -161,7 +162,7 @@ class BarAggregator:
     def on_raw_bar_close(self):
         self.consume(self.bar_series.bars[-1])
     
-    def on_bar_close():
+    def on_aggr_bar_close():
         # to be callback by analyzer
         pass 
 
@@ -174,7 +175,7 @@ class BarAggregator:
             closed = self._cur_bar
             self._start(bar)
             self.aggr_bars.append(closed)
-            self.on_bar_close()
+            self.on_aggr_bar_close()
             return
 
         self._update(bar)

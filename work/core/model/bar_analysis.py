@@ -7,33 +7,27 @@ from .bar import BarAggregator, Bar
 # -------------------------------------------------------------------------
 # BarAnalyzer: set-up analysis 
 # -------------------------------------------------------------------------
-# analyze_bars to be overrided in Strategy
+# on_bar_update to be overrided in Strategy
 class BarAnalyzer:
     NUM_BAR_TO_ANALYZE = 10
 
     def __init__(self, bar_aggr: BarAggregator, market_signals: asyncio.Queue):
         self.bar_aggr = bar_aggr
-        self.bar_aggr.on_bar_close = self.on_bar_close
-        self.bars = self.bar_aggr.aggr_bars 
-
+        self.bar_aggr.on_aggr_bar_close = self.on_aggr_bar_close
         self.market_signals = market_signals
-        self._num_bar: int = self.NUM_BAR_TO_ANALYZE 
+        self.reset(self.NUM_BAR_TO_ANALYZE) # initialize
 
+    # set to None to use all
     def reset(self, num_bar: int):
         self._num_bar = num_bar
+        self.bars = self.bar_aggr.aggr_bars[-self._num_bar:] if self._num_bar else self.bar_aggr.aggr_bars
 
-    def on_bar_close(self):
-        if len(self.bars) < self._num_bar:
-            return
+    def on_aggr_bar_close(self):
+        self.bars = self.bar_aggr.aggr_bars[-self._num_bar:] if self._num_bar else self.bar_aggr.aggr_bars
+        self.on_bar_update()
 
-        bars = self.bars[-self._num_bar:]
-        self.analyze_bars(bars)
-
-    @abstractmethod
-    def analyze_bars(self, bars: list[Bar]):
-        # 1) do analysis
-        # 2) create MarketEvent instance
-        # 2) call self.send_if_event(MarketEvent)
+    def on_bar_update(self): # bar = aggr_bar
+        # to be called back in Strategy subclass
         pass
     
     def handle_mkt_event(self, mkt_event): # MarketEvent
