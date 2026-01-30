@@ -14,15 +14,16 @@ class VolumePurchase(StrategyBase):
     """
     def __init__(self):
         super().__init__() 
-        self.bar_aggr.reset(aggr_delta_sec=3)
-        self.bar_analyzer.reset(num_bar=5) 
+        # bar setting
+        self.bar_aggr.reset(aggr_delta_sec=2)
+        self.bar_analyzer.reset(num_bar=20) 
 
     def on_bar_update(self):
         super().on_bar_update()
         va = VolumeAnalysis.get_vol_to_avg(self.bar_analyzer.bars)
         svr = VolumeAnalysis.get_shifted_vol_ratio(self.bar_analyzer.bars)
 
-        mkt_event = VolumeTrendEvent(va, svr, VOLUME_RATIO=1.01, SLOPE_RATIO=1.01)
+        mkt_event = VolumeTrendEvent(va, svr, VOLUME_RATIO=1.5, SLOPE_RATIO=1.3)
         self.bar_analyzer.handle_mkt_event(mkt_event)
 
     async def on_update(self, update_event: UpdateEvent):

@@ -61,11 +61,12 @@ class DashBoard:
             "type": "bars",
             "bars": [
                 {
-                    "t": b.time.isoformat(),
+                    "t": b.start.isoformat(),
                     "o": b.open,
                     "h": b.high,
                     "l": b.low,
                     "c": b.close,
+                    "v": b.volume,
                 }
                 for b in bars
             ]

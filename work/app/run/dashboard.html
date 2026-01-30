@@ -9,36 +9,23 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
 </head>
 <body style="margin:0; padding:0; font-family:monospace;">
-
 <div id="dashboards"></div>
 
 <script>
+const DASHBOARD_MANAGER_PORT = 9020
+
 const dashboards = document.getElementById("dashboards");
 
 // active websockets { port: WebSocket }
 const sockets = {};
 
+
+// ###_ add volume 
+// ###_ make it seprate type for manager and server
+
 // HTML panels { port: <pre> }
 const panels = {};
 
-// -------- create or return panel ----------
-// function ensurePanel(port, name) {
-//     if (panels[port]) return panels[port];
-
-//     const pre = document.createElement("pre");
-//     pre.style = `
-//         font-family: monospace;
-//         margin: 0;
-//         padding: 10px;
-//         border-bottom: 1px solid #ccc;
-//         white-space: pre-wrap;
-//     `;
-//     pre.id = `panel-${port}`;
-//     dashboards.appendChild(pre);
-
-//     panels[port] = pre;
-//     return pre;
-// }
 function ensurePanel(port, name) {
     if (panels[port]) return panels[port];
 
@@ -49,39 +36,72 @@ function ensurePanel(port, name) {
     title.textContent = `[${port} - ${name}]`;
     title.style = "font-weight:bold";
 
+    container.appendChild(title);
+
+    let canvas = null;
+
+    // only non-manager / non-server get charts
+    if (name !== "manager" && name !== "server") {
+        canvas = document.createElement("canvas");
+        canvas.height = 200;
+        container.appendChild(canvas);
+    }
+
     const pre = document.createElement("pre");
     pre.style = "margin:0; white-space:pre-wrap;";
 
-    const canvas = document.createElement("canvas");
-    canvas.height = 200;
-
-    container.appendChild(title);
-    container.appendChild(canvas);
     container.appendChild(pre);
     dashboards.appendChild(container);
 
-    panels[port] = { pre, canvas, chart: null };
+    panels[port] = { 
+        pre, 
+        canvas, 
+        chart: null,
+        yMin: null,
+        yMax: null
+    };
     return panels[port];
 }
-
 function ensureChart(panel) {
+    if (!panel.canvas) return null;
     if (panel.chart) return panel.chart;
 
-    panel.chart = new Chart(panel.canvas, {
-        type: "candlestick",
+    const ctx = panel.canvas.getContext("2d");
+
+    panel.chart = new Chart(ctx, {
         data: {
-            datasets: [{
-                label: "Bars",
-                data: []
-            }]
+            datasets: [
+                // price (candlestick)
+                {
+                    type: "candlestick",
+                    label: "Bars",
+                    data: []
+                },
+                // volume
+                {
+                    type: "bar",
+                    label: "Volume",
+                    data: [],
+                    yAxisID: "volume"
+                }
+            ]
         },
         options: {
-            responsive: true,
+            animation: false,
             parsing: false,
             scales: {
                 x: {
-                    type: "time",
-                    time: { unit: "minute" }
+                    type: "time"
+                },
+                y: {
+                    position: "left"
+                },
+                volume: {
+                    position: "right",
+                    beginAtZero: true,
+                    grid: {
+                        drawOnChartArea: false
+                    }
                 }
             }
         }
@@ -116,17 +136,40 @@ function connectWS(port, name) {
         if (msg.type === "log") {
             panel.pre.textContent = msg.text;
         }
+        try {
+            if (msg.type === "bars") {
+                const chart = ensureChart(panel);
+                chart.data.datasets[0].data = msg.bars.map(b => ({
+                    x: Date.parse(b.t),
+                    o: b.o,
+                    h: b.h,
+                    l: b.l,
+                    c: b.c
+                }));
+                chart.data.datasets[1].data = msg.bars.map(b => ({
+                    x: Date.parse(b.t),
+                    y: b.v
+                }));
+                chart.data.datasets[1].backgroundColor = msg.bars.map(b =>
+                    b.c >= b.o
+                        ? "rgba(0,200,0,0.3)"
+                        : "rgba(200,0,0,0.3)"
+                );
+                // ---- Y-axis bounds logic ----
+                const prices = msg.bars.flatMap(b => [b.h, b.l]);
+                const curMin = Math.min(...prices);
+                const curMax = Math.max(...prices);
 
-        if (msg.type === "bars") {
-            const chart = ensureChart(panel);
-            chart.data.datasets[0].data = msg.bars.map(b => ({
-                x: b.t,
-                o: b.o,
-                h: b.h,
-                l: b.l,
-                c: b.c
-            }));
-            chart.update();
+                if (panel.yMin === null || curMin < panel.yMin) panel.yMin = curMin;
+                if (panel.yMax === null || curMax > panel.yMax) panel.yMax = curMax;
+
+                chart.options.scales.y.min = panel.yMin 
+                chart.options.scales.y.max = panel.yMax 
+
+                chart.update();
+            }
+        } catch (err) {
+            panel.pre.textContent = panel.pre.textContent + "\n[CLIENT ERROR]\n" + err.message;
         }
     };
 
@@ -152,8 +195,8 @@ function removePort(port) {
     }
 }
 
-// -------- connect to dashboard manager (port 9020) --------
-const mgr = new WebSocket("ws://127.0.0.1:9020");
+// -------- connect to dashboard manager --------
+const mgr = new WebSocket(`ws://127.0.0.1:${DASHBOARD_MANAGER_PORT}`);
 
 mgr.onmessage = (event) => {
     let endpoints;
@@ -181,7 +224,7 @@ mgr.onmessage = (event) => {
     }
 };
 
-mgr.onopen = () => console.log("Connected to manager (9020)");
+mgr.onopen = () => console.log(`Connected to manager (${DASHBOARD_MANAGER_PORT})`);
 mgr.onerror = () => console.log("Manager error");
 mgr.onclose = () => console.log("Manager closed");
 </script>

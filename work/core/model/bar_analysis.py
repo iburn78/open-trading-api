@@ -48,9 +48,9 @@ class VolumeAnalysis:
     @staticmethod
     def get_shifted_vol_ratio(bars: list[Bar], shift: int | None = None):
         if shift is None: shift = max(1, len(bars) // 4)
-
         early = bars[:-shift]
         late = bars[shift:]
+        if not late or not early: return None
         early_avg = sum(b.volume for b in early) / len(early) # Bar
         late_avg = sum(b.volume for b in late) / len(late) # Bar
 
