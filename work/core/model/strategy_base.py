@@ -95,9 +95,15 @@ class StrategyBase(ABC):
     def on_bar_update(self):
         # - to be defined in subclasses
         # - not an abstractmethod, cause it is not required to be used
+        # ------------------------------
+        # call super().on_bar_update() 
+        # - should be located at the end of the subclass function to reflect the correct "Event" status in the dashboard
+        # ------------------------------
         # 1) do analysis
         # 2) create MarketEvent instance
         # 3) call self.send_if_event(MarketEvent)
+
+        # at least 1 bar exists when called
         if self.dashboard: 
             self.dashboard.send_bars(self.bar_analyzer.bars)
 

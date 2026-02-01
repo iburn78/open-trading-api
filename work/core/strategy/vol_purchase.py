@@ -19,12 +19,12 @@ class VolumePurchase(StrategyBase):
         self.bar_analyzer.reset(num_bar=20) 
 
     def on_bar_update(self):
-        super().on_bar_update()
         va = VolumeAnalysis.get_vol_to_avg(self.bar_analyzer.bars)
         svr = VolumeAnalysis.get_shifted_vol_ratio(self.bar_analyzer.bars)
 
-        mkt_event = VolumeTrendEvent(va, svr, VOLUME_RATIO=1.5, SLOPE_RATIO=1.3)
+        mkt_event = VolumeTrendEvent(va, svr, VOLUME_RATIO=1.1, SLOPE_RATIO=1.1)
         self.bar_analyzer.handle_mkt_event(mkt_event)
+        super().on_bar_update()
 
     async def on_update(self, update_event: UpdateEvent):
         if update_event != UpdateEvent.PRICE_UPDATE:

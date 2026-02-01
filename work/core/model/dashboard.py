@@ -67,6 +67,7 @@ class DashBoard:
                     "l": b.low,
                     "c": b.close,
                     "v": b.volume,
+                    "event_": b.event_,
                 }
                 for b in bars
             ]

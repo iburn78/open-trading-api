@@ -59,7 +59,7 @@ class MovingBar:
 
 
 # slots = True: does not create __dict__ for each instance, so optimized for speed and memory (while, cannot have additional variables)
-@dataclass(slots=True, frozen=True)
+@dataclass(slots=True, frozen=False)
 class Bar:
     start: datetime
     open: int
@@ -68,6 +68,8 @@ class Bar:
     close: int
     volume: int
 
+    # additional var
+    event_: str = "" # should be reassigned when event happened
 
 class BarSeries:
     BAR_DELTA_SEC = 1 # sec

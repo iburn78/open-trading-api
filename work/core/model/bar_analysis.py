@@ -32,6 +32,7 @@ class BarAnalyzer:
     
     def handle_mkt_event(self, mkt_event): # MarketEvent
         if mkt_event.is_event():
+            self.bars[-1].event_ = "Event" # simplest event notification to dashboard
             self.market_signals.put_nowait(mkt_event)
 
 # -------------------------------------------------------------------------

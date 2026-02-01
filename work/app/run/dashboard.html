@@ -62,6 +62,7 @@ function ensurePanel(port, name) {
     };
     return panels[port];
 }
+
 function ensureChart(panel) {
     if (!panel.canvas) return null;
     if (panel.chart) return panel.chart;
@@ -110,6 +111,49 @@ function ensureChart(panel) {
     return panel.chart;
 }
 
+// for event highlight
+const barEventPlugin = {
+    id: 'barEventPlugin',
+
+    afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        const meta = chart.getDatasetMeta(0); // price dataset
+        const data = chart.data.datasets[0].data;
+
+        ctx.save();
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        meta.data.forEach((elem, i) => {
+            const ev = data[i]?.event_;
+            if (!ev) return;
+
+            const x = elem.x;
+            const y = elem.y - 10; // above candle/bar
+
+            const padding = 4;
+            const textW = ctx.measureText(ev).width;
+            const w = textW + padding * 2;
+            const h = 16;
+
+            // background
+            ctx.fillStyle = 'rgba(0,0,0,0.75)';
+            // if (ev === "BUY") ctx.fillStyle = 'rgba(0,120,255,0.8)'; // use if event_ is defined in multiple ways
+            // if (ev === "SELL") ctx.fillStyle = 'rgba(255,80,80,0.8)';
+            ctx.fillRect(x - w / 2, y - h, w, h);
+
+            // text
+            ctx.fillStyle = '#fff';
+            ctx.fillText(ev, x, y - h / 2);
+        });
+
+        ctx.restore();
+    }
+};
+
+Chart.register(barEventPlugin);
+
 // -------- connect a websocket ----------
 function connectWS(port, name) {
     if (sockets[port]) return;
@@ -144,7 +188,8 @@ function connectWS(port, name) {
                     o: b.o,
                     h: b.h,
                     l: b.l,
-                    c: b.c
+                    c: b.c, 
+                    event_: b.event_, 
                 }));
                 chart.data.datasets[1].data = msg.bars.map(b => ({
                     x: Date.parse(b.t),
