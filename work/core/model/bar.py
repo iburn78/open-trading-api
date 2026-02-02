@@ -59,7 +59,7 @@ class MovingBar:
 
 
 # slots = True: does not create __dict__ for each instance, so optimized for speed and memory (while, cannot have additional variables)
-@dataclass(slots=True, frozen=False)
+@dataclass(slots=True, frozen=False) # frozen = False to set dashboard info
 class Bar:
     start: datetime
     open: int
@@ -68,8 +68,9 @@ class Bar:
     close: int
     volume: int
 
-    # additional var
-    event_: str = "" # should be reassigned when event happened
+    # for dashboard display
+    price_event_: str = "" # should be reassigned when event happened
+    volume_event_: str = "" 
 
 class BarSeries:
     BAR_DELTA_SEC = 1 # sec

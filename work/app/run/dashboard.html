@@ -43,7 +43,6 @@ function ensurePanel(port, name) {
     // only non-manager / non-server get charts
     if (name !== "manager" && name !== "server") {
         canvas = document.createElement("canvas");
-        canvas.height = 200;
         container.appendChild(canvas);
     }
 
@@ -74,16 +73,20 @@ function ensureChart(panel) {
             datasets: [
                 // price (candlestick)
                 {
-                    type: "candlestick",
+                    // type: "ohlc",
+                    // barPercentage: 1.1, // use when it is ohlc
+                    type: "candlestick", // green: up, red: down (by default)
                     label: "Bars",
-                    data: []
+                    data: [],
+                    borderWidth: 2.5, // candle body outline
                 },
                 // volume
                 {
                     type: "bar",
                     label: "Volume",
                     data: [],
-                    yAxisID: "volume"
+                    yAxisID: "volume",
+                    barPercentage: 0.6,
                 }
             ]
         },
@@ -95,7 +98,7 @@ function ensureChart(panel) {
                     type: "time"
                 },
                 y: {
-                    position: "left"
+                    position: "left",
                 },
                 volume: {
                     position: "right",
@@ -111,13 +114,33 @@ function ensureChart(panel) {
     return panel.chart;
 }
 
+// refer to bar_analysis Event Category class 
+const EVENT_STYLE = {
+    Sg: {
+        bg: 'rgba(40,120,255,0.85)',
+        fg: '#fff'
+    },
+    Up: {
+        bg: 'rgba(220,60,60,0.85)',
+        fg: '#fff'
+    },
+    SU: {
+        bg: 'rgba(255,200,40,0.95)',
+        fg: '#000'
+    },
+    _default: {
+        bg: 'rgba(0,0,0,0.75)',
+        fg: '#fff'
+    }
+};
+
 // for event highlight
-const barEventPlugin = {
-    id: 'barEventPlugin',
+const priceEventPlugin = {
+    id: 'priceEventPlugin',
 
     afterDatasetsDraw(chart) {
         const { ctx } = chart;
-        const meta = chart.getDatasetMeta(0); // price dataset
+        const meta = chart.getDatasetMeta(0); 
         const data = chart.data.datasets[0].data;
 
         ctx.save();
@@ -126,25 +149,24 @@ const barEventPlugin = {
         ctx.textBaseline = 'middle';
 
         meta.data.forEach((elem, i) => {
-            const ev = data[i]?.event_;
+            const ev = data[i]?.price_event_;
             if (!ev) return;
 
             const x = elem.x;
-            const y = elem.y - 10; // above candle/bar
+            const y = elem.y - 10; // above candle/bar 
 
             const padding = 4;
             const textW = ctx.measureText(ev).width;
             const w = textW + padding * 2;
             const h = 16;
 
+            const style = EVENT_STYLE[ev] ?? EVENT_STYLE._default;
             // background
-            ctx.fillStyle = 'rgba(0,0,0,0.75)';
-            // if (ev === "BUY") ctx.fillStyle = 'rgba(0,120,255,0.8)'; // use if event_ is defined in multiple ways
-            // if (ev === "SELL") ctx.fillStyle = 'rgba(255,80,80,0.8)';
+            ctx.fillStyle = style.bg;
             ctx.fillRect(x - w / 2, y - h, w, h);
 
             // text
-            ctx.fillStyle = '#fff';
+            ctx.fillStyle = style.fg
             ctx.fillText(ev, x, y - h / 2);
         });
 
@@ -152,7 +174,49 @@ const barEventPlugin = {
     }
 };
 
-Chart.register(barEventPlugin);
+// for event highlight
+const volumeEventPlugin = {
+    id: 'volumeEventPlugin',
+
+    afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        const meta = chart.getDatasetMeta(1); 
+        const data = chart.data.datasets[1].data;
+
+        ctx.save();
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        meta.data.forEach((elem, i) => {
+            const ev = data[i]?.volume_event_;
+            if (!ev) return;
+
+            const x = elem.x;
+            const y = chart.scales.volume.getPixelForValue(0); // above candle/bar
+
+            const padding = 4;
+            const textW = ctx.measureText(ev).width;
+            const w = textW + padding * 2;
+            const h = 16;
+
+            const style = EVENT_STYLE[ev] ?? EVENT_STYLE._default;
+            // background
+            ctx.fillStyle = style.bg;
+            ctx.fillRect(x - w / 2, y - h, w, h);
+
+            // text
+            ctx.fillStyle = style.fg
+            ctx.fillText(ev, x, y - h / 2);
+            // refer to bar_analysis Event Category class 
+        });
+
+        ctx.restore();
+    }
+};
+
+Chart.register(priceEventPlugin);
+Chart.register(volumeEventPlugin);
 
 // -------- connect a websocket ----------
 function connectWS(port, name) {
@@ -189,17 +253,19 @@ function connectWS(port, name) {
                     h: b.h,
                     l: b.l,
                     c: b.c, 
-                    event_: b.event_, 
+                    price_event_: b.price_event_, 
                 }));
                 chart.data.datasets[1].data = msg.bars.map(b => ({
                     x: Date.parse(b.t),
-                    y: b.v
+                    y: b.v,
+                    volume_event_: b.volume_event_, 
                 }));
-                chart.data.datasets[1].backgroundColor = msg.bars.map(b =>
-                    b.c >= b.o
-                        ? "rgba(0,200,0,0.3)"
-                        : "rgba(200,0,0,0.3)"
-                );
+                chart.data.datasets[1].backgroundColor = "rgba(128, 128, 128, 0.5)" // gray
+                // chart.data.datasets[1].backgroundColor = msg.bars.map(b =>
+                //     b.c >= b.o
+                //         ? "rgba(0,200,0,0.3)"
+                //         : "rgba(200,0,0,0.3)"
+                // );
                 // ---- Y-axis bounds logic ----
                 const prices = msg.bars.flatMap(b => [b.h, b.l]);
                 const curMin = Math.min(...prices);
@@ -210,6 +276,12 @@ function connectWS(port, name) {
 
                 chart.options.scales.y.min = panel.yMin 
                 chart.options.scales.y.max = panel.yMax 
+
+                const vols = msg.bars.map(b => b.v);
+                const vMax = Math.max(...vols);
+
+                if (panel.vMax === null || vMax > panel.vMax) panel.vMax = vMax;
+                chart.options.scales.volume.max = panel.vMax;
 
                 chart.update();
             }
