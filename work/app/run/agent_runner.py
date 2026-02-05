@@ -9,23 +9,29 @@ from core.strategy.null_str import NullStr
 from core.strategy.vol_purchase import VolumePurchase
 
 async def agent_runner(logger):
-    AGENT_RUNTIME = 2000 # sec
+    AGENT_RUNTIME = 10000 # sec
     ###_ check for code if vaild
-    A = Agent(id = 'A1', code = '005930', service=service, dp = 8001, logger=logger, strategy=VolumePurchase())
-    B = Agent(id = 'B1', code = '000660', service=service, dp = 8002, logger=logger, strategy=VolumePurchase())
+    A1 = Agent(id = 'A1', code = '005930', service=service, dp = 8001, logger=logger, strategy=VolumePurchase(aggr_delta_sec=1))
+    A2 = Agent(id = 'A2', code = '005930', service=service, dp = 8002, logger=logger, strategy=VolumePurchase(aggr_delta_sec=5))
+    B1 = Agent(id = 'B1', code = '000660', service=service, dp = 8003, logger=logger, strategy=VolumePurchase(aggr_delta_sec=1))
+    B2 = Agent(id = 'B2', code = '000660', service=service, dp = 8004, logger=logger, strategy=VolumePurchase(aggr_delta_sec=5))
 
-    A.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-30')
-    B.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-30')
+    A1.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-30')
+    A2.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-30')
+    B1.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-30')
+    B2.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-30')
 
-    agents = [A, B]
+    agents = [A1, A2, B1, B2]
     async with asyncio.TaskGroup() as tg:
         for agent in agents:
             tg.create_task(agent.run())
 
         await asyncio.sleep(AGENT_RUNTIME)
 
-        A.hardstop_event.set()
-        B.hardstop_event.set()
+        A1.hardstop_event.set()
+        A2.hardstop_event.set()
+        B1.hardstop_event.set()
+        B2.hardstop_event.set()
 
 if __name__ == "__main__":
     service = Service.DEMO

@@ -19,10 +19,6 @@ const dashboards = document.getElementById("dashboards");
 // active websockets { port: WebSocket }
 const sockets = {};
 
-
-// ###_ add volume 
-// ###_ make it seprate type for manager and server
-
 // HTML panels { port: <pre> }
 const panels = {};
 
@@ -57,7 +53,8 @@ function ensurePanel(port, name) {
         canvas, 
         chart: null,
         yMin: null,
-        yMax: null
+        yMax: null,
+        vMax: null,
     };
     return panels[port];
 }
@@ -87,7 +84,7 @@ function ensureChart(panel) {
                     data: [],
                     yAxisID: "volume",
                     barPercentage: 0.6,
-                }
+                },
             ]
         },
         options: {
@@ -114,101 +111,234 @@ function ensureChart(panel) {
     return panel.chart;
 }
 
-// refer to bar_analysis Event Category class 
-const EVENT_STYLE = {
-    Sg: {
+const EVENT_META = {
+    // ---- PRICE ----
+    price_surge: {
+        label: 'S',
         bg: 'rgba(40,120,255,0.85)',
-        fg: '#fff'
+        fg: '#fff',
     },
-    Up: {
+    price_plummet: {
+        label: 'P',
         bg: 'rgba(220,60,60,0.85)',
-        fg: '#fff'
+        fg: '#fff',
     },
-    SU: {
+    price_uptrend: {
+        label: '↑',
         bg: 'rgba(255,200,40,0.95)',
-        fg: '#000'
+        fg: '#000',
     },
-    _default: {
-        bg: 'rgba(0,0,0,0.75)',
-        fg: '#fff'
-    }
+    price_downtrend: {
+        label: '↓',
+        bg: 'rgba(160,160,160,0.9)',
+        fg: '#000',
+    },
+    price_surge_uptrend: {
+        label: '↑↑',
+        bg: 'rgba(0,180,120,0.9)',
+        fg: '#fff',
+    },
+    price_plummet_downtrend: {
+        label: '↓↓',
+        bg: 'rgba(180,50,50,0.9)',
+        fg: '#fff',
+    },
+
+    // ---- VOLUME ----
+    volume_surge: {
+        label: 'V',
+        bg: 'rgba(140,80,200,0.85)',
+        fg: '#fff',
+    },
+    volume_uptrend: {
+        label: '↗',
+        bg: 'rgba(90,170,120,0.85)',
+        fg: '#fff',
+    },
+    volume_surge_uptrend: {
+        label: 'V↗',
+        bg: 'rgba(110,70,180,0.9)',
+        fg: '#fff',
+    },
+
+    // ---- MARKET ----
+    market_bull: {
+        label: '▲',
+        bg: 'rgba(255,255,200,0.85)',
+        fg: '#000',
+        band: 'rgba(255,255,200,0.35)', // background band
+    },
+    market_bear: {
+        label: '▼',
+        bg: 'rgba(220,220,220,0.85)',
+        fg: '#000',
+        band: 'rgba(220,220,220,0.35)',
+    },
 };
 
-// for event highlight
+const EVENT_UI = {
+    font: '11px monospace',
+    padding: 4,
+    boxHeight: 16,
+    labelOffsetY: 10,
+    minBandWidth: 10,
+};
+
+// text width cache (font-sensitive)
+const _labelWidthCache = new Map();
+
+function getTextWidth(ctx, label) {
+    const key = `${ctx.font}|${label}`;
+    let w = _labelWidthCache.get(key);
+    if (w === undefined) {
+        w = ctx.measureText(label).width;
+        _labelWidthCache.set(key, w);
+    }
+    return w;
+}
+
 const priceEventPlugin = {
     id: 'priceEventPlugin',
 
     afterDatasetsDraw(chart) {
         const { ctx } = chart;
-        const meta = chart.getDatasetMeta(0); 
+        const meta = chart.getDatasetMeta(0);
         const data = chart.data.datasets[0].data;
 
         ctx.save();
-        ctx.font = '11px monospace';
+        ctx.font = EVENT_UI.font;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
         meta.data.forEach((elem, i) => {
-            const ev = data[i]?.price_event_;
-            if (!ev) return;
+            const key = data[i]?.price_event_;
+            if (!key) return;
 
+            const metaDef = EVENT_META[key];
+            if (!metaDef) return;
+
+            const label = metaDef.label;
             const x = elem.x;
-            const y = elem.y - 10; // above candle/bar 
+            const y = elem.y - EVENT_UI.labelOffsetY;
 
-            const padding = 4;
-            const textW = ctx.measureText(ev).width;
-            const w = textW + padding * 2;
-            const h = 16;
+            const textW = getTextWidth(ctx, label);
+            const w = textW + EVENT_UI.padding * 2;
+            const h = EVENT_UI.boxHeight;
 
-            const style = EVENT_STYLE[ev] ?? EVENT_STYLE._default;
-            // background
-            ctx.fillStyle = style.bg;
+            ctx.fillStyle = metaDef.bg;
             ctx.fillRect(x - w / 2, y - h, w, h);
 
-            // text
-            ctx.fillStyle = style.fg
-            ctx.fillText(ev, x, y - h / 2);
+            ctx.fillStyle = metaDef.fg;
+            ctx.fillText(label, x, y - h / 2);
         });
 
         ctx.restore();
     }
 };
 
-// for event highlight
 const volumeEventPlugin = {
     id: 'volumeEventPlugin',
 
     afterDatasetsDraw(chart) {
-        const { ctx } = chart;
-        const meta = chart.getDatasetMeta(1); 
+        const { ctx, scales } = chart;
+        const meta = chart.getDatasetMeta(1); // volume bars
         const data = chart.data.datasets[1].data;
 
         ctx.save();
-        ctx.font = '11px monospace';
+        ctx.font = EVENT_UI.font;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
+        const baseY = scales.volume.getPixelForValue(0);
+
         meta.data.forEach((elem, i) => {
-            const ev = data[i]?.volume_event_;
-            if (!ev) return;
+            const key = data[i]?.volume_event_;
+            if (!key) return;
 
+            const metaDef = EVENT_META[key];
+            if (!metaDef) return;
+
+            const label = metaDef.label;
             const x = elem.x;
-            const y = chart.scales.volume.getPixelForValue(0); // above candle/bar
+            const y = baseY - EVENT_UI.labelOffsetY;
 
-            const padding = 4;
-            const textW = ctx.measureText(ev).width;
-            const w = textW + padding * 2;
-            const h = 16;
+            const textW = getTextWidth(ctx, label);
+            const w = textW + EVENT_UI.padding * 2;
+            const h = EVENT_UI.boxHeight;
 
-            const style = EVENT_STYLE[ev] ?? EVENT_STYLE._default;
             // background
-            ctx.fillStyle = style.bg;
+            ctx.fillStyle = metaDef.bg;
             ctx.fillRect(x - w / 2, y - h, w, h);
 
             // text
-            ctx.fillStyle = style.fg
-            ctx.fillText(ev, x, y - h / 2);
-            // refer to bar_analysis Event Category class 
+            ctx.fillStyle = metaDef.fg;
+            ctx.fillText(label, x, y - h / 2);
+        });
+
+        ctx.restore();
+    }
+};
+
+const mktEventPlugin = {
+    id: 'mktEventPlugin',
+
+    beforeDatasetsDraw(chart) {
+        const { ctx, chartArea } = chart;
+        if (!chartArea) return;
+        const meta = chart.getDatasetMeta(0);
+        const data = chart.data.datasets[0].data;
+
+        ctx.save();
+
+        meta.data.forEach((elem, i) => {
+            const key = data[i]?.mkt_event_;
+            if (!key) return;
+
+            const metaDef = EVENT_META[key];
+            if (!metaDef) return;
+
+            const x = elem.x;
+
+            let w = EVENT_UI.minBandWidth;
+            if (meta.data.length > 1) {
+                w =
+                    i < meta.data.length - 1
+                        ? meta.data[i + 1].x - elem.x
+                        : elem.x - meta.data[i - 1].x;
+            }
+
+            // background band
+            ctx.fillStyle = metaDef.band;
+            ctx.fillRect(
+                x - w / 2,
+                chartArea.top,
+                w,
+                chartArea.bottom - chartArea.top
+            );
+
+            // label box
+            ctx.font = EVENT_UI.font;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+
+            const textW = getTextWidth(ctx, label);
+            const boxW = textW + EVENT_UI.padding * 2;
+            const boxH = EVENT_UI.boxHeight;
+
+            ctx.fillStyle = metaDef.bg;
+            ctx.fillRect(
+                x - boxW / 2,
+                chartArea.top + 2,
+                boxW,
+                boxH
+            );
+
+            ctx.fillStyle = metaDef.fg;
+            ctx.fillText(
+                metaDef.label,
+                x,
+                chartArea.top + 2 + boxH / 2
+            );
         });
 
         ctx.restore();
@@ -217,6 +347,12 @@ const volumeEventPlugin = {
 
 Chart.register(priceEventPlugin);
 Chart.register(volumeEventPlugin);
+Chart.register(mktEventPlugin);
+
+// Order:
+// 1) mktEventPlugin  → background bands
+// 2) chart datasets
+// 3) price / volume overlays
 
 // -------- connect a websocket ----------
 function connectWS(port, name) {
@@ -226,12 +362,9 @@ function connectWS(port, name) {
     const panel = ensurePanel(port, name);
 
     ws.onopen = () => {
-        panel.textContent = `[${port} - ${name}] Connected\n`;
+        panel.pre.textContent = `[${port} - ${name}] Connected\n`;
     };
 
-    // ws.onmessage = event => {
-    //     panel.textContent = `[${port} - ${name}]\n` + event.data;
-    // };
     ws.onmessage = event => {
         let msg;
         try {
@@ -254,6 +387,7 @@ function connectWS(port, name) {
                     l: b.l,
                     c: b.c, 
                     price_event_: b.price_event_, 
+                    mkt_event_: b.mkt_event_, 
                 }));
                 chart.data.datasets[1].data = msg.bars.map(b => ({
                     x: Date.parse(b.t),
@@ -291,11 +425,11 @@ function connectWS(port, name) {
     };
 
     ws.onclose = () => {
-        panel.textContent = `[${port} - ${name}] Connection closed\n`;
+        panel.pre.textContent = `[${port} - ${name}] Connection closed\n`;
     };
 
     ws.onerror = () => {
-        panel.textContent = `[${port} - ${name}] Error\n`;
+        panel.pre.textContent = `[${port} - ${name}] Error\n`;
     };
 
     sockets[port] = ws;

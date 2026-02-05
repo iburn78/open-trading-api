@@ -69,8 +69,9 @@ class Bar:
     volume: int
 
     # for dashboard display
-    price_event_: str = "" # should be reassigned when event happened
-    volume_event_: str = "" 
+    price_event_: str | None = None
+    volume_event_: str | None = None
+    mkt_event_: str | None = None
 
 class BarSeries:
     BAR_DELTA_SEC = 1 # sec
@@ -151,7 +152,9 @@ class BarAggregator:
         self._cur_start: datetime | None = None
         self._cur_bar: Bar | None = None
 
-    def reset(self, aggr_delta_sec: int):
+    def reset(self, aggr_delta_sec: int | None):
+        if aggr_delta_sec is None: return
+
         aggr_delta = timedelta(seconds=aggr_delta_sec)
         assert aggr_delta >= self.bar_series.bar_delta
         self.aggr_delta = aggr_delta

@@ -92,7 +92,7 @@ class StrategyBase(ABC):
             self.logger.error(f"[Strategy] on_update failed ({update_event.name}): {e}", extra={"owner": self.agent_id}, exc_info=True)
             raise asyncio.CancelledError
 
-    def on_bar_update(self):
+    def on_bar_update(self, mkt_event: MarketEvent = None):
         # - to be defined in subclasses
         # - not an abstractmethod, cause it is not required to be used
         # ------------------------------
@@ -106,6 +106,9 @@ class StrategyBase(ABC):
         # at least 1 bar exists when called
         if self.dashboard: 
             self.dashboard.send_bars(self.bar_analyzer.bars)
+
+        if mkt_event and mkt_event.mkt_event:
+            self.market_signals.put_nowait(mkt_event)
 
     @abstractmethod
     async def on_update(self, update_event: UpdateEvent):
