@@ -91,6 +91,9 @@ class CommHandler:
                 # Send response back
                 await agent.dispatch(response)
         
+        except ConnectionAbortedError as e: 
+            self.logger.info(f"[CommHandler] connection aborted at client port {peer[1]}: {e}")
+
         except Exception as e:
             self.logger.error(f"[CommHandler] handler error at client port {peer[1]}: {e}", exc_info=True)
 

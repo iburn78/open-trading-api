@@ -96,7 +96,7 @@ class TransactionNotice:
 # ------------------------------------------------------
 TRPriceColumns = [
     "MKSC_SHRN_ISCD", # code
-    "STCK_CNTG_HOUR", # hour (%H%M%S), ###_ it is sometimes future time in Demo server (at least)
+    "STCK_CNTG_HOUR", # hour (%H%M%S) | note: it shows sometimes future time in Demo server (at least in the Demo server)
     "STCK_PRPR", # 체결가
     "PRDY_VRSS_SIGN", 
     "PRDY_VRSS", 

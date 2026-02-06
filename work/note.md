@@ -103,6 +103,10 @@ or more modern way (only for development situation)
 - every day, agent clean-up is required, such as remaining incompleted order / pending trns has to be handled (STUDY HOW THE API TREATS THIS -- WHETHER IT SENDS SOME NOTICE ON CANCEL OR NOT)
 - agent / sever (initial data cleanup logic might be needed - may want to do fresh start: make this easier / can change agent id, but this seems roundabout)
 
+    ###_ check for code (stock code) if vaild
+    ###_ check if dp is unique 
+    ###_ check if agent ids are unique
+
 ### [long term strategy related]
 - review over-night behavior of server and agent: technically
     * order_manager records data daily (keeps for multiple days)

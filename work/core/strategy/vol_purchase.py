@@ -1,6 +1,6 @@
 from ..model.strategy_base import StrategyBase
 from ..model.strategy_util import UpdateEvent
-from ..model.bar_analysis import SeriesAnalysis, AnalysisTarget, MarketEvent
+from ..model.bar_analysis import SeriesAnalysis, AnalysisTarget, MarketEvent, EventCategory
 
 class VolumePurchase(StrategyBase):
     """
@@ -12,11 +12,17 @@ class VolumePurchase(StrategyBase):
     - Control
         - limit up to X shares, Y amount
     """
-    def __init__(self, aggr_delta_sec=None):
+    SELL_BEP_RETURN_RATE = -0.01  
+    def __init__(self, aggr_delta_sec=None, **kwargs):
         super().__init__() 
         # bar setting
+        self.pl = kwargs.get('pl', 0.5)
+        self.ps = kwargs.get('ps', 0.3)
+        self.vl = kwargs.get('vl', 1.3)
+        self.vs = kwargs.get('vs', 1.1)
+
         self.bar_aggr.reset(aggr_delta_sec=aggr_delta_sec)
-        self.bar_analyzer.reset(num_bar=100) ###_ num_bar has too many meanings... 
+        self.bar_analyzer.reset(num_bar=100) ###_ num_bar has too many meanings... 1) how many to show in the dashboard, and 2) calculate lta and st
 
     def on_bar_update(self):
         p_lta = SeriesAnalysis.get_last_to_avg(self.bar_analyzer.bars, AnalysisTarget.PRICE)
@@ -25,17 +31,44 @@ class VolumePurchase(StrategyBase):
         v_lta = SeriesAnalysis.get_last_to_avg(self.bar_analyzer.bars, AnalysisTarget.VOLUME)
         v_st = SeriesAnalysis.get_shifted_trend(self.bar_analyzer.bars, AnalysisTarget.VOLUME)
 
-        mkt_event = MarketEvent(p_lta, p_st, v_lta, v_st, 1.0, 1.0, 2.0, 1.3)
+        mkt_event = MarketEvent(p_lta, p_st, v_lta, v_st, P_LTA_abs_pct=self.pl, P_ST_abs_pct=self.ps, V_LTA_th=self.vl, V_ST_th=self.vs)
         self.bar_analyzer.mark_on_bars(mkt_event)
 
         super().on_bar_update(mkt_event)
 
+    ###_ doublely executed, pending protection is not enough 
     async def on_update(self, update_event: UpdateEvent):
         if update_event != UpdateEvent.PRICE_UPDATE:
             self.logger.info(f"{self.code}-{update_event.name}", extra={"owner": self.agent_id})
         
         if update_event == UpdateEvent.MARKET_EVENT:
             self.logger.info(self.last_market_signal)
+
+        if self.pm.pending_buy_qty > 0 or self.pm.pending_sell_qty > 0: return  ###_ this alone not enough.
+
+        if update_event == UpdateEvent.MARKET_EVENT:
+            if self.last_market_signal.mkt_event == EventCategory.MKT_BULL: 
+                self.logger.info(f"BUY 1", extra={"owner": self.agent_id})
+                sc = self.market_buy(quantity=1)
+                await self.execute_rebind(sc)
+                return
+            elif self.last_market_signal.mkt_event == EventCategory.MKT_BEAR: 
+                if self.pm.holding_qty > 0:
+                    self.logger.info(f"SELL 1", extra={"owner": self.agent_id})
+                    sc = self.market_sell(quantity=1)
+                    await self.execute_rebind(sc)
+                    return
+        
+        if self.pm.bep_return_rate is not None and self.pm.bep_return_rate >= self.SELL_BEP_RETURN_RATE:
+            # sell all
+            q = self.pm.holding_qty  # quantity to sell
+            if q > 0:
+                self.logger.info(f"SELL ALL {q}", extra={"owner": self.agent_id})
+                sc = self.market_sell(quantity=q)
+                await self.execute_rebind(sc)
+                return
+
+        
 
 
 

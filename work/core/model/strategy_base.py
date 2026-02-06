@@ -143,21 +143,23 @@ class StrategyBase(ABC):
 
         # Validate first
         for order in orders:
-            if order.creation_success:
-                    self.logger.error(
-                        f"[Strategy] invalid cancellation order is included: {order}",
-                        extra={"owner": self.agent_id},
-                    )
-                    return results  # [None, None, ...]
 
+            ###_ check the following logic
             if order.is_regular_order:
-                self._validate_strategy_order(order) ###_ cancels the agent run for now
+                self._validate_strategy_order(order) ###_ cancels the agent run for now / what happens? 
                 # if not self._validate_strategy_order(order):
                 #     self.logger.error(
                 #         f"[Strategy] order validation failed: {order}",
                 #         extra={"owner": self.agent_id},
                 #     )
                 #     return results  # [None, None, ...]
+
+            elif order.creation_success:
+                    self.logger.error(
+                        f"[Strategy] invalid cancellation order is included: {order}",
+                        extra={"owner": self.agent_id},
+                    )
+                    return results  # [None, None, ...]
 
         # this ensures furture exists in pending strategy order dict as the dispatch_order could arrive faster
         loop = asyncio.get_running_loop()
@@ -265,10 +267,10 @@ class StrategyBase(ABC):
         return self.create_an_order(SIDE.BUY, MTYPE.LIMIT, quantity=quantity, price=price)
 
     def market_sell(self, quantity):
-        return self.create_an_order(SIDE.BUY, MTYPE.MARKET, quantity=quantity, price=0)
+        return self.create_an_order(SIDE.SELL, MTYPE.MARKET, quantity=quantity, price=0)
 
     def limit_sell(self, quantity, price): 
-        return self.create_an_order(SIDE.BUY, MTYPE.MARKET, quantity=quantity, price=price)
+        return self.create_an_order(SIDE.SELL, MTYPE.LIMIT, quantity=quantity, price=price)
     
     # may add middle too 
 

@@ -78,20 +78,20 @@ class EventCategory(StrEnum):
     PR_SURGE = "price_surge" # more than threshold
     PR_PLUMMET = "price_plummet" # more than threshold
 
-    PR_UPTREND = "price_uptrend"
-    PR_DOWNTREND = "price_downtrend"
+    PR_UPTREND = "price_uptrend" # internal only 
+    PR_DOWNTREND = "price_downtrend" # internal only
 
     PR_SURGE_UPTREND = "price_surge_uptrend"
     PR_PLUMMET_DOWNTREND = "price_plummet_downtrend"
 
     # volume_event_
     VOL_SURGE = "volume_surge"
-    VOL_UPTREND = "volume_uptrend"
+    VOL_UPTREND = "volume_uptrend" # internal only
     VOL_SURGE_UPTREND = "volume_surge_uptrend"
 
     # mkt_event_
-    PSU_VSU = "market_bull" # Price Surge Uptrend & Volume Surge Uptrend
-    PPD_VSU = "market_bear" # Price Plummet Downtrend & Volume Surge Uptrend
+    MKT_BULL = "market_bull" # Price Surge Uptrend & Volume Surge Uptrend
+    MKT_BEAR = "market_bear" # Price Plummet Downtrend & Volume Surge Uptrend
 
 
 @dataclass
@@ -105,10 +105,10 @@ class MarketEvent:
     v_st: float # shifted_trend
 
     # decision criteria
-    P_LTA_abs_pct: float = 1.0 # absolute difference in percent (e.g., 1% over/under average)
-    P_ST_abs_pct: float  = 1.0 # absolute difference in percent (e.g., 1% over/under early)
+    P_LTA_abs_pct: float = 0.5 # absolute difference in percent (e.g., 1% over/under average)
+    P_ST_abs_pct: float  = 0.3 # absolute difference in percent (e.g., 1% over/under early)
 
-    V_LTA_th: float = 2.0 # ratio
+    V_LTA_th: float = 1.5 # ratio
     V_ST_th: float  = 1.3
 
     # control vars
@@ -118,7 +118,7 @@ class MarketEvent:
 
     def __str__(self): 
         res = f"[MarketEvent] p_lta/st, v:{self.p_lta:.2f}/{self.p_st:.2f} {self.v_lta:.2f}/{self.v_st:.2f}" 
-        res += f" | th: {self.P_LTA_abs_pct:.1f}/{self.P_ST_abs_pct:.1f} {self.V_LTA_th:.2f}/{self.V_ST_th:.2f} | " 
+        res += f" | th: {self.P_LTA_abs_pct:.2f}/{self.P_ST_abs_pct:.2f} {self.V_LTA_th:.2f}/{self.V_ST_th:.2f} | " 
         res += f"{self.p_event}/{self.v_event}/{self.mkt_event}"
         return res
 
@@ -156,12 +156,12 @@ class MarketEvent:
             v2 = EventCategory.VOL_UPTREND
             
         if v1 is EventCategory.VOL_SURGE and v2 is EventCategory.VOL_UPTREND:
-            self.v_event = EventCategory.VOL_SURGE
+            self.v_event = EventCategory.VOL_SURGE_UPTREND
         else: 
             self.v_event = v1 # choose surge over uptrend
 
         # combined
         if self.p_event is EventCategory.PR_SURGE_UPTREND and self.v_event is EventCategory.VOL_SURGE:
-            self.mkt_event = EventCategory.PSU_VSU
+            self.mkt_event = EventCategory.MKT_BULL
         elif self.p_event is EventCategory.PR_PLUMMET_DOWNTREND and self.v_event is EventCategory.VOL_SURGE:
-            self.mkt_event = EventCategory.PPD_VSU
+            self.mkt_event = EventCategory.MKT_BEAR
