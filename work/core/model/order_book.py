@@ -11,6 +11,10 @@ from ..comm.comm_interface import Sync
 class OrderBook: 
     """
     Order/CancelOrder record boook used by agents, individually
+
+    note: 
+    - submitted: goes to incompleted orders already
+    - accepted: reflected in pending quanity (at this level, strategy is notified)
     """
     agent_id: str 
     code: str
@@ -183,6 +187,7 @@ class OrderBook:
 
                 # update order itself 
                 res = order.update(notice)
+                notice.consumed = True
                 if res:
                     self.logger.info(res, extra={"owner": self.agent_id})
 
@@ -196,6 +201,8 @@ class OrderBook:
                 if order.is_regular_order:
                     if not prev_accepted and order.accepted:
                         self._pending_increase(order, order.quantity)
+                        # this point, a new order is accepted and the orderbook (pending) record is reflected
+                        return order
 
                     self._record_increase(order, delta_qty, delta_cost, delta_amount)
                     self._pending_increase(order, -delta_qty)
@@ -235,6 +242,7 @@ class OrderBook:
             return
 
         async with self._lock:
+            # order instances being stored in the order_book are dispatched orders from the server, not the ones created by the strategy / agent
             self._indexed_incompleted_orders[dispatched_order.order_no] = dispatched_order
 
             # handle notices that are synced from the server
@@ -243,6 +251,7 @@ class OrderBook:
             to_process = sync_trns + unhandled_trns
 
         # to_process will be processed outside of _lock to avoid deadlock
+        # this is the correct way to put _unhandled_trns back in
         for trn in to_process:
             await self.process_tr_notice(trn)
         

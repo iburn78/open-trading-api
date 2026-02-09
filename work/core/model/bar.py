@@ -69,17 +69,16 @@ class Bar:
     volume: int
 
     # for dashboard display
-    price_event_: str | None = None
-    volume_event_: str | None = None
-    mkt_event_: str | None = None
+    price_event: str | None = None
+    volume_event: str | None = None
+    barlist_event: str | None = None
 
-class BarSeries:
-    BAR_DELTA_SEC = 1 # sec
+class RawBars:
+    RAW_BAR_DELTA_SEC = 1 # sec
 
     def __init__(self):
-        ###_ [future] overnight logic necessary here: later when crossing overnight compress it to larger spaced bars
-        self.bar_delta = timedelta(seconds=self.BAR_DELTA_SEC)
-        self.bars: list = [] # unbounded list | should not be a deque (which is not efficient at slicing)
+        self.raw_bar_delta = timedelta(seconds=self.RAW_BAR_DELTA_SEC)
+        self.raw_bars: list = [] # unbounded list | should not be a deque (which is not efficient when slicing)
 
         self._cur_start: datetime | None = None
         self._cur_open: int | None = None
@@ -88,12 +87,10 @@ class BarSeries:
         self._cur_close: int | None = None
         self._cur_volume: int = 0
 
-        self.on_raw_bar_close = None # callback defined in bar_aggr
-
     def __str__(self):
         NPRINT = 10
         res = []
-        for b in self.bars[-NPRINT:]:
+        for b in self.raw_bars[-NPRINT:]:
             res.append(f"[Bar] ({b.start.strftime('%H%M%S')}) OHLCV {b.open} {b.high} {b.low} {b.close} {b.volume}")
         return '\n'.join(res)
 
@@ -102,10 +99,10 @@ class BarSeries:
         if self._cur_start is None:
             self._start_new_bar(self._align_start(t), price)
 
-        while t >= self._cur_start + self.bar_delta:
+        while t >= self._cur_start + self.raw_bar_delta:
             self._close_bar()
             self.on_raw_bar_close() 
-            self._start_new_bar(self._cur_start + self.bar_delta, price)
+            self._start_new_bar(self._cur_start + self.raw_bar_delta, price)
 
         self._cur_high = max(self._cur_high, price)
         self._cur_low = min(self._cur_low, price)
@@ -116,8 +113,8 @@ class BarSeries:
     ORIGIN = datetime(2000, 1, 1) # alignment anchor, naive local time (meaning tz is not specifically set)
     def _align_start(self, t: datetime) -> datetime:
         delta = t - self.ORIGIN
-        steps = delta // self.bar_delta
-        return self.ORIGIN + steps * self.bar_delta
+        steps = delta // self.raw_bar_delta
+        return self.ORIGIN + steps * self.raw_bar_delta
 
     def _start_new_bar(self, start: datetime, price: int):
         self._cur_start = start
@@ -128,7 +125,7 @@ class BarSeries:
         self._cur_volume = 0
 
     def _close_bar(self):
-        self.bars.append(
+        self.raw_bars.append(
             Bar(
                 start=self._cur_start,
                 open=self._cur_open,
@@ -138,49 +135,49 @@ class BarSeries:
                 volume=self._cur_volume,
             )
         )
-    
-class BarAggregator:
-    AGGR_DELTA_SEC = 10 # sec
 
-    def __init__(self, bar_series: BarSeries):
-        self.bar_series = bar_series
-        self.bar_series.on_raw_bar_close = self.on_raw_bar_close
-        self.aggr_delta = timedelta(seconds=self.AGGR_DELTA_SEC)
-        self.aggr_bars: list[Bar] = []
+    def on_raw_bar_close(self): # callback
+        pass
+    
+class BarBuilder:
+    BAR_BUILD_DELTA_SEC = 20 # sec
+
+    def __init__(self, raw_bars: RawBars):
+        self.raw_bars = raw_bars
+        self.raw_bars.on_raw_bar_close = self.on_raw_bar_close
+        self.bar_build_delta = timedelta(seconds=self.BAR_BUILD_DELTA_SEC)
+        self.bars: list[Bar] = []
 
         self._cur_start: datetime | None = None
         self._cur_bar: Bar | None = None
 
-    def reset(self, aggr_delta_sec: int | None):
-        if aggr_delta_sec is None: return
-
-        aggr_delta = timedelta(seconds=aggr_delta_sec)
-        assert aggr_delta >= self.bar_series.bar_delta
-        self.aggr_delta = aggr_delta
-        self.aggr_bars.clear() # makes references consistent 
+    def reset(self, bar_delta: int):
+        res = None
+        self.bar_build_delta = timedelta(seconds=bar_delta)
+        if self.bar_build_delta < self.raw_bars.raw_bar_delta: 
+            self.bar_build_delta = self.raw_bars.raw_bar_delta
+            res = "[BarBuilder] bar_build_delta is set at raw_bar_delta, cannot go below raw_bar granularity"
+        self.bars.clear() 
         self._cur_start = None
         self._cur_bar = None
 
-        for b in self.bar_series.bars:
-            self.consume(b)
+        for b in self.raw_bars.raw_bars:
+            self.consume(b, reset=True)
+        return res
 
     def on_raw_bar_close(self):
-        self.consume(self.bar_series.bars[-1])
-    
-    def on_aggr_bar_close():
-        # to be callback by analyzer
-        pass 
+        self.consume(self.raw_bars.raw_bars[-1])
 
-    def consume(self, bar: Bar) -> Bar | None:
+    def consume(self, bar: Bar, reset: bool = False) -> Bar | None:
         if self._cur_start is None:
             self._start(bar)
             return 
 
-        if bar.start >= self._cur_start + self.aggr_delta:
-            closed = self._cur_bar
+        if bar.start >= self._cur_start + self.bar_build_delta:
+            self.bars.append(self._cur_bar)
             self._start(bar)
-            self.aggr_bars.append(closed)
-            self.on_aggr_bar_close()
+            if not reset:
+                self.on_bar_close() 
             return
 
         self._update(bar)
@@ -206,3 +203,36 @@ class BarAggregator:
             close=bar.close,
             volume=b.volume + bar.volume,
         )
+
+    def on_bar_close(): # callback
+        pass 
+
+class BarList: # subset of bars to be used in analysis
+    NUM_BAR_TO_ANALYZE = 50
+
+    def __init__(self, bar_builder: BarBuilder):
+        self.barlist = []
+        self.bar_builder = bar_builder
+        self.bar_builder.on_bar_close = self.on_bar_close
+        self.reset(self.NUM_BAR_TO_ANALYZE) # initialize
+
+    # if None; use all
+    def reset(self, num_bar: int | None):
+        self._num_bar = num_bar
+        self._get_barlist()
+
+    def on_bar_close(self):
+        self._get_barlist()
+        self.on_barlist_update()
+
+    def on_barlist_update(self): # callback
+        pass
+    
+    def _get_barlist(self):
+        self.barlist = self.bar_builder.bars[-self._num_bar:] if self._num_bar else self.bar_builder.bars
+
+    def mark_on_barlist(self, barlist_event): 
+        bar_ = self.barlist[-1]
+        bar_.price_event = barlist_event.price_event 
+        bar_.volume_event = barlist_event.volume_event 
+        bar_.barlist_event = barlist_event.barlist_event 

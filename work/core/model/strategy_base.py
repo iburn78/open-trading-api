@@ -4,11 +4,15 @@ import asyncio
 from .perf_metric import PerformanceMetric
 from .strategy_util import UpdateEvent
 from .order import Order, CancelOrder
-from .bar import BarAggregator, BarSeries, Bar
-from .bar_analysis import MarketEvent, BarAnalyzer
+from .bar import RawBars, BarBuilder, BarList
+from .barlist_analysis import BarListStatus
 from .dashboard import DashBoard
 from ..base.tools import excel_round
 from ..kis.kis_tools import SIDE, MTYPE, EXG
+
+class StrategyError(Exception):
+    """Recoverable error inside strategy logic."""
+    pass
 
 class StrategyBase(ABC):
     """
@@ -36,17 +40,26 @@ class StrategyBase(ABC):
         self._price_update_event: asyncio.Event = asyncio.Event()
         self._trn_receive_event: asyncio.Event = asyncio.Event()
 
-        # market price event channel
-        self.market_signals: asyncio.Queue = asyncio.Queue()
-        self.last_market_signal: MarketEvent | None = None
-        self.bar_series = BarSeries() # default 1 sec
-        self.bar_aggr = BarAggregator(bar_series=self.bar_series) # default 10 sec, but adjustable through reset()
-        self.bar_analyzer = BarAnalyzer(self.bar_aggr, self.market_signals)
-        self.bar_analyzer.on_bar_update = self.on_bar_update # strategy-as-callback
+        # BarList analysis
+        self._barlist_event_event: asyncio.Event = asyncio.Event()
+        self.barlist_status: BarListStatus | None = None
 
+        self.raw_bars = RawBars() # default 1 sec, full history 
+        self.bar_builer = BarBuilder(raw_bars=self.raw_bars) # default 20 sec; adjust by reset()
+        self.barlist = BarList(bar_builder=self.bar_builer) # default 50 bars; adjust by reset() 
+        self.barlist.on_barlist_update = self.on_barlist_update 
+        
         # others
-        self.str_name = self.__class__.__name__ # subclass name
+        self.str_name = self.__class__.__name__ # subclass (specific strategy) name
         self._on_update_lock: asyncio.Lock = asyncio.Lock()
+
+        # ----------------------------------
+        # error handling
+        # ----------------------------------
+        self._error_count = 0
+        self._max_errors = 5
+        self._cool_down = 1 # sec
+        self._suspend_on_update: bool = False
 
     async def logic_run(self):
         # initial run
@@ -54,61 +67,64 @@ class StrategyBase(ABC):
 
         while True:
             self._price_update_event.clear() # does not run on every price change
-            # choose which to start fresh waiting 
             if self.lazy_run: # if True, strategy does not run on every trn: only reacts to new trns
                 self._trn_receive_event.clear() 
 
-            price_task = asyncio.create_task(self._price_update_event.wait())
-            trn_task   = asyncio.create_task(self._trn_receive_event.wait())
-            market_signals_task = asyncio.create_task(self.market_signals.get())
+            tasks = {
+                asyncio.create_task(self._price_update_event.wait()): UpdateEvent.PRICE_UPDATE,
+                asyncio.create_task(self._trn_receive_event.wait()): UpdateEvent.TRN_RECEIVE,
+                asyncio.create_task(self._barlist_event_event.wait()): UpdateEvent.BARLIST_EVENT,
+            }
 
             done, pending = await asyncio.wait(
-                {price_task, trn_task, market_signals_task},
+                tasks,
                 return_when=asyncio.FIRST_COMPLETED,
             )
 
-            for task in pending:
-                task.cancel()
+            for t in pending:
+                t.cancel()
 
-            if self._price_update_event.is_set():
-                self._price_update_event.clear()
-                await self.on_update_shell(UpdateEvent.PRICE_UPDATE)
+            event_type = tasks[done.pop()] # done and pending are sets, so use pop()
+            if event_type is UpdateEvent.BARLIST_EVENT:
+                self._barlist_event_event.clear()
 
-            if self._trn_receive_event.is_set():
-                self._trn_receive_event.clear()
-                self.logger.info(self.pm, extra={"owner": self.agent_id})
-                await self.on_update_shell(UpdateEvent.TRN_RECEIVE)
-            
-            if market_signals_task in done: 
-                self.last_market_signal: MarketEvent = market_signals_task.result()
-                self.logger.info(self.last_market_signal, extra={"owner": self.agent_id})
-                await self.on_update_shell(UpdateEvent.MARKET_EVENT)
-
+            await self.on_update_shell(event_type)
+    
     async def on_update_shell(self, update_event: UpdateEvent):
+        if self._suspend_on_update: return
+
         try:
             async with self._on_update_lock:
                 await self.on_update(update_event)
+            self._error_count = 0 # resets
+
+        except StrategyError as e:
+            self._error_count += 1 
+            self.logger.warning(f"[Strategy] on update failed {self._error_count}/{self._max_errors}: {e}", extra={"owner": self.agent_id})
+            if self._error_count == self._max_errors: 
+                self._suspend_on_update = True
+                self.logger.warning(f"[Strategy] on_update suspended", extra={"owner": self.agent_id})
+            await asyncio.sleep(self._cool_down)
+
         except Exception as e:
             self.logger.error(f"[Strategy] on_update failed ({update_event.name}): {e}", extra={"owner": self.agent_id}, exc_info=True)
             raise asyncio.CancelledError
 
-    def on_bar_update(self, mkt_event: MarketEvent = None):
-        # - to be defined in subclasses
-        # - not an abstractmethod, cause it is not required to be used
-        # ------------------------------
-        # call super().on_bar_update() 
-        # - should be located at the end of the subclass function to reflect the correct "Event" status in the dashboard
+    def check_barlist_event(self, **kwargs):
+        self.barlist_status = BarListStatus(**kwargs)
+        self.barlist.mark_on_barlist(self.barlist_status)
+
+    @abstractmethod
+    def on_barlist_update(self):
         # ------------------------------
         # 1) do analysis
-        # 2) create MarketEvent instance
-        # 3) call self.send_if_event(MarketEvent)
-
-        # at least 1 bar exists when called
+        # 2) call self.check_barlist_event(**kwargs)
+        # 3) **kwargs should match with BarListStatus signature
         if self.dashboard: 
-            self.dashboard.send_bars(self.bar_analyzer.bars)
+            self.dashboard.send_bars(self.barlist.barlist)
 
-        if mkt_event and mkt_event.mkt_event:
-            self.market_signals.put_nowait(mkt_event)
+        if self.barlist_status and self.barlist_status.barlist_event:
+            self._barlist_event_event.set()
 
     @abstractmethod
     async def on_update(self, update_event: UpdateEvent):
@@ -141,25 +157,16 @@ class StrategyBase(ABC):
 
         results: list[Order | CancelOrder | None] = [None] * len(orders)
 
-        # Validate first
         for order in orders:
-
-            ###_ check the following logic
             if order.is_regular_order:
-                self._validate_strategy_order(order) ###_ cancels the agent run for now / what happens? 
-                # if not self._validate_strategy_order(order):
-                #     self.logger.error(
-                #         f"[Strategy] order validation failed: {order}",
-                #         extra={"owner": self.agent_id},
-                #     )
-                #     return results  # [None, None, ...]
+                self._validate_strategy_order(order) 
 
-            elif order.creation_success:
-                    self.logger.error(
-                        f"[Strategy] invalid cancellation order is included: {order}",
-                        extra={"owner": self.agent_id},
-                    )
-                    return results  # [None, None, ...]
+            elif order.creation_success: # cancel_order case
+                self.logger.error(
+                    f"[Strategy] invalid cancellation order is included: {order}",
+                    extra={"owner": self.agent_id},
+                )
+                raise StrategyError('invalid cancellation order')
 
         # this ensures furture exists in pending strategy order dict as the dispatch_order could arrive faster
         loop = asyncio.get_running_loop()
@@ -180,7 +187,7 @@ class StrategyBase(ABC):
             for order in orders:
                 self.pending_strategy_orders.pop(order.unique_id, None)
                 self.logger.error(
-                    f"[Strategy] order submission failed: no {order.order_no} uid {order.unique_id}",
+                    f"[Strategy] order submit fail: no {order.order_no} uid {order.unique_id}",
                     extra={"owner": self.agent_id},
                 )
             return results 
@@ -191,19 +198,8 @@ class StrategyBase(ABC):
                 idx = uid_to_index[processed.unique_id]
                 results[idx] = processed
 
-                if processed.submitted:
-                    self.logger.info(
-                        f"[Strategy] order submit success: no {processed.order_no} uid {processed.unique_id}",
-                        extra={"owner": self.agent_id},
-                    )
-                else:
-                    self.logger.error(
-                        f"[Strategy] order not processed: no {processed.order_no} uid {processed.unique_id}",
-                        extra={"owner": self.agent_id},
-                    )
-
         except asyncio.CancelledError:
-            # Clean only unfinished futures
+            # clean only unfinished futures
             for uid, fut in list(self.pending_strategy_orders.items()): # mutating the dict while iterating, so list(copy) needed
                 if not fut.done():
                     self.pending_strategy_orders.pop(uid, None)
@@ -212,13 +208,14 @@ class StrategyBase(ABC):
         return results if len(results) > 1 else results[0]
 
     def handle_order_dispatch(self, dispatched_order: Order | CancelOrder):
+        assert dispatched_order.accepted # accepted when an order and acceptance-trn is received
         fut = self.pending_strategy_orders.pop(dispatched_order.unique_id, None)
         if not fut:
             self.logger.error(f"[Strategy] no pending future exists for the dispatched_order: uid {dispatched_order.unique_id}", extra={"owner": self.agent_id})
             return
 
         if not fut.done():
-            fut.set_result(dispatched_order)        
+            fut.set_result(dispatched_order)
         else: 
             self.logger.error(f"[Strategy] future is already done for the dispatched_order: uid {dispatched_order.unique_id}", extra={"owner": self.agent_id})
 
@@ -226,25 +223,23 @@ class StrategyBase(ABC):
     # validators
     # -----------------------------------------------------------------
     def _validate_strategy_order(self, order: Order | None) -> bool:
-        if order is None: return False
-
+        if order is None: return 
+        
         if order.side == SIDE.BUY:
             if order.mtype == MTYPE.LIMIT:
                 if order.quantity*order.price > self.pm.get_max_limit_buy_amt():
-                    self.logger.error(f'account limit reached - order cancelled', extra={"owner": self.agent_id})
-                    raise asyncio.CancelledError # this case to be checked with logic
-                    # return False
+                    self.logger.error(f'[Strategy] account limit reached - order cancelled', extra={"owner": self.agent_id})
+                    raise StrategyError('account limit reached')
+
             else: # MARKET or MIDDLE
                 exp_amount = excel_round(order.quantity*self.pm.moving_bar.current_price) # check with current price
                 if exp_amount > self.pm.get_max_market_buy_amt():
-                    self.logger.error(f'account limit reached - order cancelled', extra={"owner": self.agent_id})
-                    raise asyncio.CancelledError # this case to be checked with logic
-                    # return False
+                    self.logger.error(f'[Strategy] account limit reached - order cancelled', extra={"owner": self.agent_id})
+                    raise StrategyError('account limit reached')
 
         else: # str_cmd.side == SIDE.SELL:
             if order.quantity > self.pm.max_sell_qty:
-                return False
-        return True
+                raise StrategyError('order quantity exceeds limit')
 
     # this requires to use SIDE and MTYPE classes
     def create_an_order(self, side, mtype, quantity, price, exchange=EXG.SOR) -> Order:
@@ -271,6 +266,6 @@ class StrategyBase(ABC):
 
     def limit_sell(self, quantity, price): 
         return self.create_an_order(SIDE.SELL, MTYPE.LIMIT, quantity=quantity, price=price)
-    
-    # may add middle too 
+
+    # - may add middle too 
 

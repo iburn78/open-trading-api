@@ -4,4 +4,4 @@ class UpdateEvent(Enum):
     INITIATE = auto()
     PRICE_UPDATE = auto()
     TRN_RECEIVE = auto()
-    MARKET_EVENT = auto()
+    BARLIST_EVENT = auto()

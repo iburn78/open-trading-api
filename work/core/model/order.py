@@ -72,7 +72,7 @@ class Order:
     def __str__(self):
         txt = self._str_base()
         txt += (
-            f"ftap:"
+            f"|ftap:"
             f"{self.fee_:>6,d} "
             f"{self.tax_:>7,d} "
             f"{self.amount:>11,d} "

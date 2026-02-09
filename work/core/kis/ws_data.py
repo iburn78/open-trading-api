@@ -69,6 +69,7 @@ class TransactionNotice:
         self.oder_prc       = cast_or_none("int", trn_data.ODER_PRC) # order price    
         self.checker_code   = self.rfus_yn + self.cntg_yn + self.acpt_yn
         self.fee_, self.tax_= self._fee_tax(aux_info)
+        self.consumed       = False
 
     def __str__(self):
         return (

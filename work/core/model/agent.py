@@ -123,7 +123,6 @@ class Agent:
                 # [Price initialization part]
                 self.logger.info(f"[Agent] waiting for initial market price", extra={"owner": self.id})
                 await self.agent_initial_price_set_up.wait() # ensures set with latest market data
-                self.pm.update()
                 self.agent_ready_to_run_strategy = True
                 self.logger.info(f"[Agent] ready to run strategy: {self.strategy.str_name}", extra={"owner": self.id})
 
@@ -180,8 +179,10 @@ class Agent:
     async def handle_order(self, order: Order | CancelOrder):
         # self.logger.info(f"[Agent] dispatched order: no {order.order_no} uid {order.unique_id}", extra={"owner": self.id})
         await self.order_book.handle_order_dispatch(order)
-        self.pm.update() 
-        self.strategy.handle_order_dispatch(order)
+        if order.accepted: # and may consume additional trns
+            self.pm.update()
+            self.logger.info(self.pm, extra={"owner": self.id})
+            self.strategy.handle_order_dispatch(order)
 
     async def handle_prices(self, trp: TransactionPrices):
         # self.logger.info(trp, extra={"owner": self.id})
@@ -189,17 +190,26 @@ class Agent:
         self.moving_bar.update(trp.price, trp.quantity, trp.time)
         # self.logger.info(self.moving_bar, extra={"owner": self.id})
 
-        self.strategy.bar_series.update(trp.price, trp.quantity, trp.time)
+        self.strategy.raw_bars.update(trp.price, trp.quantity, trp.time)
 
-        self.pm.update(price_update_only=True) 
-        if not self.agent_ready_to_run_strategy: self.agent_initial_price_set_up.set() 
+        if not self.agent_ready_to_run_strategy:
+            self.pm.update() # initial full update
+            self.logger.info(self.pm, extra={"owner": self.id})
+            self.agent_initial_price_set_up.set() 
+        else: 
+            self.pm.update(price_update_only=True) 
+
         self.strategy._price_update_event.set()
         
     async def handle_notice(self, trn: TransactionNotice):
         self.logger.info(trn, extra={"owner": self.id}) # show trn before processing
         notice_beep() # make a sound upton trn
-        await self.order_book.process_tr_notice(trn)
-        self.pm.update()
+        order = await self.order_book.process_tr_notice(trn) # returns order only when it is newly accepted
+        if trn.consumed: 
+            self.pm.update() 
+            self.logger.info(self.pm, extra={"owner": self.id})
+        if order is not None: # accepted order
+            self.strategy.handle_order_dispatch(order)
         self.strategy._trn_receive_event.set()
 
     # ----------------------------------------------------------------------------------

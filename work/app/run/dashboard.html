@@ -147,13 +147,13 @@ const EVENT_META = {
     },
 
     // ---- MARKET ----
-    market_bull: {
+    barlist_bull: {
         label: '▲',
         bg: 'rgba(255,255,200,0.9)',
         fg: '#000',
         band: 'rgba(255,255,200,0.5)', // background band
     },
-    market_bear: {
+    barlist_bear: {
         label: '▼',
         bg: 'rgba(220,220,220,0.9)',
         fg: '#000',
@@ -182,7 +182,7 @@ const priceEventPlugin = {
         ctx.textBaseline = 'middle';
 
         meta.data.forEach((elem, i) => {
-            const key = data[i]?.price_event_;
+            const key = data[i]?.price_event;
             if (!key) return;
 
             const metaDef = EVENT_META[key];
@@ -222,7 +222,7 @@ const volumeEventPlugin = {
         const baseY = scales.volume.getPixelForValue(0);
 
         meta.data.forEach((elem, i) => {
-            const key = data[i]?.volume_event_;
+            const key = data[i]?.volume_event;
             if (!key) return;
 
             const metaDef = EVENT_META[key];
@@ -260,7 +260,7 @@ const mktEventPlugin = {
         ctx.save();
 
         meta.data.forEach((elem, i) => {
-            const key = data[i]?.mkt_event_;
+            const key = data[i]?.barlist_event;
             if (!key) return;
 
             const metaDef = EVENT_META[key];
@@ -352,13 +352,13 @@ function connectWS(port, name) {
                     h: b.h,
                     l: b.l,
                     c: b.c, 
-                    price_event_: b.price_event_, 
-                    mkt_event_: b.mkt_event_, 
+                    price_event: b.price_event, 
+                    barlist_event: b.barlist_event, 
                 }));
                 chart.data.datasets[1].data = msg.bars.map(b => ({
                     x: Date.parse(b.t),
                     y: b.v,
-                    volume_event_: b.volume_event_, 
+                    volume_event: b.volume_event, 
                 }));
                 chart.data.datasets[1].backgroundColor = "rgba(128, 128, 128, 0.5)" // gray
                 // chart.data.datasets[1].backgroundColor = msg.bars.map(b =>

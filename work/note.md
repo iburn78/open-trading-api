@@ -111,6 +111,7 @@ or more modern way (only for development situation)
 - review over-night behavior of server and agent: technically
     * order_manager records data daily (keeps for multiple days)
     * agent order_book keeps all orders
+    * bars (raw_bars and etc) has to be compressed
 - make multi-day (longer terms) strategy/sync possible 
     * currently agent sync with daily data
     * may need to engage agent manager 
