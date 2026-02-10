@@ -110,7 +110,8 @@ class Server:
                 tg.create_task(self.broadcast_to_clients())
                 tg.create_task(self.order_manager.persist_to_disk())
                 tg.create_task(self.order_manager.pending_trns_timeout())
-
+        except Exception as e: 
+            self.logger.error(f"[Server] {e}", exc_info=True)
         finally: 
             await self.kc.close_httpx()
             saved_date = await self.order_manager.persist_to_disk(immediate = True)

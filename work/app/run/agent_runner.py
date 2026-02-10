@@ -11,7 +11,7 @@ from core.strategy.vol_purchase import VolumePurchase
 async def agent_runner(logger):
     AGENT_RUNTIME = 10000 # sec
 
-    param = {'pl': 0.0, 'ps': 0.0, 'vl': 1.0, 'vs': 1.0}
+    param = {'pl': 0.1, 'ps': 0.1, 'vl': 1.1, 'vs': 1.1}
 
     A1 = Agent(id = 'A1', code = '005930', service=service, dp = 8001, logger=logger, strategy=VolumePurchase(bar_delta=1, **param))
     A2 = Agent(id = 'A2', code = '005930', service=service, dp = 8002, logger=logger, strategy=VolumePurchase(bar_delta=5, **param))

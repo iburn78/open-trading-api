@@ -127,9 +127,8 @@ class KIS_Connector:
         now = time.monotonic() # less overhead and ever increasing (error proof)
         if self._last_call_time is not None:
             delay = self._last_call_time + self.sleep - now
-            self.logger.info(f'now: {now}')  ###_ check 
-            self.logger.info(f'delay: {delay}')  ###_ check ###_ check 초당 거래건수 초과시 ... what happens? (counted in pending?)
             if delay > 0:
+                # self.logger.info(f'[KIS_Connector] delay: {delay}') 
                 await asyncio.sleep(delay)
         self._last_call_time = time.monotonic()
 

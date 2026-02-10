@@ -47,8 +47,8 @@ class CommHandler:
             agent.writer.close()
             try:
                 await agent.writer.wait_closed()
-            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as e:
-                pass # suppress windows errors
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+                pass # suppress os errors
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         peer = writer.get_extra_info("peername") # peername: network term / uniqe in a session
@@ -91,8 +91,8 @@ class CommHandler:
                 # Send response back
                 await agent.dispatch(response)
         
-        except ConnectionAbortedError as e: 
-            self.logger.info(f"[CommHandler] connection aborted at client port {peer[1]}: {e}")
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+            self.logger.info(f"[CommHandler] connection error at client port {peer[1]}: {e}")
 
         except Exception as e:
             self.logger.error(f"[CommHandler] handler error at client port {peer[1]}: {e}", exc_info=True)

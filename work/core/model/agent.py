@@ -178,11 +178,16 @@ class Agent:
 
     async def handle_order(self, order: Order | CancelOrder):
         # self.logger.info(f"[Agent] dispatched order: no {order.order_no} uid {order.unique_id}", extra={"owner": self.id})
+        if not order.submitted: 
+            self.logger.warning(f'[OrderBook] non-submitted order received {order.order_no}\n    {order}\n    could be 초당거래건수 issue', extra={"owner": self.agent_id})
+            self.strategy.handle_order_dispatch(order) # if not submitted at all then, let strategy know
+            return
         await self.order_book.handle_order_dispatch(order)
         if order.accepted: # and may consume additional trns
             self.pm.update()
             self.logger.info(self.pm, extra={"owner": self.id})
             self.strategy.handle_order_dispatch(order)
+        # if the submitted but not yet accepted order should not be handled here for strategy future matching (will be handled when accepted by trn) 
 
     async def handle_prices(self, trp: TransactionPrices):
         # self.logger.info(trp, extra={"owner": self.id})

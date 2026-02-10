@@ -12,7 +12,7 @@ class VolumePurchase(StrategyBase):
     - Control
         - limit up to X shares, Y amount
     """
-    SELL_BEP_RETURN_RATE = 0.00  
+    SELL_BEP_RETURN_RATE = 0.005 
     def __init__(self, bar_delta=None, **kwargs):
         super().__init__() 
         # bar setting

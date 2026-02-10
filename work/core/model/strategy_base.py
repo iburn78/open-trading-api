@@ -187,7 +187,7 @@ class StrategyBase(ABC):
             for order in orders:
                 self.pending_strategy_orders.pop(order.unique_id, None)
                 self.logger.error(
-                    f"[Strategy] order submit fail: no {order.order_no} uid {order.unique_id}",
+                    f"[Strategy] order submit failed: no {order.order_no} uid {order.unique_id}",
                     extra={"owner": self.agent_id},
                 )
             return results 
@@ -196,7 +196,7 @@ class StrategyBase(ABC):
             for fut in asyncio.as_completed(futures):
                 processed: Order | CancelOrder = await fut # prepare placeholders
                 idx = uid_to_index[processed.unique_id]
-                results[idx] = processed
+                results[idx] = processed # may contain non-submitted orders (failed at API/server)
 
         except asyncio.CancelledError:
             # clean only unfinished futures
@@ -208,7 +208,6 @@ class StrategyBase(ABC):
         return results if len(results) > 1 else results[0]
 
     def handle_order_dispatch(self, dispatched_order: Order | CancelOrder):
-        assert dispatched_order.accepted # accepted when an order and acceptance-trn is received
         fut = self.pending_strategy_orders.pop(dispatched_order.unique_id, None)
         if not fut:
             self.logger.error(f"[Strategy] no pending future exists for the dispatched_order: uid {dispatched_order.unique_id}", extra={"owner": self.agent_id})

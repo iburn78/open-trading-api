@@ -159,8 +159,11 @@ class OrderBook:
             self.cumul_buy_qty += delta_qty
             self.net_cash_used += delta_amount
         else:
-            if self.orderbook_holding_qty - delta_qty >= 0:
+            if self.orderbook_holding_qty - delta_qty > 0:
                 self.orderbook_holding_qty += -delta_qty
+            elif self.orderbook_holding_qty - delta_qty == 0:
+                self.orderbook_holding_qty = 0
+                self.orderbook_holding_avg_price = 0
             else:
                 self.initial_holding_sold_qty += -(self.orderbook_holding_qty - delta_qty)
                 self.orderbook_holding_qty = 0
@@ -238,9 +241,6 @@ class OrderBook:
     # order dispatch handling
     # ----------------------------------------------------------------------------------
     async def handle_order_dispatch(self, dispatched_order: Order | CancelOrder):
-        if not dispatched_order.submitted: 
-            return
-
         async with self._lock:
             # order instances being stored in the order_book are dispatched orders from the server, not the ones created by the strategy / agent
             self._indexed_incompleted_orders[dispatched_order.order_no] = dispatched_order
