@@ -179,7 +179,7 @@ class Agent:
     async def handle_order(self, order: Order | CancelOrder):
         # self.logger.info(f"[Agent] dispatched order: no {order.order_no} uid {order.unique_id}", extra={"owner": self.id})
         if not order.submitted: 
-            self.logger.warning(f'[OrderBook] non-submitted order received {order.order_no}\n    {order}\n    could be 초당거래건수 issue', extra={"owner": self.agent_id})
+            self.logger.warning(f'[OrderBook] non-submitted order received {order.order_no}\n    {order}\n    could be 초당거래건수 / 주문가능금액부족 issues', extra={"owner": self.id})
             self.strategy.handle_order_dispatch(order) # if not submitted at all then, let strategy know
             return
         await self.order_book.handle_order_dispatch(order)

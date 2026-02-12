@@ -150,8 +150,8 @@ class KIS_Connector:
                     headers=self.base_header | h,
                     params=params,
                 )
-        except httpx.RequestError as e: # network level / transport errros
-            self.logger.error(f"[url_fetch] request failed: {e}", exc_info=True)
+        except httpx.RequestError as e: # network level / transport errors
+            self.logger.error(f"[url_fetch] request failed: {e}") # exc_info=True, solution: safe reconnect is the solution
             return None, None
 
         # resp is an httpx.Response object

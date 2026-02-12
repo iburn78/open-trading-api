@@ -18,10 +18,10 @@ async def agent_runner(logger):
     B1 = Agent(id = 'B1', code = '000660', service=service, dp = 8003, logger=logger, strategy=VolumePurchase(bar_delta=1, **param))
     B2 = Agent(id = 'B2', code = '000660', service=service, dp = 8004, logger=logger, strategy=VolumePurchase(bar_delta=5, **param))
 
-    A1.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-30')
-    A2.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-30')
-    B1.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-30')
-    B2.initialize(init_cash_allocated=100_000_000, init_holding_qty=0, init_avg_price=0, sync_start_date='2026-01-30')
+    A1.initialize(init_cash_allocated=10_000_000, init_holding_qty=10, init_avg_price=170000, sync_start_date='2026-01-30')
+    A2.initialize(init_cash_allocated=10_000_000, init_holding_qty=10, init_avg_price=170000, sync_start_date='2026-01-30')
+    B1.initialize(init_cash_allocated=10_000_000, init_holding_qty=50, init_avg_price=888000, sync_start_date='2026-01-30')
+    B2.initialize(init_cash_allocated=10_000_000, init_holding_qty=50, init_avg_price=888000, sync_start_date='2026-01-30')
 
     agents = [A1, A2, B1, B2]
     async with asyncio.TaskGroup() as tg:
