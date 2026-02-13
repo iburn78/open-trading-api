@@ -38,7 +38,3 @@ Key features:
 - Volume trigger strategy
 - PER base valuation 
 - Catching slow moving trend (vol / price)
-
-## (###_) Issues / immediate to develop 
-- Dashboard webpage refresh, can it be done automatically? 
-- displaying key data in the dash board (regarding volume and price etc...)

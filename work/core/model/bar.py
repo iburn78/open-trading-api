@@ -72,6 +72,7 @@ class Bar:
     price_event: str | None = None
     volume_event: str | None = None
     barlist_event: str | None = None
+    status: str | None = None
 
 class RawBars:
     RAW_BAR_DELTA_SEC = 1 # sec
@@ -231,8 +232,11 @@ class BarList: # subset of bars to be used in analysis
     def _get_barlist(self):
         self.barlist = self.bar_builder.bars[-self._num_bar:] if self._num_bar else self.bar_builder.bars
 
-    def mark_on_barlist(self, barlist_event): 
+    def mark_on_barlist(self, barlist_event, status: str | None = None): 
         bar_ = self.barlist[-1]
         bar_.price_event = barlist_event.price_event 
         bar_.volume_event = barlist_event.volume_event 
         bar_.barlist_event = barlist_event.barlist_event 
+
+        if status:
+            bar_.status = bar_.start.strftime('%H%M%S ') + status

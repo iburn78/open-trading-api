@@ -18,10 +18,7 @@ const DASHBOARD_MANAGER_PORT = 9020
 const banner = document.getElementById("statusBanner");
 const dashboards = document.getElementById("dashboards");
 
-// active websockets { port: WebSocket }
-const sockets = {};
-
-// HTML panels { port: <pre> }
+const sockets = {}; // active websockets { port: WebSocket }
 const panels = {};
 
 function ensurePanel(port, name) {
@@ -33,25 +30,26 @@ function ensurePanel(port, name) {
     const title = document.createElement("div");
     title.textContent = `[${port} - ${name}]`;
     title.style = "font-weight:bold";
-
     container.appendChild(title);
 
     let canvas = null;
-
     // only non-manager / non-server get charts
     if (name !== "manager" && name !== "server") {
         canvas = document.createElement("canvas");
         container.appendChild(canvas);
     }
+    const chart_status = document.createElement("pre"); // chart status text box
+    chart_status.style = "margin:0; white-space:pre-wrap;";
+    container.appendChild(chart_status);
 
-    const pre = document.createElement("pre");
-    pre.style = "margin:0; white-space:pre-wrap;";
+    const pm_status = document.createElement("pre"); // perf-manager status text box
+    pm_status.style = "margin:0; white-space:pre-wrap;";
+    container.appendChild(pm_status);
 
-    container.appendChild(pre);
     const ports = Object.keys(panels).map(Number).sort((a,b)=>a-b);
     let inserted = false;
     for (const p of ports) {
-        const existingPanel = panels[p].pre.parentElement;
+        const existingPanel = panels[p].title.parentElement;
         if (p > port) {
             dashboards.insertBefore(container, existingPanel);
             inserted = true;
@@ -61,12 +59,14 @@ function ensurePanel(port, name) {
     if (!inserted) dashboards.appendChild(container); // append at end if largest port
 
     panels[port] = { 
-        pre, 
+        title,
         canvas, 
         chart: null,
         yMin: null,
         yMax: null,
         vMax: null,
+        chart_status,
+        pm_status, 
     };
     return panels[port];
 }
@@ -260,8 +260,8 @@ const volumeEventPlugin = {
     }
 };
 
-const mktEventPlugin = {
-    id: 'mktEventPlugin',
+const barlistEventPlugin = {
+    id: 'barlistEventPlugin',
 
     beforeDatasetsDraw(chart) {
         const { ctx, chartArea } = chart;
@@ -325,10 +325,10 @@ const mktEventPlugin = {
 
 Chart.register(priceEventPlugin);
 Chart.register(volumeEventPlugin);
-Chart.register(mktEventPlugin);
+Chart.register(barlistEventPlugin);
 
 // Order:
-// 1) mktEventPlugin  → background bands
+// 1) barlistEventPlugin  → background bands
 // 2) chart datasets
 // 3) price / volume overlays
 
@@ -340,7 +340,7 @@ function connectWS(port, name) {
     const panel = ensurePanel(port, name);
 
     ws.onopen = () => {
-        panel.pre.textContent = `[${port} - ${name}] Connected\n`;
+        panel.pm_status.textContent = `connected\n`;
     };
 
     ws.onmessage = event => {
@@ -348,12 +348,12 @@ function connectWS(port, name) {
         try {
             msg = JSON.parse(event.data);
         } catch {
-            panel.pre.textContent = event.data;
+            panel.pm_status.textContent = event.data;
             return;
         }
 
         if (msg.type === "log") {
-            panel.pre.textContent = msg.text;
+            panel.pm_status.textContent = msg.text;
         }
         try {
             if (msg.type === "bars") {
@@ -366,6 +366,7 @@ function connectWS(port, name) {
                     c: b.c, 
                     price_event: b.price_event, 
                     barlist_event: b.barlist_event, 
+                    status: b.status,
                 }));
                 chart.data.datasets[1].data = msg.bars.map(b => ({
                     x: Date.parse(b.t),
@@ -396,31 +397,23 @@ function connectWS(port, name) {
                 chart.options.scales.volume.max = panel.vMax;
 
                 chart.update();
+                
+                // append comment to chart_status
+                const newStatus = chart.data.datasets[0].data.at(-1)?.status;
+                if (newStatus !== null && newStatus !== "") {
+                    panel.chart_status.textContent = newStatus;
+                }
             }
         } catch (err) {
-            panel.pre.textContent = panel.pre.textContent + "\n[CLIENT ERROR]\n" + err.message;
+            panel.pm_status.textContent = panel.pm_status.textContent + "\n[CLIENT ERROR]\n" + err.message;
         }
     };
 
     ws.onclose = () => {
-        panel.pre.textContent = `[${port} - ${name}] Connection closed\n`;
-        delete sockets[port]
-        // Destroy chart if it exists
-        if (panel.chart) {
-            panel.chart.destroy();
-            panel.chart = null;
-        }
-
-        // Remove panel DOM
-        const container = panel.pre.parentElement;
-        if (container) container.remove();
-
-        // Remove from tracking objects
-        delete panels[port];
+        removePort(port)
     };
 
     ws.onerror = () => {
-        panel.pre.textContent = `[${port} - ${name}] Error\n`;
         ws.close()
     };
 
@@ -433,9 +426,12 @@ function removePort(port) {
         try { sockets[port].close(); } catch(e){}
         delete sockets[port];
     }
-    if (panels[port]) {
-        panels[port].textContent = ""; // EMPTY
-    }
+    // Remove panel DOM
+    const container = panels[port].title.parentElement;
+    if (container) container.remove();
+
+    // Remove from tracking objects
+    delete panels[port];
 }
 
 // -------- connect to dashboard manager --------

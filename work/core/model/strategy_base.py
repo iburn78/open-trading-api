@@ -112,7 +112,12 @@ class StrategyBase(ABC):
 
     def check_barlist_event(self, **kwargs):
         self.barlist_status = BarListStatus(**kwargs)
-        self.barlist.mark_on_barlist(self.barlist_status)
+
+        status = None
+        if self.barlist_status.barlist_event:
+            status = str(self.barlist_status) 
+
+        self.barlist.mark_on_barlist(self.barlist_status, status=status)
 
     @abstractmethod
     def on_barlist_update(self):
