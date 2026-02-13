@@ -224,11 +224,11 @@ class Agent:
         psbl_request = ClientRequest(command=RequestCommand.GET_PSBL_ORDER)
         psbl_request.set_request_data((self.code, mtype, price)) 
         res: ServerResponse | None = await self.client.send_client_request(psbl_request)
-        if res is None: 
-            return None
-        (a_, q_, p_) = res.data_dict['psbl_data'] 
-        # order quantity should be less than or equal to q_
-        return q_
+        if res.success:
+            (a_, q_, p_) = res.data_dict['psbl_data'] 
+            # order quantity should be less than or equal to q_
+            return q_
+        return None
 
 # minimal agent running example
 if __name__ == "__main__":

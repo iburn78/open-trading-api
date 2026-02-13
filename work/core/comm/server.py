@@ -25,7 +25,7 @@ class Server:
         self.aux_info = AuxInfo(self.service)
         self.dashboard_manager = DashboardManager(self.logger, "manager", DASHBOARD_MANAGER_PORT[self.service])
         self.dashboard = DashBoard(self.logger, "server", DASHBOARD_SERVER_PORT[self.service]) # server's own dashboard
-        self.dashboard_manager.register_dp(self.dashboard.owner_name, self.dashboard.port)
+        self.dashboard_manager.register_dp(self.dashboard.owner_name, self.dashboard.port) # registering server dashboard
         self.connected_agents = ConnectedAgents(self.logger, self.dashboard_manager, self.aux_info) 
         self.order_manager = OrderManager(self.logger, self.connected_agents, self.kf, self.service)
         self.subs_manager = SubscriptionManager()
@@ -98,10 +98,6 @@ class Server:
 
                 # API - server (in addition to the REST connection)
                 tg.create_task(self.kc.run_websocket()) 
-                await self.kc.ws_ready.wait()
-
-                # default subscriptions
-                await self.kf.ccnl_notice()
 
                 # server - clients(agents) using asyncio reader/writer streams
                 tg.create_task(self.run_comm_server()) 
@@ -110,6 +106,10 @@ class Server:
                 tg.create_task(self.broadcast_to_clients())
                 tg.create_task(self.order_manager.persist_to_disk())
                 tg.create_task(self.order_manager.pending_trns_timeout())
+                
+                # (re)subscription upon ws reconnect
+                tg.create_task(self.subscribe())
+
         except Exception as e: 
             self.logger.error(f"[Server] {e}", exc_info=True)
         finally: 
@@ -118,6 +118,14 @@ class Server:
             # self.save_server_env()
             self.logger.info(f"[Server] order_manager saved for {saved_date}")
             self.logger.info(f"[Server] shutdown completed =============================================")
+    
+    async def subscribe(self):
+        while True:
+            await self.kc.ws_ready.wait()
+            self.kc.ws_ready.clear()
+            # default subscription
+            await self.kf.ccnl_notice() 
+            await self.subs_manager.resubscribe_all() # if needed
 
 if __name__ == "__main__":
     service = Service.DEMO

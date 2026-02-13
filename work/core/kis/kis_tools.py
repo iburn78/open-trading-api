@@ -215,6 +215,9 @@ class KIS_Functions:
         
         res, h = await self.kc.url_fetch(api_url, tr_id, tr_cont, params) 
 
+        if res is None or h is None:
+            return None, None
+
         current_data1 = pd.DataFrame(res.get('output1'))
         if dataframe1 is not None:
             dataframe1 = pd.concat([dataframe1, current_data1], ignore_index=True)

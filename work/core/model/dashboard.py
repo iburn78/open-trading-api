@@ -94,7 +94,7 @@ class DashboardManager(DashBoard):
     def __init__(self, logger, owner_name, port):
         super().__init__(logger, owner_name, port)
         self.endpoints = {} 
-        self.register_dp(self.owner_name, self.port)
+        self.endpoints[port] = self.owner_name
 
     # done when agent is registerd to the conn_agents
     def register_dp(self, id, port): # id: "manager", "server" or agent.id
@@ -102,6 +102,9 @@ class DashboardManager(DashBoard):
         if tid and tid != id: # port already in use
             return False
         self.endpoints[port] = id
+        # keep dict always sorted by port
+        self.endpoints = dict(sorted(self.endpoints.items()))
+        self.broadcast_endpoints()
         return True
 
     def unregister_dp(self, port):

@@ -47,6 +47,10 @@ class Account:
     async def acc_load(self):
         ptf, acc = await self.kf.inquire_balance()
 
+        if ptf is None or acc is None:
+            # error occurred
+            return
+
         if ptf.empty or acc.empty:
             # failed to load account
             return

@@ -25,6 +25,7 @@ class KIS_Connector:
 
     # control settings
     _max_ws_tries = 5
+    _resubs_event = asyncio.Event()
 
     def __init__(self, logger, service: Service, on_result=None, server_env:dict=None):
         self.logger = logger
@@ -121,6 +122,10 @@ class KIS_Connector:
         self.base_header["authorization"] = f"Bearer {self.token}"
 
     async def url_fetch(self, api_url, tr_id, tr_cont, params, post=False):
+        '''
+        if error, returns (None, None)
+        proper error handling (e.g. checking None) should be implemented in the caller
+        '''
         await self.set_token()
 
         # guarantees self.sleep time dealy between calls
@@ -332,8 +337,9 @@ class KIS_Connector:
                 if v is not None:
                     entry[k] = v
 
+    ###_ where to put resubscription
     async def run_websocket(self):
-        WEBSOCKET_RUN_DURATION_UNTIL_RESET = 300
+        WEBSOCKET_RUN_DURATION_UNTIL_RESET = 300 # count reset after normal run of this duration
         while self._ws_try_count < self._max_ws_tries:
             try:
                 async with websockets.connect(self.url_ws) as ws:
@@ -342,6 +348,7 @@ class KIS_Connector:
 
                     # session start timestamp 
                     started = asyncio.get_event_loop().time()
+
                     await self._subscriber()
                     # ---- normal exit (no exception) ----
                     session = asyncio.get_event_loop().time() - started
@@ -351,10 +358,10 @@ class KIS_Connector:
                 self._ws_try_count += 1
                 exp_delay = min(2 ** self._ws_try_count, 30)
                 rec = "closed" if self._ws_try_count == self._max_ws_tries else f"reconnecting in {exp_delay} sec"
-                self.logger.error(f"[KIS_Connector] ws error {self._ws_try_count}/{self._max_ws_tries}, {rec}: {e}", exc_info=True)
+                self.logger.error(f"[KIS_Connector] ws error {self._ws_try_count}/{self._max_ws_tries}, {rec}: {e}") #, exc_info=True)
                 await asyncio.sleep(exp_delay)
+
             finally:
-                self.ws_ready.clear()
                 self.ws = None
                 
     async def close_httpx(self):

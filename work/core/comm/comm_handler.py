@@ -156,7 +156,8 @@ class CommHandler:
         code, mtype, price = client_request.get_request_data()
         a_, q_, p_ = await self.kf.get_psbl_order(code, mtype, price)
 
-        res = ServerResponse(success=True, status="")
+        success = not any(x is None for x in (a_, q_, p_))
+        res = ServerResponse(success=success, status="")
         res.data_dict['psbl_data'] = (a_, q_, p_)
         return res
 

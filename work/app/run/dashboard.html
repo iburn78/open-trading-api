@@ -9,11 +9,13 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
 </head>
 <body style="margin:0; padding:0; font-family:monospace;">
+<div id="statusBanner" style="display:none; padding:8px; font-weight:bold;"></div>
 <div id="dashboards"></div>
 
 <script>
 const DASHBOARD_MANAGER_PORT = 9020
 
+const banner = document.getElementById("statusBanner");
 const dashboards = document.getElementById("dashboards");
 
 // active websockets { port: WebSocket }
@@ -46,7 +48,17 @@ function ensurePanel(port, name) {
     pre.style = "margin:0; white-space:pre-wrap;";
 
     container.appendChild(pre);
-    dashboards.appendChild(container);
+    const ports = Object.keys(panels).map(Number).sort((a,b)=>a-b);
+    let inserted = false;
+    for (const p of ports) {
+        const existingPanel = panels[p].pre.parentElement;
+        if (p > port) {
+            dashboards.insertBefore(container, existingPanel);
+            inserted = true;
+            break;
+        }
+    }
+    if (!inserted) dashboards.appendChild(container); // append at end if largest port
 
     panels[port] = { 
         pre, 
@@ -392,10 +404,24 @@ function connectWS(port, name) {
 
     ws.onclose = () => {
         panel.pre.textContent = `[${port} - ${name}] Connection closed\n`;
+        delete sockets[port]
+        // Destroy chart if it exists
+        if (panel.chart) {
+            panel.chart.destroy();
+            panel.chart = null;
+        }
+
+        // Remove panel DOM
+        const container = panel.pre.parentElement;
+        if (container) container.remove();
+
+        // Remove from tracking objects
+        delete panels[port];
     };
 
     ws.onerror = () => {
         panel.pre.textContent = `[${port} - ${name}] Error\n`;
+        ws.close()
     };
 
     sockets[port] = ws;
@@ -413,37 +439,61 @@ function removePort(port) {
 }
 
 // -------- connect to dashboard manager --------
-const mgr = new WebSocket(`ws://127.0.0.1:${DASHBOARD_MANAGER_PORT}`);
+let mgr = null;
+let mgrRetryDelay = 1000;     // start 1s
+const mgrMaxDelay = 10000;    // cap at 10s
 
-mgr.onmessage = (event) => {
-    let endpoints;
-    try {
-        endpoints = JSON.parse(event.data); 
-    } catch (e) {
-        console.error("Invalid manager payload:", event.data);
-        return;
-    }
+function connectManager() {
+    mgr = new WebSocket(`ws://127.0.0.1:${DASHBOARD_MANAGER_PORT}`);
 
-    // keys are always strings
-    // ports are ordered and showed in that sequence
-    const ports = Object.keys(endpoints); 
+    mgr.onopen = () => {
+        console.log(`Connected to manager (${DASHBOARD_MANAGER_PORT})`);
+        mgrRetryDelay = 1000;  // reset backoff
+        banner.textContent = "";
+        banner.style.display = "none";
+    };
 
-    // Add / update ports
-    ports.forEach(port => {
-        connectWS(port, endpoints[port]);
-    });
-
-    // Remove ports that no longer exist
-    for (const port of Object.keys(sockets)) {
-        if (!ports.includes(port)) {  
-            removePort(port);  
+    mgr.onmessage = (event) => {
+        let endpoints;
+        try {
+            endpoints = JSON.parse(event.data); 
+        } catch (e) {
+            console.error("Invalid manager payload:", event.data);
+            return;
         }
-    }
-};
 
-mgr.onopen = () => console.log(`Connected to manager (${DASHBOARD_MANAGER_PORT})`);
-mgr.onerror = () => console.log("Manager error");
-mgr.onclose = () => console.log("Manager closed");
+        const ports = Object.keys(endpoints);
+
+        // connect new ports
+        ports.forEach(port => {
+            connectWS(port, endpoints[port]);
+        });
+
+        // remove dead ports
+        for (const port of Object.keys(sockets)) {
+            if (!ports.includes(port)) {
+                removePort(port);
+            }
+        }
+    };
+
+    mgr.onclose = () => {
+        console.log(`Manager disconnected. Reconnecting in ${mgrRetryDelay}ms`);
+        banner.textContent = "Disconnected";
+        banner.style.display = "block";
+
+        setTimeout(connectManager, mgrRetryDelay);
+        mgrRetryDelay = Math.min(mgrRetryDelay * 2, mgrMaxDelay);
+    };
+
+    mgr.onerror = () => {
+        mgr.close(); // force onclose → triggers reconnect
+    };
+}
+
+// start it
+connectManager();
+
 </script>
 
 </body>

@@ -38,6 +38,7 @@ class LogSetup: # this is container that has logger
             datefmt=self.DATE_FMT
         )
         fh = RotatingFileHandler(log_file, maxBytes=self.MAX_BYTES, backupCount=self.BACKUP_COUNT, encoding='utf-8')
+
         fh.setFormatter(formatter)
         fh.setLevel(self.F_LEVEL)
 

@@ -47,6 +47,14 @@ class SubscriptionManager:
 
             agent.subscriptions.add(func) # agent's own record
             return f"agent {agent.id} subscribed"
+    
+    # to resubs all when reconnect
+    # - only resubs funcs in subs_map
+    # - need to separately handle default subscritions such as ccnl_notice 
+    async def resubscribe_all(self):
+        for func, func_map in self.subs_map.items():
+            for code in func_map.keys():
+                await func(tr_key=code)
 
     # remove and unsubscribe
     # agent could have multiple subscriptions (i.e., multiple funcs)
