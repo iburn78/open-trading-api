@@ -38,3 +38,13 @@ Key features:
 - Volume trigger strategy
 - PER base valuation 
 - Catching slow moving trend (vol / price)
+
+###_ to do 
+- make index bar chart
+- make key indicators dashboard
+- 대차잔고, 공매도 거래대금
+- 외국인 주식 보유액 (시장 전체, Sector, 개별)
+- CMA 잔고, 예탁금: 증시 대기 자금
+- parameter setup: more descriptive
+- Moving Average...: 이평선 설계 etc  
+- Sync and Initial Value: should be exact, otherwise it is easily misleading

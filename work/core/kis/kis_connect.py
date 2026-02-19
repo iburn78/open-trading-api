@@ -337,7 +337,6 @@ class KIS_Connector:
                 if v is not None:
                     entry[k] = v
 
-    ###_ where to put resubscription
     async def run_websocket(self):
         WEBSOCKET_RUN_DURATION_UNTIL_RESET = 300 # count reset after normal run of this duration
         while self._ws_try_count < self._max_ws_tries:

@@ -44,6 +44,8 @@ class DashBoard:
         try:
             async for _ in ws:
                 pass
+        except Exception as e:
+            self.logger.error(f"[DashBoard] ws handler error {e}", extra={"owner": self.owner_name})
         finally:
             self._clients.discard(ws)
 
@@ -70,6 +72,7 @@ class DashBoard:
                     "price_event": b.price_event,
                     "volume_event": b.volume_event,
                     "barlist_event": b.barlist_event,
+                    "status": b.status,
                 }
                 for b in bars
             ]
