@@ -1,6 +1,6 @@
 import logging
 from logging.handlers import RotatingFileHandler
-import inspect, os, platform
+import inspect, os, platform, sys
 system = platform.system()
 if system == "Windows": import winsound
 
@@ -91,6 +91,7 @@ def notice_beep(freq=400, dur=200, msg=True):
         else:
             winsound.Beep(freq, dur)
     elif system == "Darwin":
-        os.system("say 'beep'")
+        sys.stdout.write('\a')
+        sys.stdout.flush()
     else:  # Linux / Unix
         print('\a') # makes sound
