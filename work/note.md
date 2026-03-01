@@ -46,5 +46,6 @@ Key features:
 - 외국인 주식 보유액 (시장 전체, Sector, 개별)
 - CMA 잔고, 예탁금: 증시 대기 자금
 - parameter setup: more descriptive
-- Moving Average...: 이평선 설계 etc  
+- Moving Average...: 이평선 설계 etc / plot on dashboard too  
+- Past record loading: daily... hourly
 - Sync and Initial Value: should be exact, otherwise it is easily misleading
