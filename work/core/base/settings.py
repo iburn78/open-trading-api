@@ -1,5 +1,6 @@
 from pathlib import Path
 from enum import StrEnum
+import os
 
 # ----------------------------------------------------
 # project directory structure 
@@ -10,7 +11,11 @@ LOG_DIR = WORK_DIR / 'log'
 DATA_DIR = WORK_DIR / 'data'
 
 config_file = PROJECTS_DIR / 'config' / 'kis_devlp.yaml'
-server_env_file = PROJECTS_DIR / 'config' / 'kis_server.env'
+# server_env_file = PROJECTS_DIR / 'config' / 'kis_server.env'
+
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
+if not Path(config_file).exists(): raise Exception(f'config file not found {config_file}')
 
 # ----------------------------------------------------
 # API control settings
