@@ -8,7 +8,7 @@ from .conn_agents import ConnectedAgents
 from .subs_manager import SubscriptionManager
 from .order_manager import OrderManager
 from ..base.logger import LogSetup
-from ..base.settings import Service, HOST, SERVER_PORT, DASHBOARD_SERVER_PORT, DASHBOARD_MANAGER_PORT, server_broadcast_interval, server_env_file
+from ..base.settings import Service, HOST, SERVER_PORT, DASHBOARD_SERVER_PORT, DASHBOARD_MANAGER_PORT, server_broadcast_interval # server_env_file
 from ..kis.kis_connect import KIS_Connector 
 from ..kis.kis_tools import KIS_Functions
 from ..kis.ws_data import TransactionNotice, TransactionPrices

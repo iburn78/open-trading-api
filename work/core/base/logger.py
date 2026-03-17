@@ -26,7 +26,6 @@ class LogSetup: # this is container that has logger
 
         fname += "_" + service
 
-        os.makedirs(LOG_DIR, exist_ok=True)
         log_file = os.path.join(LOG_DIR, f'{fname}.log')
     
         self.logger = logging.getLogger(fname) 
@@ -91,7 +90,6 @@ def notice_beep(freq=400, dur=200, msg=True):
         else:
             winsound.Beep(freq, dur)
     elif system == "Darwin":
-        sys.stdout.write('\a')
-        sys.stdout.flush()
+        os.system('osascript -e "beep"')
     else:  # Linux / Unix
         print('\a') # makes sound
