@@ -27,7 +27,7 @@ class KIS_Connector:
     _max_ws_tries = 5
     _resubs_event = asyncio.Event()
 
-    def __init__(self, logger, service: Service, on_result=None, server_env:dict=None):
+    def __init__(self, logger, service: Service, on_result=None, server_env=None):
         self.logger = logger
         self.service = service
         self.on_result = on_result
@@ -57,7 +57,7 @@ class KIS_Connector:
             self.token = None
             self.token_exp = None
 
-        self.httpx_client: httpx.AsyncClient = httpx.AsyncClient()
+        self.httpx_client: httpx.AsyncClient | None = httpx.AsyncClient()
         self._last_call_time = None
 
         # Websocket part ----------------
@@ -96,7 +96,7 @@ class KIS_Connector:
             self.account_no = _cfg['paper_acct_stock']
 
     async def set_token(self):
-        if self.token:
+        if self.token_exp:
             if self.token_exp > datetime.now() + timedelta(hours = reauth_margin_hr):
                 return
         p = {
@@ -106,6 +106,7 @@ class KIS_Connector:
         }
         token_url = f"{self.url}/oauth2/tokenP"
 
+        assert self.httpx_client is not None
         try:
             resp = await self.httpx_client.post(token_url, json=p)
         except httpx.RequestError as e:
@@ -143,6 +144,7 @@ class KIS_Connector:
             "tr_cont": tr_cont,
         }
         try:
+            assert self.httpx_client is not None
             if post:
                 resp = await self.httpx_client.post(
                     url,
@@ -173,7 +175,7 @@ class KIS_Connector:
     # WebSocket part
     # -------------------------------------------------------------------
     async def set_token_ws(self):
-        if self.token_ws: 
+        if self.token_ws_exp: 
             if self.token_ws_exp > datetime.now() + timedelta(hours = reauth_margin_hr):
                 return
 
@@ -184,6 +186,7 @@ class KIS_Connector:
         }
         token_ws_url = f"{self.url}/oauth2/Approval" 
 
+        assert self.httpx_client is not None
         try:
             resp = await self.httpx_client.post(token_ws_url, json=p)
         except httpx.RequestError as e:
@@ -215,7 +218,9 @@ class KIS_Connector:
         await self.ws.send(json.dumps(msg))
 
     async def _subscriber(self):
+        assert self.ws is not None
         async for raw in self.ws:
+            assert isinstance(raw, str)
             if raw[0] in ["0", "1"]:
                 dr = raw.split("|")
                 if len(dr) < 4:
@@ -318,10 +323,10 @@ class KIS_Connector:
     async def register_tr_id(
             self, 
             tr_id: str,
-            columns: list = None,
-            encrypt: str = None,
-            key: str = None,
-            iv: str = None,
+            columns: list | None = None,
+            encrypt: str | None = None,
+            key: str | None = None,
+            iv: str | None = None,
     ):
         async with self._tr_id_map_lock:
             entry = self.tr_id_map.setdefault(tr_id, {"key": None, "iv": None})
