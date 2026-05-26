@@ -12,6 +12,9 @@ class BruteForceRandStrategy(StrategyBase):
         super().__init__() 
         self.run_once = False
     
+    def on_barlist_update(self):
+        super().on_barlist_update()
+
     async def on_update(self, update_event: UpdateEvent):
         if update_event != UpdateEvent.PRICE_UPDATE:
             self.logger.info(f"{self.code}-{update_event.name}", extra={"owner": self.agent_id})
@@ -22,8 +25,8 @@ class BruteForceRandStrategy(StrategyBase):
 
         sc1 = self.market_buy(10)
         sc2 = self.market_buy(20)
-        sc3 = self.limit_buy(price=750000, quantity=5) 
-        sc4 = self.limit_buy(price=730000, quantity=10) 
+        sc3 = self.limit_buy(price=1950000, quantity=5) 
+        sc4 = self.limit_buy(price=1930000, quantity=10) 
 
         [sc1, sc2, sc3, sc4] = await self.execute_rebind([sc1, sc2, sc3, sc4])
         await asyncio.sleep(random.randint(1, 2))
